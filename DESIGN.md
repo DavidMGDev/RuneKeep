@@ -190,3 +190,12 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   selection, its bar stays at the top and a roll's plaque sits under it at the same width, the Many Things row
   under both. The hand's end dots sit behind the
   cards.
+
+- v0.47.14: every sound on the table is a named cue (`table-sound.ts`). Two schemes under Table > Sounds: RuneKeep
+  (the app sounds, exactly as before) and ULTRAKILL, which gives about ninety cues files of their own, several per
+  cue and never the same one twice running, knocks included. RuneKeep does not ship those files: the player picks
+  their own folder once, the files it uses are kept in IndexedDB in that browser only, and a missing one falls back
+  to the RuneKeep sound. The reset's ticks vary in pitch instead of climbing. Leaving the playground resets the
+  whole table. Nothing still burning settles onto a card. The preset picker has arrows either side for the next or
+  previous preset. In edit mode each row, and each piece split off one, has an eye: hidden, it leaves the table and
+  shows (dimmed frame, red eye) only while editing (`DeckLook.hidden`).

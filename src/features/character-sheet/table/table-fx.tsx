@@ -8,10 +8,10 @@
 import { memo, useEffect, useRef, useState } from 'react';
 
 import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
-import { playSfx } from '@/lib/sfx';
 import { CardFace, type TableCard } from './desk-carousel';
 import { type DomatCard, domatArt, DOMAT_H, DOMAT_W } from './domat';
 import { T } from './table-ui';
+import { cue } from './table-sound';
 
 export type FxKind = 'ring' | 'flash' | 'vortex' | 'implode' | 'fire' | 'spark' | 'smoke' | 'stone' | 'claw' | 'consume' | 'rune' | 'word' | 'impact' | 'veil' | 'frost' | 'mist';
 export interface Fx { id: number; kind: FxKind; x: number; y: number; r: number; ms: number; tint?: string; /** What a 'word' says. */ label?: string }
@@ -292,13 +292,13 @@ export function DomatCardView({ card, x, y, from, held, onMove, onPlay, onPlace,
     const ox = pos.current.x, oy = pos.current.y;
     let moved = grabbed;
     let last = { x: ox, y: oy };
-    if (grabbed) { setDrag(true); playSfx('cardDragStart', { volume: 0.6 }); }
+    if (grabbed) { setDrag(true); cue('card:lift', 'cardDragStart', { volume: 0.6 }); }
     // Stillness: how long it has stayed within a few px of where it last settled.
     let anchor = { x: sx, y: sy }, stillSince = performance.now(), calmed = false, raf = 0;
     const STILL_MS = 3000;
     const shake = () => {
       const p = Math.min(1, (performance.now() - stillSince) / STILL_MS);
-      if (!calmed && p >= 1) { calmed = true; setCalm(true); playSfx('cardSelect', { volume: 0.5, cents: -300 }); }
+      if (!calmed && p >= 1) { calmed = true; setCalm(true); cue('domat:calm', 'cardSelect', { volume: 0.5, cents: -300 }); }
       const amp = calmed ? 0 : 1.2 + 2.6 * (1 - p);
       if (shakeEl.current) shakeEl.current.style.transform = amp ? `translate(${((Math.random() - 0.5) * amp * 2).toFixed(1)}px, ${((Math.random() - 0.5) * amp * 2).toFixed(1)}px) rotate(${((Math.random() - 0.5) * amp).toFixed(2)}deg)` : 'none';
       if (barEl.current) barEl.current.style.transform = `scaleX(${calmed ? 1 : p})`;
@@ -307,7 +307,7 @@ export function DomatCardView({ card, x, y, from, held, onMove, onPlay, onPlace,
     if (grabbed) raf = requestAnimationFrame(shake);
     const move = (m: PointerEvent) => {
       if (!moved && Math.hypot(m.clientX - sx, m.clientY - sy) < 5) return;
-      if (!moved) { moved = true; setDrag(true); playSfx('cardDragStart', { volume: 0.6 }); raf = requestAnimationFrame(shake); }
+      if (!moved) { moved = true; setDrag(true); cue('card:lift', 'cardDragStart', { volume: 0.6 }); raf = requestAnimationFrame(shake); }
       if (!calmed && Math.hypot(m.clientX - anchor.x, m.clientY - anchor.y) > 14) { anchor = { x: m.clientX, y: m.clientY }; stillSince = performance.now(); }
       last = { x: ox + m.clientX - sx, y: oy + m.clientY - sy };
       onMove(last.x, last.y);
@@ -320,7 +320,7 @@ export function DomatCardView({ card, x, y, from, held, onMove, onPlay, onPlace,
       setDrag(false);
       setCalm(false);
       if (!moved) return;
-      if (calmed) { playSfx('cardDragEnd', { volume: 0.5 }); onPlace(last.x, last.y); } else onPlay(last.x, last.y);
+      if (calmed) { cue('card:place', 'cardDragEnd', { volume: 0.5 }); onPlace(last.x, last.y); } else onPlay(last.x, last.y);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);

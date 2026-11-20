@@ -140,6 +140,8 @@ export interface DeckLook {
    * 'src:color', 'src:die', 'src:domat'), as shares of the table. A row with none here lies as a row.
    */
   apart: Record<string, [number, number]>;
+  /** Pieces hidden from play (owner, v0.47.14), by the same keys and 'cat' for the deck die: seen only while editing. */
+  hidden: string[];
 }
 
 /** What can be split off a row: the control dice and the supply. */
@@ -153,6 +155,7 @@ export const DEFAULT_LOOK: DeckLook = {
   areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'roll', ctlSize: 1, catSize: 1, tokenTray: true,
   handMode: 'carousel', ctlX: 0.86, ctlY: 0.08, ctlDir: 'row', supX: 0.15, supY: 0.08, supDir: 'row', catX: 0.07, catY: 0.36, areaY: -1,
   apart: {},
+  hidden: [],
 };
 
 type NumKey = { [K in keyof DeckLook]: DeckLook[K] extends number ? K : never }[keyof DeckLook];
@@ -306,7 +309,7 @@ export const LOOK_PAGES: LookPage[] = [
 ];
 
 /** The settings that say where the pieces live: a table preset sets them, Reset layout puts them back. */
-export const PLACE_KEYS = ['ctlX', 'ctlY', 'ctlDir', 'supX', 'supY', 'supDir', 'catX', 'catY', 'areaY', 'apart'] as const;
+export const PLACE_KEYS = ['ctlX', 'ctlY', 'ctlDir', 'supX', 'supY', 'supDir', 'catX', 'catY', 'areaY', 'apart', 'hidden'] as const;
 
 /** Settings that shape the hand; a ready-made look changes only these, never your table. */
 export const HAND_KEYS: (keyof DeckLook)[] = LOOK_PAGES.filter((p) => p.id === 'hand').flatMap((p) => p.groups.flatMap((g) => g.controls.map((c) => c.key)));
@@ -483,6 +486,8 @@ export function cleanLook(raw: unknown): DeckLook {
     }
   }
   out.apart = apart;
+  const hid = Array.isArray(src.hidden) ? src.hidden : [];
+  out.hidden = [...APART_KEYS, 'cat'].filter((k) => hid.includes(k));
   return out;
 }
 

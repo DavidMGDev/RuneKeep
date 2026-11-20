@@ -7,13 +7,13 @@
  * Motion (how it moves) and the Table (where the hand lies, the edge, the dice). While settings are open the rows
  * of pieces on the table can be dragged somewhere else.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
-import { playSfx } from '@/lib/sfx';
 import { BUILTIN_LOOKS, type DeckLook, DEFAULT_LOOK, encodeLook, type LookControl, type LookGroup, LOOK_PAGES, PLACE_KEYS, randomTables, readTableFile, TABLE_PRESETS, tableFile, wearsHand, withHand } from './deck-look';
 import { loadSavedLooks, type SavedLook, saveSavedLooks } from './table-store';
 import { chamferClip, Glyph, T, TButton } from './table-ui';
+import { cue, forgetUltrakill, keepUltrakillFolder, onSoundsChange, setSoundScheme, soundScheme, ULTRAKILL_FILES, ultrakillLoaded } from './table-sound';
 
 const PAGES = [{ id: 'presets', title: 'Presets' }, ...LOOK_PAGES.map((p) => ({ id: p.id, title: p.title }))];
 
@@ -50,10 +50,10 @@ export function LookPanel({ look, onChange, onClose, onClearTable, boardCount, p
         <TButton title="Close settings" h={32} onPress={onClose} icon={<Glyph d='<path d="M6 6l12 12M18 6 6 18"/>' size={14} />} />
       </div>
       <div role="tablist" ref={tabs} onKeyDown={onTabKey} style={{ display: 'flex', padding: '0 14px', borderBottom: '1px solid rgba(218,162,73,0.25)' }}>
-        {PAGES.map((p) => <Tab key={p.id} label={p.title} active={page === p.id} onPress={() => { if (page !== p.id) { playSfx('floatMenuHighlight', { volume: 0.5 }); setPage(p.id); } }} />)}
+        {PAGES.map((p) => <Tab key={p.id} label={p.title} active={page === p.id} onPress={() => { if (page !== p.id) { cue('ui:hover', 'floatMenuHighlight', { volume: 0.5 }); setPage(p.id); } }} />)}
       </div>
       <div ref={body} className="rk-scroll" style={{ flex: 1, overflowY: 'auto', padding: '6px 22px 28px' }}>
-        {current ? <>{page === 'hand' ? <HandLooks look={look} onChange={onChange} /> : null}{current.groups.filter((g) => !g.hidden).map((g) => <Group key={g.title} g={g} look={look} onChange={onChange} />)}</> : <PresetsPage look={look} onChange={onChange} onClearTable={onClearTable} boardCount={boardCount} pieceCount={pieceCount} />}
+        {current ? <>{page === 'hand' ? <HandLooks look={look} onChange={onChange} /> : null}{page === 'table' ? <Sounds /> : null}{current.groups.filter((g) => !g.hidden).map((g) => <Group key={g.title} g={g} look={look} onChange={onChange} />)}</> : <PresetsPage look={look} onChange={onChange} onClearTable={onClearTable} boardCount={boardCount} pieceCount={pieceCount} />}
       </div>
     </div>,
     document.body,
@@ -77,7 +77,7 @@ function Group({ g, look, onChange }: { g: LookGroup; look: DeckLook; onChange: 
   const changed = g.controls.filter((c) => look[c.key] !== DEFAULT_LOOK[c.key]).length;
   return (
     <section style={{ borderBottom: '1px solid rgba(218,162,73,0.14)', padding: '14px 0 12px' }}>
-      <button type="button" aria-expanded={open} onClick={() => { playSfx('buttonTap', { volume: 0.4 }); setOpen((o) => !o); }} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+      <button type="button" aria-expanded={open} onClick={() => { cue('ui:tap', 'buttonTap', { volume: 0.4 }); setOpen((o) => !o); }} style={{ all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
         <span style={{ flex: 1, color: T.goldText, fontFamily: T.bold, fontSize: 14, letterSpacing: 1, textTransform: 'uppercase' }}>{g.title}</span>
         {changed ? <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13 }}>{changed} changed</span> : null}
         <span style={{ display: 'flex', transform: `rotate(${open ? 180 : 0}deg)`, transition: `transform 200ms ${T.ease}` }}><Glyph d='<path d="M6 9l6 6 6-6"/>' size={15} color={T.muted} /></span>
@@ -112,7 +112,7 @@ function Control({ c, look, onChange }: { c: LookControl; look: DeckLook; onChan
         <input type="range" className="rk-range" aria-label={c.label} min={c.min} max={c.max} step={c.step} value={look[c.key] as number} onChange={(e) => set(+e.target.value)} />
       ) : c.kind === 'choice' ? (
         <div role="radiogroup" aria-label={c.label} style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-          {c.options.map((o) => <Seg key={o.value} label={o.label} active={look[c.key] === o.value} onPress={() => { playSfx('buttonTap', { volume: 0.5 }); set(o.value); }} />)}
+          {c.options.map((o) => <Seg key={o.value} label={o.label} active={look[c.key] === o.value} onPress={() => { cue('ui:tap', 'buttonTap', { volume: 0.5 }); set(o.value); }} />)}
         </div>
       ) : (
         <div role="radiogroup" aria-label={c.label} style={{ display: 'flex', gap: 3 }}>
@@ -195,13 +195,13 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
     if (!n) return;
     store([{ name: n, look }, ...saved.filter((s) => s.name !== n)].slice(0, 24));
     setName('');
-    playSfx('cardSelect', { volume: 0.6 });
+    cue('ui:confirm', 'cardSelect', { volume: 0.6 });
   };
   /** The code, shown to copy by hand when the browser would not let it be copied. */
   const [shown, setShown] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const copyCode = async () => {
-    playSfx('buttonTap');
+    cue('ui:tap', 'buttonTap');
     const text = encodeLook(look);
     if (await copyText(text)) {
       setShown(null);
@@ -213,13 +213,13 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
   };
   /** A preset brought in by code or file is used and kept in Your presets under its name (owner, v0.47.11). */
   const apply = (got: { name: string; look: DeckLook } | null, bad: string) => {
-    if (!got) { setNote({ text: bad, bad: true }); playSfx('cardDisable', { volume: 0.5 }); return; }
+    if (!got) { setNote({ text: bad, bad: true }); cue('ui:error', 'cardDisable', { volume: 0.5 }); return; }
     onChange(got.look);
     const have = saved.find((s) => sameLook(s.look, got.look));
     const n = have?.name ?? uniqueName(got.name.trim() || 'Shared preset', saved);
     if (!have) store([{ name: n, look: got.look }, ...saved].slice(0, 24));
     setNote({ text: `Using ${n}. It is in Your presets below.` });
-    playSfx('cardSelect', { volume: 0.6 });
+    cue('ui:confirm', 'cardSelect', { volume: 0.6 });
   };
   const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null);
   const rename = () => {
@@ -242,7 +242,7 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
   const shuffle = () => {
     const seed = (Date.now() + surprise * 7919) >>> 0;
     const l = randomTables(1, seed)[0];
-    if (l) { onChange(l); setSurprise((s) => s + 1); playSfx('carouselScroll', { volume: 0.8, cents: 300 }); }
+    if (l) { onChange(l); setSurprise((s) => s + 1); cue('ui:shuffle', 'carouselScroll', { volume: 0.8, cents: 300 }); }
   };
   const sub = { color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' } as const;
   return (
@@ -251,7 +251,7 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
       <div style={block}>
         <SectionTitle>Load a preset</SectionTitle>
         <span style={sub}>A preset sets everything: the hand, how it moves, the table and where every piece lives.</span>
-        <PresetPicker look={look} saved={saved} onPick={(l) => { playSfx('cardSelect', { volume: 0.6 }); onChange(l); }} />
+        <PresetPicker look={look} saved={saved} onPick={(l) => { cue('preset:pick', 'cardSelect', { volume: 0.6 }); onChange(l); }} />
         <TButton label="Surprise me" h={34} title="A new preset drawn at random" onPress={shuffle} />
         <div style={{ height: 1, background: 'rgba(218,162,73,0.14)', margin: '6px 0 2px' }} />
         <span style={sub}>From someone else: paste their code, or open their .rune file.</span>
@@ -275,10 +275,10 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
           </div>
         ) : (
           <div key={s.name} style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-            <div style={{ flex: 1 }}><LookRow name={s.name} active={sameLook(look, s.look)} onPress={() => { playSfx('buttonTap', { volume: 0.6 }); onChange(s.look); }} /></div>
-            <TButton title={`Rename ${s.name}`} h={34} onPress={() => { playSfx('buttonTap', { volume: 0.5 }); setRenaming({ from: s.name, to: s.name }); }} icon={<Glyph d='<path d="M4 20h4L19 9l-4-4L4 16v4Z"/>' size={13} color={T.muted} />} />
-            <TButton title={`Download ${s.name} as a file`} h={34} onPress={() => { playSfx('buttonTap'); downloadTable(s.look, s.name); }} icon={<Glyph d='<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/>' size={14} color={T.muted} />} />
-            <TButton title={`Delete ${s.name}`} h={34} onPress={() => { playSfx('tokenRemove', { volume: 0.6 }); store(saved.filter((x) => x.name !== s.name)); }} icon={<Glyph d='<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>' size={13} color={T.muted} />} />
+            <div style={{ flex: 1 }}><LookRow name={s.name} active={sameLook(look, s.look)} onPress={() => { cue('ui:tap', 'buttonTap', { volume: 0.6 }); onChange(s.look); }} /></div>
+            <TButton title={`Rename ${s.name}`} h={34} onPress={() => { cue('ui:tap', 'buttonTap', { volume: 0.5 }); setRenaming({ from: s.name, to: s.name }); }} icon={<Glyph d='<path d="M4 20h4L19 9l-4-4L4 16v4Z"/>' size={13} color={T.muted} />} />
+            <TButton title={`Download ${s.name} as a file`} h={34} onPress={() => { cue('ui:tap', 'buttonTap'); downloadTable(s.look, s.name); }} icon={<Glyph d='<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/>' size={14} color={T.muted} />} />
+            <TButton title={`Delete ${s.name}`} h={34} onPress={() => { cue('ui:delete', 'tokenRemove', { volume: 0.6 }); store(saved.filter((x) => x.name !== s.name)); }} icon={<Glyph d='<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>' size={13} color={T.muted} />} />
           </div>
         ))}
         <div style={{ display: 'flex', gap: 6 }}>
@@ -292,7 +292,7 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
         <span style={sub}>Everything you have set now. A code fits in a chat; a file keeps it exactly, even after RuneKeep updates.</span>
         <div style={{ display: 'flex', gap: 6 }}>
           <TButton label="Copy code" wide h={34} onPress={() => void copyCode()} />
-          <TButton label="Download file" wide h={34} title="Save this preset as a .rune file" onPress={() => { playSfx('buttonTap'); downloadTable(look, name.trim() || 'RuneKeep preset'); setShareNote({ text: 'Saved to your downloads as a .rune file. Send it to whoever should have this preset.' }); }} />
+          <TButton label="Download file" wide h={34} title="Save this preset as a .rune file" onPress={() => { cue('ui:tap', 'buttonTap'); downloadTable(look, name.trim() || 'RuneKeep preset'); setShareNote({ text: 'Saved to your downloads as a .rune file. Send it to whoever should have this preset.' }); }} />
         </div>
         {shown ? <textarea readOnly value={shown} aria-label="The preset's code" onFocus={(e) => e.currentTarget.select()} rows={3} style={{ resize: 'none', background: T.panel, color: T.ivory, border: `1px solid ${T.goldSoft}`, fontFamily: T.medium, fontSize: 12, padding: 8, wordBreak: 'break-all' }} /> : null}
         {shareNote ? <span role="status" style={{ color: shareNote.bad ? '#E2705A' : T.goldText, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>{shareNote.text}</span> : null}
@@ -304,9 +304,9 @@ function PresetsPage({ look, onChange, onClearTable, boardCount, pieceCount }: {
           {boardCount || pieceCount ? `On the table: ${[boardCount ? `${boardCount} card${boardCount === 1 ? '' : 's'}` : '', pieceCount ? `${pieceCount} loose piece${pieceCount === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ')}. Clearing puts it all away; your decks keep every card.` : 'The table is clear.'}
         </span>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <TButton label="Clear the table" h={34} disabled={!boardCount && !pieceCount} onPress={() => { playSfx('tokenRemove'); onClearTable(); }} />
-          <TButton label="Default layout" h={34} title="Put the rows of pieces back where they start" onPress={() => { playSfx('buttonTap'); const out = { ...look } as Record<string, unknown>; for (const k of PLACE_KEYS) out[k] = DEFAULT_LOOK[k]; onChange(out as unknown as DeckLook); }} />
-          <TButton label="Every setting" h={34} title="Put every setting back as it came" onPress={() => { playSfx('buttonTap'); onChange(DEFAULT_LOOK); }} />
+          <TButton label="Clear the table" h={34} disabled={!boardCount && !pieceCount} onPress={() => { cue('table:clear', 'tokenRemove'); onClearTable(); }} />
+          <TButton label="Default layout" h={34} title="Put the rows of pieces back where they start" onPress={() => { cue('ui:tap', 'buttonTap'); const out = { ...look } as Record<string, unknown>; for (const k of PLACE_KEYS) out[k] = DEFAULT_LOOK[k]; onChange(out as unknown as DeckLook); }} />
+          <TButton label="Every setting" h={34} title="Put every setting back as it came" onPress={() => { cue('ui:tap', 'buttonTap'); onChange(DEFAULT_LOOK); }} />
         </div>
       </div>
     </>
@@ -342,6 +342,17 @@ function PresetPicker({ look, saved, onPick }: { look: DeckLook; saved: SavedLoo
   }, [open]);
   const shown = open ? entries[lit] : current;
   const pick = (i: number) => { const t = entries[i]; if (!t) return; setOpen(false); onPick(t.look); };
+  // The arrows step to the next or previous preset in the list (owner, v0.47.14), round the ends.
+  const step = (d: 1 | -1) => {
+    const at = current ? entries.indexOf(current) : d > 0 ? -1 : 0;
+    const i = (at + d + entries.length) % entries.length;
+    setLit(i);
+    pick(i);
+  };
+  const arrow = (d: 1 | -1) => (
+    <TButton title={d > 0 ? 'Next preset' : 'Previous preset'} h={44} onPress={() => step(d)}
+      icon={<Glyph d={d > 0 ? '<path d="M9 6l6 6-6 6"/>' : '<path d="M15 6l-6 6 6 6"/>'} size={16} />} />
+  );
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setOpen(false); }
     else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopPropagation(); setLit((l) => (l + (e.key === 'ArrowDown' ? 1 : -1) + entries.length) % entries.length); }
@@ -367,8 +378,10 @@ function PresetPicker({ look, saved, onPick }: { look: DeckLook; saved: SavedLoo
           </figcaption>
         ) : null}
       </figure>
-      <div style={{ position: 'relative' }}>
-        <button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => { playSfx(open ? 'floatMenuClose' : 'floatMenuOpen', { volume: 0.6 }); setOpen((o) => !o); }} style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%' }}>
+      <div style={{ display: 'flex', gap: 6 }}>
+      {arrow(-1)}
+      <div style={{ position: 'relative', flex: 1 }}>
+        <button type="button" aria-haspopup="listbox" aria-expanded={open} onClick={() => { cue('ui:toggle', open ? 'floatMenuClose' : 'floatMenuOpen', { volume: 0.6 }); setOpen((o) => !o); }} style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%' }}>
           <div style={{ clipPath: chamferClip(6), background: open ? T.goldBright : 'rgba(218,162,73,0.45)', padding: 1.2 }}>
             <div style={{ clipPath: chamferClip(5.5), background: T.panel, height: 44, padding: '0 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ flex: 1, color: current ? T.ivory : T.muted, fontFamily: T.bold, fontSize: 14.5 }}>{current ? current.name : 'Choose a preset'}</span>
@@ -391,7 +404,43 @@ function PresetPicker({ look, saved, onPick }: { look: DeckLook; saved: SavedLoo
           </div>
         ) : null}
       </div>
+      {arrow(1)}
+      </div>
     </div>
+  );
+}
+
+/**
+ * The sound schemes (owner, v0.47.14). The ULTRAKILL sounds are not part of RuneKeep: the player points it at their
+ * own copy of the folder, and the files stay in this browser.
+ */
+function Sounds() {
+  const scheme = useSyncExternalStore(onSoundsChange, soundScheme, soundScheme);
+  const loaded = useSyncExternalStore(onSoundsChange, ultrakillLoaded, ultrakillLoaded);
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const total = ULTRAKILL_FILES.length;
+  return (
+    <section style={{ borderBottom: '1px solid rgba(218,162,73,0.14)', padding: '14px 0 14px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+      <SectionTitle>Sounds</SectionTitle>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+        <LookRow name="RuneKeep" active={scheme === 'runekeep'} onPress={() => { setSoundScheme('runekeep'); cue('ui:confirm', 'cardSelect', { volume: 0.6 }); }} />
+        <LookRow name="ULTRAKILL" active={scheme === 'ultrakill'} onPress={() => { setSoundScheme('ultrakill'); cue('ui:confirm', 'cardSelect', { volume: 0.6 }); }} />
+      </div>
+      {scheme === 'ultrakill' ? (
+        <>
+          <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13, lineHeight: '18px' }}>
+            {busy ? 'Reading the folder...' : loaded ? `${loaded} of ${total} sounds ready. They are kept in this browser only; anything missing plays the RuneKeep sound.` : 'RuneKeep does not come with these sounds. Choose your own folder of ULTRAKILL sounds and it keeps the ones it uses, in this browser only.'}
+          </span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <TButton label={loaded ? 'Choose the folder again' : 'Choose the sound folder'} h={34} disabled={busy} onPress={() => input.current?.click()} />
+            {loaded ? <TButton label="Forget them" h={34} disabled={busy} onPress={() => { cue('ui:delete', 'tokenRemove', { volume: 0.6 }); void forgetUltrakill(); }} /> : null}
+          </div>
+          <input ref={(el) => { input.current = el; el?.setAttribute('webkitdirectory', ''); }} type="file" multiple accept="audio/*" style={{ display: 'none' }}
+            onChange={(e) => { const files = e.target.files; if (!files?.length) return; setBusy(true); void keepUltrakillFolder(files).finally(() => { setBusy(false); e.target.value = ''; }); }} />
+        </>
+      ) : null}
+    </section>
   );
 }
 
@@ -402,7 +451,7 @@ function HandLooks({ look, onChange }: { look: DeckLook; onChange: (l: DeckLook)
       <SectionTitle>Ready-made hands</SectionTitle>
       <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 13 }}>These change the row of cards and nothing else.</span>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
-        {BUILTIN_LOOKS.map((b) => <LookRow key={b.name} name={b.name} active={wearsHand(look, b.look)} onPress={() => { playSfx('buttonTap', { volume: 0.6 }); onChange(withHand(look, b.look)); }} />)}
+        {BUILTIN_LOOKS.map((b) => <LookRow key={b.name} name={b.name} active={wearsHand(look, b.look)} onPress={() => { cue('ui:tap', 'buttonTap', { volume: 0.6 }); onChange(withHand(look, b.look)); }} />)}
       </div>
     </section>
   );

@@ -42,6 +42,8 @@ describe('deck look', () => {
     const l = cleanLook({ apart: { cards: [0.4, 0.2], 'src:die': [1.4, -2], bogus: [0.1, 0.1], sort: ['x', 1] } });
     expect(l.apart).toEqual({ cards: [0.4, 0.2], 'src:die': [1, 0] });
     expect(cleanLook({}).apart).toEqual({});
+    expect(cleanLook({ hidden: ['sort', 'nope', 'cat', 3] }).hidden).toEqual(['sort', 'cat']);
+    expect(cleanLook({}).hidden).toEqual([]);
   });
 
   it('keeps every built-in look inside the limits', () => {
@@ -51,8 +53,8 @@ describe('deck look', () => {
   it('describes every setting exactly once', () => {
     const keys = LOOK_PAGES.flatMap((p) => p.groups.flatMap((g) => g.controls.map((c) => c.key)));
     expect(new Set(keys).size).toBe(keys.length);
-    // `apart` (pieces split off their rows) is placed on the table itself, never a control in the panel.
-    expect(keys.sort()).toEqual(Object.keys(DEFAULT_LOOK).filter((k) => k !== 'apart').sort());
+    // `apart` and `hidden` are set on the table itself; `apart` (pieces split off their rows) is placed on the table itself, never a control in the panel.
+    expect(keys.sort()).toEqual(Object.keys(DEFAULT_LOOK).filter((k) => k !== 'apart' && k !== 'hidden').sort());
   });
 
   it('places cards further out monotonically and interpolates between detents', () => {

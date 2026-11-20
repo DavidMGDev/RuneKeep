@@ -26,7 +26,6 @@ import { addDie, dualityVerdict, type PoolDie, poolTotal } from '@/lib/dice-pool
 import type { DicePreset } from '@/lib/dice-presets';
 import { FAVORITES_CATEGORY } from '@/lib/favorites';
 import { shouldShow } from '@/lib/onboarding-store';
-import { playSfx } from '@/lib/sfx';
 import type { CardCategory, CardItem } from '../card-data';
 import { useCarousel } from '../carousel-context';
 import { BakedTokenLayer, type PlacedToken } from '../components/card-tokens';
@@ -48,6 +47,7 @@ import { type CardPose, DOMAT_KEY, type LoosePiece, type PlaceGroup, type Places
 import { CardBreak, type CardBreakMode, DomatCardView, type Fx, FX_CSS, FxLayer, shake } from './table-fx';
 import { type BoardCard, loadBoard, loadLook, loadSpread, saveBoard, saveLook, saveSpread, type SpreadPlace } from './table-store';
 import { Chamfer, DIE_GLYPHS, Glyph, T, TButton } from './table-ui';
+import { cue } from './table-sound';
 
 /** The sheet's dice state and its handle to the table (the traits and the presets roll through it). */
 export type DeskDice = { up: boolean; onToggle: () => void; handleRef: { current: DiceTrayHandle | null }; presets: Omit<Parameters<typeof DicePresetSlots>[0], 'belt'> };
@@ -229,10 +229,10 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const keyCue = useRef<{ cents: number; at: number } | null>(null);
   const held = useRef({ n: 0, last: 0 });
   const onCentre = useCallback(() => {
-    const cue = keyCue.current;
+    const kc = keyCue.current;
     keyCue.current = null;
-    if (cue && performance.now() - cue.at < 400) playSfx('carouselScroll', { cents: cue.cents });
-    else playSfx('carouselScroll');
+    if (kc && performance.now() - kc.at < 400) cue('hand:scroll', 'carouselScroll', { cents: kc.cents });
+    else cue('hand:scroll', 'carouselScroll');
   }, []);
 
   // ---------------------------------------------------------------- cards on the table (copies, or the laid-out hand)
@@ -310,7 +310,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const takeCopy = useCallback((card: TableCard, rect: DOMRect, p: { x: number; y: number }) => {
     const root = tableRef.current?.getBoundingClientRect();
     if (!root) return;
-    playSfx('cardDragStart');
+    cue('card:lift', 'cardDragStart');
     setCopy({ card, x: rect.left - root.left + rect.width / 2, y: rect.top - root.top + rect.height / 2, w: rect.width, px: p.x - root.left, py: p.y - root.top });
   }, []);
   useEffect(() => {
@@ -327,10 +327,10 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         const h = (w * FORGED_H) / FORGED_W;
         const fx = Math.min(r.width - w / 2 - 4, Math.max(w / 2 + 4, x)) / r.width;
         const fy = Math.min(r.height - h / 2 - 4, Math.max(h / 2 + 4, y)) / r.height;
-        playSfx('cardDragEnd');
+        cue('card:place', 'cardDragEnd');
         setCopies([...copiesRef.current, { uid: uidOf(), id: copy.card.id, fx, fy, w, rot: 0 }]);
       } else {
-        playSfx('cardDeselect', { volume: 0.6 });
+        cue('card:cancel', 'cardDeselect', { volume: 0.6 });
       }
       setCopy(null);
     };
@@ -363,7 +363,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     setCopies([...copiesRef.current, { uid, id, fx: x / tableW, fy: Math.min(tableH - pad - h / 2, Math.max(pad + h / 2, y)) / tableH, w, rot: Math.round((Math.random() - 0.5) * 20), phys: true }]);
     const ang = Math.atan2((openTop + openBottom) / 2 - y, tableW / 2 - x) + (Math.random() - 0.5) * 0.9;
     const sp = 1900 + Math.random() * 900;
-    playSfx('cardDragStart', { volume: 0.8, cents: 200 });
+    cue('card:fling', 'cardDragStart', { volume: 0.8, cents: 200 });
     let tries = 0;
     const go = () => {
       if (diceRef.current?.engine()?.throwCard(`card:${uid}`, Math.cos(ang) * sp, Math.sin(ang) * sp, (Math.random() - 0.5) * 9) || ++tries > 20) return;
@@ -493,7 +493,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const eng = diceRef.current?.engine();
     const overSupply = !isRoll && eng && supply.some((s) => { const st = eng.state(s.key) ?? eng.state(`${s.key}:h`) ?? eng.state(`${s.key}:t`); return st && Math.hypot(st.x - p.x, st.y - p.y) < 34; });
     if (overSupply) {
-      playSfx('tokenRemove');
+      cue('piece:putAway', 'tokenRemove');
       if (isLoose) setLoose(looseRef.current.filter((t) => t.key !== base));
       else if (from) ctx.removeToken(from.ref, from.id);
       return true;
@@ -507,14 +507,14 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       if (isLoose) setLoose(looseRef.current.filter((t) => t.key !== base));
       if (isRoll) { eng?.remove(key); for (const k of eng?.keys() ?? []) if (baseOf(k) === base) eng?.remove(k); }
       ctx.placeToken(target.ref, { id: newTokenId(), ...info, x: target.x, y: target.y } as PlacedToken);
-      playSfx('placeToken');
+      cue('piece:onCard', 'placeToken');
       return true;
     }
     if (from) {
       // Off its card: it comes loose where it was let go.
       ctx.removeToken(from.ref, from.id);
       setLoose([...looseRef.current, { key: `free:${newTokenId()}`, token: info, x: p.x, y: p.y }]);
-      playSfx('cardDragEnd', { volume: 0.5 });
+      cue('piece:offCard', 'cardDragEnd', { volume: 0.5 });
       return true;
     }
     return false;
@@ -653,20 +653,20 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const after = forced ? null : takeDomat(stockSaved, now);
     if (!forced && !after) {
       // None in stock: the deck shudders, and its label shows how long until the next.
-      playSfx('cardDisable', { volume: 0.5 });
+      cue('domat:empty', 'cardDisable', { volume: 0.5 });
       const eng = diceRef.current?.engine();
       eng?.jitter(DOMAT_KEY, 0.45);
       setTimeout(() => eng?.jitter(DOMAT_KEY, 0), 320);
       return;
     }
     const card = forced ?? drawDomat(gone);
-    if (!card) { playSfx('cardDisable', { volume: 0.5 }); return; }
+    if (!card) { cue('domat:empty', 'cardDisable', { volume: 0.5 }); return; }
     if (after) {
       setStockSaved(after);
       try { localStorage.setItem(domatKey, JSON.stringify(after)); } catch { /* private window */ }
     }
     if (card.once) setGone((g) => new Set([...g, card.id]));
-    playSfx('cardFullscreenEnter', { volume: 0.7 });
+    cue('domat:draw', 'cardFullscreenEnter', { volume: 0.7 });
     addFx({ kind: 'rune', x: from.x, y: from.y, r: 90, ms: 900, tint: card.tint });
     addFx({ kind: 'spark', x: from.x, y: from.y, r: 80, ms: 600, tint: '#fff3d6' });
     // Where everything lay when it was drawn: the Fates card puts it all back.
@@ -766,7 +766,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       for (const k of eng.keys()) if (baseOf(k) === base) eng.remove(k);
       setLoose(looseRef.current.filter((l) => l.key !== base));
       if (s) addFx({ kind: 'smoke', x: s.x, y: s.y, r: 60, ms: 500 });
-      playSfx('tokenRemove', { volume: 0.5, cents: 400 });
+      cue('thief:steal', 'tokenRemove', { volume: 0.5, cents: 400 });
       return;
     }
     if (!elements.current.size) return;
@@ -787,7 +787,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     for (const k of parts) eng.toss(k, ((ls.x - ws.x) / d) * 1900, ((ls.y - ws.y) / d) * 1900, { gen: 2, power: 1.5 });
     setElement(lk, win);
     addFx({ kind: 'spark', x: ls.x, y: ls.y, r: 70, ms: 500, tint: ELEMENT_TINT[win] });
-    playSfx(win === 'fire' ? 'loseHope' : win === 'water' ? 'cardDragEnd' : 'cardDisable', { volume: 0.45, cents: 300 });
+    cue(`element:${win}`, win === 'fire' ? 'loseHope' : win === 'water' ? 'cardDragEnd' : 'cardDisable', { volume: 0.45, cents: 300 });
   }, [setElement, setLoose, addFx]);  
   /** What a loose piece or a rolled die is, as a token (to keep it in a mimic or a thief's pocket). */
   const tokenOfBase = (base: string): TokenInfo | null => {
@@ -829,7 +829,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const s = eng?.state(key);
     if (!eng || !s) return;
     eng.mimic(key, 1);
-    playSfx('cardFullscreenEnter', { volume: 0.8, cents: -400 });
+    cue('mimic:pop', 'cardFullscreenEnter', { volume: 0.8, cents: -400 });
     addFx({ kind: 'spark', x: s.x, y: s.y, r: 160, ms: 700, tint: '#c9a6f0' });
     setTimeout(() => {
       spill(m?.pieces ?? [], s.x, s.y);
@@ -882,7 +882,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         addFx({ kind: 'ring', x, y, r: diag * 0.6, ms: 800, tint });
         eng.impulse(x, y, diag * 1.2, 7000, CHAIN);
         jolt(1.6);
-        playSfx('gainGoldenHp', { volume: 0.9, cents: -300 });
+        cue('domat:gust', 'gainGoldenHp', { volume: 0.9, cents: -300 });
         break;
       case 'wish': {
         // Every die shows its best, and it counts.
@@ -891,7 +891,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         const dice = looseKeys().filter((k) => k.startsWith('roll:') || looseRef.current.find((l) => l.key === baseOf(k))?.token.kind === 'die');
         for (const k of dice) { const s = eng.state(k); if (s) addFx({ kind: 'consume', x: s.x, y: s.y, r: 60, ms: 700, tint }); }
         h.wish(dice);
-        playSfx('gainHope', { volume: 0.9 });
+        cue('domat:wish', 'gainHope', { volume: 0.9 });
         break;
       }
       case 'elements': {
@@ -908,7 +908,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           redress(was);
         });
         jolt(0.8);
-        playSfx('loseHope', { volume: 0.8, cents: -200 });
+        cue('domat:elements', 'loseHope', { volume: 0.8, cents: -200 });
         break;
       }
       case 'comet':
@@ -921,13 +921,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         setCraters((c) => [...c, { id: uid, x, y }]);
         addLasting(`crater:${uid}`, 'Comet: a crater', tint, null, () => setCraters((c) => c.filter((q) => q.id !== uid)));
         jolt(2);
-        playSfx('cardDisable', { volume: 1, cents: -700 });
+        cue('domat:comet', 'cardDisable', { volume: 1, cents: -700 });
         break;
       case 'mimic': {
         // A whirlpool, then a mimic where it was: it swallows what the water brought and stays, breathing.
         addFx({ kind: 'vortex', x, y, r: 520, ms: 2800, tint });
         eng.field({ kind: 'vortex', x, y, r: diag * 0.8, k: 9000 }, 2600);
-        playSfx('floatMenuOpen', { volume: 0.9, cents: -900 });
+        cue('domat:mimic', 'floatMenuOpen', { volume: 0.9, cents: -900 });
         later(() => {
           const key = `fx:mimic:${uid}`;
           eng.add(chestSpec(key), x, y, { pop: true });
@@ -943,21 +943,21 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           setMimics((m) => [...m, { key, x, y, pieces }]);
           addFx({ kind: 'implode', x, y, r: 200, ms: 700, tint });
           jolt(0.8);
-          playSfx('cardDragEnd', { volume: 1, cents: -900 });
+          cue('mimic:swallow', 'cardDragEnd', { volume: 1, cents: -900 });
         }, 2600);
         break;
       }
       case 'blackhole':
         addFx({ kind: 'implode', x, y, r: 700, ms: 1900, tint: '#5b4a7a' });
         eng.field({ kind: 'radial', x, y, r: diag * 1.2, k: -16000 }, 1800);
-        playSfx('floatMenuOpen', { volume: 0.9, cents: -1200 });
+        cue('domat:blackhole', 'floatMenuOpen', { volume: 0.9, cents: -1200 });
         later(() => {
           breakNear(300, 'explode');
           eng.impulse(x, y, diag * 1.2, 8000, CHAIN);
           addFx({ kind: 'flash', x, y, r: 0, ms: 800, tint: '#ffffff' });
           addFx({ kind: 'ring', x, y, r: diag, ms: 1100, tint: '#ffffff' });
           shake(tableRef.current, 2);
-          playSfx('gainGoldenHp', { volume: 0.9, cents: -900 });
+          cue('blackhole:boom', 'gainGoldenHp', { volume: 0.9, cents: -900 });
         }, 1850);
         break;
       case 'cage': {
@@ -968,7 +968,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         addLasting(id, 'Donjon: a cage', tint, null, () => { eng.cage(id, null); setCages((c) => c.filter((q) => q.id !== id)); });
         addFx({ kind: 'ring', x, y, r, ms: 700, tint });
         jolt(0.6);
-        playSfx('cardDragEnd', { volume: 0.9, cents: -600 });
+        cue('domat:cage', 'cardDragEnd', { volume: 0.9, cents: -600 });
         break;
       }
       case 'petrify': {
@@ -979,7 +979,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         addFx({ kind: 'stone', x, y, r: diag, ms: 1400 });
         addLasting('petrify', 'Euryale: stone', tint, null, () => { const was = [...stone.current]; stone.current.clear(); redress(was); eng.unpin(was); });
         jolt(0.5);
-        playSfx('cardDisable', { volume: 0.8, cents: -500 });
+        cue('domat:petrify', 'cardDisable', { volume: 0.8, cents: -500 });
         break;
       }
       case 'lock': {
@@ -990,7 +990,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         eng.pin(keys, 3_600_000);
         addFx({ kind: 'rune', x, y, r: 260, ms: 1200, tint });
         addLasting('lock', 'Key: locked in place', tint, null, () => { const was = [...gilt.current]; gilt.current.clear(); redress(was); eng.unpin(was); });
-        playSfx('cardSelect', { volume: 0.8, cents: -300 });
+        cue('domat:lock', 'cardSelect', { volume: 0.8, cents: -300 });
         break;
       }
       case 'tiny': {
@@ -999,14 +999,14 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         redress(keys);
         addFx({ kind: 'implode', x, y, r: 360, ms: 700, tint });
         addLasting('tiny', 'Fool: everything small', tint, null, () => { const was = [...tiny.current]; tiny.current.clear(); redress(was); });
-        playSfx('carouselScroll', { volume: 0.9, cents: 900 });
+        cue('domat:tiny', 'carouselScroll', { volume: 0.9, cents: 900 });
         break;
       }
       case 'contrary':
         eng.contrary(true);
         addFx({ kind: 'smoke', x, y, r: 420, ms: 1000 });
         addLasting('contrary', 'Idiot: throws fly backwards', tint, 30000, () => eng.contrary(false));
-        playSfx('carouselScroll', { volume: 0.8, cents: -400 });
+        cue('domat:contrary', 'carouselScroll', { volume: 0.8, cents: -400 });
         break;
       case 'follow': {
         // Everything loose chases the pointer.
@@ -1018,7 +1018,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         eng.aura('jester', { kind: 'radial', x, y, r: 2400, k: -2600 });
         addFx({ kind: 'spark', x, y, r: 360, ms: 900, tint });
         addLasting('follow', 'Jester: follow the pointer', tint, 20000, () => { window.removeEventListener('pointermove', pull); eng.aura('jester', null); });
-        playSfx('placeToken', { volume: 0.7, cents: 700 });
+        cue('domat:follow', 'placeToken', { volume: 0.7, cents: 700 });
         break;
       }
       case 'seesaw': {
@@ -1032,7 +1032,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         }, 120);
         timers.current.push(tip);
         addLasting('seesaw', 'Balance: the table tips', tint, 20000, () => { clearInterval(tip); eng.aura('seesaw', null); if (tiltRef.current) tiltRef.current.style.background = 'none'; });
-        playSfx('gearScroll2', { volume: 0.8, cents: -500 });
+        cue('domat:seesaw', 'gearScroll2', { volume: 0.8, cents: -500 });
         break;
       }
       case 'moon': {
@@ -1041,7 +1041,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         eng.slippery(0.02, 30000);
         eng.impulse(x, y, diag * 1.2, 1800);
         addLasting('moon', 'Moon: the felt is ice', tint, 30000, () => { eng.slippery(1, 0); setFx((l) => l.filter((f) => f.id !== frost)); });
-        playSfx('gainHope', { volume: 0.8, cents: -500 });
+        cue('domat:moon', 'gainHope', { volume: 0.8, cents: -500 });
         break;
       }
       case 'knight': {
@@ -1066,7 +1066,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         }, 90);
         timers.current.push(run);
         later(() => { clearInterval(run); if (eng.has(key)) eng.shatter(key); }, 4000);
-        playSfx('cardDragEnd', { volume: 1, cents: -200 });
+        cue('domat:knight', 'cardDragEnd', { volume: 1, cents: -200 });
         break;
       }
       case 'thief': {
@@ -1092,13 +1092,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           spill(got, s.x, s.y);
         }, 12000);
         addFx({ kind: 'smoke', x, y, r: 220, ms: 900 });
-        playSfx('cardDeselect', { volume: 0.8 });
+        cue('domat:thief', 'cardDeselect', { volume: 0.8 });
         break;
       }
       case 'rewind':
         addFx({ kind: 'vortex', x, y, r: 420, ms: 1300, tint });
         for (const [k, p] of d.snap) if (eng.has(k) || eng.cardKeys().includes(k)) eng.home(k, p.x, p.y);
-        playSfx('gearScroll2', { volume: 0.8, cents: -300 });
+        cue('domat:rewind', 'gearScroll2', { volume: 0.8, cents: -300 });
         break;
       case 'throne': {
         const keys = looseKeys();
@@ -1106,7 +1106,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         keys.forEach((k, i) => { const a = (i / Math.max(1, keys.length)) * Math.PI * 2 - Math.PI / 2; eng.home(k, clampX(x + Math.cos(a) * R), clampY(y + Math.sin(a) * R)); });
         addFx({ kind: 'ring', x, y, r: R + 60, ms: 1100, tint });
         addFx({ kind: 'flash', x, y, r: 0, ms: 600, tint });
-        playSfx('gainGoldenHp', { volume: 0.7 });
+        cue('domat:throne', 'gainGoldenHp', { volume: 0.7 });
         break;
       }
       case 'gems': {
@@ -1116,7 +1116,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         addFx({ kind: 'spark', x, y, r: 360, ms: 1000, tint });
         addFx({ kind: 'flash', x, y, r: 0, ms: 600, tint });
         jolt(0.8);
-        playSfx('gainGoldenHp', { volume: 0.8, cents: 500 });
+        cue('domat:gems', 'gainGoldenHp', { volume: 0.8, cents: 500 });
         break;
       }
       case 'talons':
@@ -1125,7 +1125,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         breakNear(380, 'tear');
         eng.impulse(x, y, diag, 3200, CHAIN);
         jolt(1);
-        playSfx('tokenRemove', { volume: 1, cents: -300 });
+        cue('domat:talons', 'tokenRemove', { volume: 1, cents: -300 });
         break;
       case 'ruin':
         addFx({ kind: 'ring', x, y, r: diag, ms: 1200, tint });
@@ -1133,7 +1133,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         breakNear(Math.max(700, diag * 0.5), 'tear');
         eng.impulse(x, y, diag, 4200, CHAIN);
         jolt(1.4);
-        playSfx('cardDisable', { volume: 1, cents: -600 });
+        cue('domat:ruin', 'cardDisable', { volume: 1, cents: -600 });
         break;
       case 'vizier': {
         addFx({ kind: 'spark', x, y, r: 420, ms: 1000, tint });
@@ -1157,16 +1157,16 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     setDrawn((l) => l.filter((c) => c.uid !== uid));
     addFx({ kind: 'consume', x, y, r: 120, ms: 520, tint: d.card.tint });
     addFx({ kind: 'rune', x, y, r: 150, ms: 1100, tint: d.card.tint });
-    playSfx('cardDragEnd', { volume: 0.7 });
+    cue('domat:play', 'cardDragEnd', { volume: 0.7 });
     setTimeout(() => runEffect(d, x, y), 300);
   }, [addFx, runEffect]);
 
   // ---------------------------------------------------------------- dice and controls
   const canReorder = !!ctx.onReorderCards && category !== FAVORITES_CATEGORY && deck.length > 1 && !spread;
-  const openSort = useCallback(() => { playSfx('floatMenuOpen'); setSorting(true); }, []);
+  const openSort = useCallback(() => { cue('ui:open', 'floatMenuOpen'); setSorting(true); }, []);
   const actions = useMemo<TableAction[]>(() => [
-    { key: 'cards', label: 'Cards', onPress: () => { playSfx('panelOpen'); onOpen('cards'); } },
-    { key: 'state', label: 'State', onPress: () => { playSfx('panelOpen'); onOpen('modifiers'); } },
+    { key: 'cards', label: 'Cards', onPress: () => { cue('ui:open', 'panelOpen'); onOpen('cards'); } },
+    { key: 'state', label: 'State', onPress: () => { cue('ui:open', 'panelOpen'); onOpen('modifiers'); } },
     { key: 'sort', label: 'Sort deck', onPress: openSort, disabled: !canReorder },
   ], [onOpen, canReorder, openSort]);
   const tableDecks = useMemo<TableDeck[]>(() => {
@@ -1204,7 +1204,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     addFx({ kind: 'consume', x: at.x, y: at.y, r: 150, ms: 700, tint: '#F2C66A' });
     addFx({ kind: 'word', x: Math.min(tableW - 220, Math.max(220, at.x)), y: Math.min(tableH - 120, Math.max(190, at.y)), r: 64, ms: 1700, tint: '#E0A830', label: 'CRITICAL' });
     shake(tableRef.current, 1.6);
-    playSfx('levelUpComplete', { volume: 0.8 });
+    cue('roll:crit', 'levelUpComplete', { volume: 0.8 });
   }, [addFx, tableW, tableH]);
   const onBreak = useCallback((keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean, hits: Impact[]) => {
     const bases = new Set(keys.map(baseOf));
@@ -1291,10 +1291,10 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const escRef = useRef<() => boolean>(() => false);
   escRef.current = () => {
     if (result) { setResult(null); return true; }
-    if (menu) { playSfx('floatMenuClose'); setMenu(null); return true; }
-    if (tableMenu) { playSfx('floatMenuClose'); setTableMenu(null); return true; }
-    if (copy) { playSfx('cardDeselect', { volume: 0.6 }); setCopy(null); return true; }
-    if (settings) { playSfx('panelClose'); setSettings(false); return true; }
+    if (menu) { cue('ui:close', 'floatMenuClose'); setMenu(null); return true; }
+    if (tableMenu) { cue('ui:close', 'floatMenuClose'); setTableMenu(null); return true; }
+    if (copy) { cue('card:cancel', 'cardDeselect', { volume: 0.6 }); setCopy(null); return true; }
+    if (settings) { cue('ui:close', 'panelClose'); setSettings(false); return true; }
     if (selRef.current.length) { clearSelection(); return true; }
     return false;
   };
@@ -1330,7 +1330,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         const to = at + (key === ']' ? 1 : -1);
         if (at < 0 || to < 0 || to >= ids.length) return;
         [ids[at], ids[to]] = [ids[to], ids[at]];
-        playSfx('cardDragEnd');
+        cue('card:place', 'cardDragEnd');
         k.ctx.onReorderCards?.([ids[to]], k.category, ids);
         carRef.current?.scrollTo(to);
         return;
@@ -1359,7 +1359,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       e.preventDefault();
       e.stopPropagation();
       const p = local(e.clientX, e.clientY);
-      playSfx('floatMenuOpen');
+      cue('ui:open', 'floatMenuOpen');
       setMenu({ id: el.dataset.cardId!, x: p.x, y: p.y });
     };
     host.addEventListener('contextmenu', onMenu);
@@ -1433,11 +1433,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const togglePlayground = () => {
     const eng = diceRef.current?.engine();
     if (playground) {
-      playSfx('panelClose');
+      cue('playground:off', 'panelClose');
+      // Leaving resets the whole table, not just the cards (owner, v0.47.14).
+      resetAll();
       flyBack(pgCards.map((b) => b.uid), () => { setPgCards([]); setPlayground(false); setTimeout(() => diceRef.current?.resetHome(), 80); });
       return;
     }
-    playSfx('levelUpComplete', { volume: 0.5 });
+    cue('playground:on', 'levelUpComplete', { volume: 0.5 });
     clearSelection();
     setSettings(false);
     setPeek(false);
@@ -1522,7 +1524,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
                 const b = boardRef.current.find((c) => c.uid === uid);
                 if (!b) return;
                 const p = local(x, y);
-                playSfx('floatMenuOpen');
+                cue('ui:open', 'floatMenuOpen');
                 setMenu({ id: b.id, x: p.x, y: p.y, board: uid });
               }}
             />
@@ -1558,7 +1560,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             onMove={(x, y) => setDrawn((l) => l.map((c) => (c.uid === d.uid ? { ...c, x, y } : c)))}
             onPlace={(x, y) => setDrawn((l) => l.map((c) => (c.uid === d.uid ? { ...c, x, y, held: false } : c)))}
             onPlay={(x, y) => playDrawn(d.uid, x, y)}
-            onRemove={() => { playSfx('cardDeselect', { volume: 0.6 }); setDrawn((l) => l.filter((c) => c.uid !== d.uid)); if (d.card.once) setGone((g) => { const n = new Set(g); n.delete(d.card.id); return n; }); }} />
+            onRemove={() => { cue('card:cancel', 'cardDeselect', { volume: 0.6 }); setDrawn((l) => l.filter((c) => c.uid !== d.uid)); if (d.card.once) setGone((g) => { const n = new Set(g); n.delete(d.card.id); return n; }); }} />
         ))}
 
         {showHint ? (
@@ -1594,7 +1596,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           controlFinish={look.controlDice}
           ctlMotion={look.ctlMotion}
           ctlSize={look.ctlSize}
-          onNewCategory={() => { playSfx('panelOpen'); onOpen('newCategory'); }}
+          onNewCategory={() => { cue('ui:open', 'panelOpen'); onOpen('newCategory'); }}
           catSize={look.catSize}
           numberFinish={look.numberDice}
           tokens={pieces}
@@ -1611,13 +1613,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               setSupColor(next);
               if (colorSave.current) clearTimeout(colorSave.current);
               colorSave.current = setTimeout(() => ctx.setTokenColor(next), 600);
-              playSfx('tokenCopyColor', { volume: 0.5 });
+              cue('spawner:color', 'tokenCopyColor', { volume: 0.5 });
             } else if (key === 'src:die') {
               setSupplyDie((d) => (dir > 0 ? nextDieType(d) : DIE_TYPES[(DIE_TYPES.indexOf(d) - 1 + DIE_TYPES.length) % DIE_TYPES.length]));
-              playSfx('placeToken', { volume: 0.45, cents: 200 });
+              cue('spawner:die', 'placeToken', { volume: 0.45, cents: 200 });
             } else if (key === 'src:mat') {
               setMaterial((m) => MATERIALS[(MATERIALS.indexOf(m) + dir + MATERIALS.length) % MATERIALS.length]);
-              playSfx('placeToken', { volume: 0.45, cents: 100 });
+              cue('spawner:mat', 'placeToken', { volume: 0.45, cents: 100 });
             }
           }}
           onLooseRest={(key, x, y) => setLoose(looseRef.current.map((t) => (t.key === key ? { ...t, x, y } : t)))}
@@ -1626,7 +1628,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           onRerolled={reroll}
           onDropPiece={dropToken}
           onPopToken={popToken}
-          onTableMenu={(x, y, piece) => { const p = local(x, y); playSfx('floatMenuOpen'); setTableMenu({ ...p, piece }); }}
+          onTableMenu={(x, y, piece) => { const p = local(x, y); cue('ui:open', 'floatMenuOpen'); setTableMenu({ ...p, piece }); }}
           onReady={() => { setEngineReady(true); onReady?.(); }}
           onSelect={setSelection}
           onHardHit={onHardHit}
@@ -1647,6 +1649,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             for (const k of g === 'ctl' ? ['cards', 'state', 'sort'] : ['src:mat', 'src:color', 'src:die', 'src:domat']) delete apart[k];
             setLook({ ...lookRef.current, apart });
           }}
+          hidden={playground ? undefined : look.hidden}
+          onHide={(keys) => { const h = lookRef.current.hidden; setLook({ ...lookRef.current, hidden: keys.every((k) => h.includes(k)) ? h.filter((k) => !keys.includes(k)) : [...new Set([...h, ...keys])] }); }}
           onMovePiece={(k, x, y) => setLook({ ...lookRef.current, apart: { ...lookRef.current.apart, [k]: [Math.min(1, Math.max(0, x / tableW)), Math.min(1, Math.max(0, y / tableH))] } })}
           inert={overlay || settings}
         />
@@ -1667,7 +1671,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               const slot = presets.findIndex((p) => !p);
               if (slot < 0 || !selTypes.length) return;
               dice.presets.onWrite(slot, { id: `p${Date.now().toString(36)}`, name, dice: selTypes });
-              playSfx('cardSelect', { volume: 0.6 });
+              cue('ui:confirm', 'cardSelect', { volume: 0.6 });
             }}
             onPutBack={() => {
               const eng = diceRef.current?.engine();
@@ -1675,19 +1679,19 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               for (const k of eng?.keys() ?? []) if (bases.has(baseOf(k))) eng?.shatter(k);
               setLoose(looseRef.current.filter((t) => !bases.has(t.key)));
               clearSelection();
-              playSfx('tokenRemove');
+              cue('piece:putAway', 'tokenRemove');
             }}
             onClear={clearSelection} />
         ) : null}
 
         {/* Reset, tidy and settings, in the lower left corner: buttons always win over the pieces under them. */}
         <div data-ui="" style={{ position: 'absolute', left: pad + 10, bottom: pad + 10, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 1260 }}>
-          {look.controls === 'hidden' && !playground ? <CornerButton glyph="roll" label={peeking ? 'Hide the control dice' : 'Show the control dice'} active={peeking} onPress={() => { playSfx(peeking ? 'panelClose' : 'panelOpen'); setPeek((v) => !v); }} /> : null}
-          {playground ? null : <CornerButton glyph="reset" label="Reset the table" count={looseCount} onPress={() => { playSfx('gearScroll2', { volume: 0.5 }); resetAll(); }} />}
+          {look.controls === 'hidden' && !playground ? <CornerButton glyph="roll" label={peeking ? 'Hide the control dice' : 'Show the control dice'} active={peeking} onPress={() => { cue('ui:toggle', peeking ? 'panelClose' : 'panelOpen'); setPeek((v) => !v); }} /> : null}
+          {playground ? null : <CornerButton glyph="reset" label="Reset the table" count={looseCount} onPress={() => { cue('table:reset', 'gearScroll2', { volume: 0.5 }); resetAll(); }} />}
           <CornerButton glyph="play" label={playground ? 'Leave the playground' : 'Playground'} active={playground} onPress={togglePlayground} />
-          {playground ? null : <CornerButton glyph="settings" label="Table settings" active={settings} onPress={() => { playSfx(settings ? 'panelClose' : 'panelOpen'); setSettings((s) => !s); }} />}
+          {playground ? null : <CornerButton glyph="settings" label="Table settings" active={settings} onPress={() => { cue('ui:toggle', settings ? 'panelClose' : 'panelOpen'); setSettings((s) => !s); }} />}
           {/* Testing only for now (owner, v0.47.11): draw any card of the Deck of Many Things, stock or not. */}
-          {playground ? null : <CornerButton glyph="roll" label="Testing: draw any Many Things card" active={picking} onPress={() => { playSfx(picking ? 'floatMenuClose' : 'floatMenuOpen'); setPicking((v) => !v); }} />}
+          {playground ? null : <CornerButton glyph="roll" label="Testing: draw any Many Things card" active={picking} onPress={() => { cue('ui:toggle', picking ? 'floatMenuClose' : 'floatMenuOpen'); setPicking((v) => !v); }} />}
         </div>
         {/* What the Deck of Many Things has in play, and how long each has left. */}
         {lasting.length ? (
@@ -1712,7 +1716,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         ) : null}
         {settings ? (
           <div style={{ position: 'absolute', left: '50%', bottom: pad + 14, transform: 'translateX(-50%)', zIndex: 1255, pointerEvents: 'none', padding: '7px 14px', background: 'rgba(11,14,19,0.92)', border: `1px solid ${T.goldSoft}`, color: T.goldText, fontFamily: T.bold, fontSize: 13, whiteSpace: 'nowrap' }}>
-            Drag a framed row to move it. The arrows beside its name stand it on end; the link splits it into pieces you place one by one.
+            Drag a framed row to move it. The arrows beside its name stand it on end; the link splits it into pieces you place one by one; the eye hides it until you edit again.
           </div>
         ) : null}
         {settings && !spread ? (
@@ -1725,7 +1729,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
 
         {sorting ? (
           <DesktopPortal to="side" priority="dialog" onDismiss={() => setSorting(false)}>
-            <SortPanel file={sortFile} ids={deck.map((c) => c.id)} onApply={(ordered, moved) => { playSfx('cardDragEnd'); ctx.onReorderCards?.(moved, category, ordered); }} onClose={() => setSorting(false)} />
+            <SortPanel file={sortFile} ids={deck.map((c) => c.id)} onApply={(ordered, moved) => { cue('card:place', 'cardDragEnd'); ctx.onReorderCards?.(moved, category, ordered); }} onClose={() => setSorting(false)} />
           </DesktopPortal>
         ) : null}
         {overlay ? <div style={{ position: 'absolute', inset: 0, zIndex: 800, background: 'rgba(6,8,13,0.45)' }} /> : null}
@@ -1734,7 +1738,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             presets={presets} noRolls={!!tableMenu.piece?.own}
             onRollPreset={(p) => { rollFrom.current = { x: tableMenu.x, y: tableMenu.y }; dice.presets.onPlay(p); }}
             onRollPair={() => { rollFrom.current = { x: tableMenu.x, y: tableMenu.y }; dice.handleRef.current?.rollDuality('Hope and Fear', 0); }}
-            onDeletePreset={(slot) => { dice.presets.onWrite(slot, null); playSfx('tokenRemove', { volume: 0.6 }); }}
+            onDeletePreset={(slot) => { dice.presets.onWrite(slot, null); cue('ui:delete', 'tokenRemove', { volume: 0.6 }); }}
             rows={[
               ...(tableMenu.piece ? [{ label: tableMenu.piece.label, onPress: () => {
                 const k = tableMenu.piece!.key;
@@ -1759,7 +1763,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               const p = livePoses.get(uid);
               livePoses.delete(uid);
               setBoard(boardRef.current.map((b) => (b.uid !== uid ? b : b.phys ? { ...b, phys: false, rot: 0, ...(p ? { fx: p.x / tableW, fy: p.y / tableH } : {}) } : { ...b, phys: true })));
-              playSfx('cardSelect', { volume: 0.6 });
+              cue('card:physical', 'cardSelect', { volume: 0.6 });
             } : undefined}
             board={menu.board && !spread ? () => { const u = menu.board!; if (u.startsWith('pg:')) setPgCards((l) => l.filter((b) => b.uid !== u)); else setCopies(copiesRef.current.filter((b) => b.uid !== u)); } : undefined}
             place={menu.board || spread ? undefined : () => {
@@ -1771,8 +1775,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             throwIt={menu.board || spread ? undefined : () => throwCopy(menu.id)} />
         ) : null}
       </div>
-      {result ? <RollPopup key={result.dice.map((d) => d.id).join()} result={result} top={plaqueTop} minWidth={barOn ? barBox.w : undefined} box={{ left: winW - tableW, top: 0, width: tableW, height: tableH }} onAccept={() => { playSfx('buttonTap'); setResult(null); }} /> : null}
-      {settings ? <LookPanel look={look} onChange={setLook} onClose={() => { playSfx('panelClose'); setSettings(false); }} onClearTable={clearAll} boardCount={spread ? 0 : copies.length} pieceCount={looseCount} box={port} /> : null}
+      {result ? <RollPopup key={result.dice.map((d) => d.id).join()} result={result} top={plaqueTop} minWidth={barOn ? barBox.w : undefined} box={{ left: winW - tableW, top: 0, width: tableW, height: tableH }} onAccept={() => { cue('ui:tap', 'buttonTap'); setResult(null); }} /> : null}
+      {settings ? <LookPanel look={look} onChange={setLook} onClose={() => { cue('ui:close', 'panelClose'); setSettings(false); }} onClearTable={clearAll} boardCount={spread ? 0 : copies.length} pieceCount={looseCount} box={port} /> : null}
     </DesktopPortal>
   );
 }
@@ -1789,10 +1793,10 @@ function HandGrip({ hand, onMove }: { hand: Bounds; onMove: (centreY: number) =>
     e.preventDefault();
     const sy = e.clientY, cy = (hand.top + hand.bottom) / 2;
     const move = (m: PointerEvent) => onMove(cy + m.clientY - sy);
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); playSfx('cardDragEnd', { volume: 0.5 }); };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cue('ui:dragEnd', 'cardDragEnd', { volume: 0.5 }); };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
-    playSfx('cardDragStart', { volume: 0.5 });
+    cue('ui:dragStart', 'cardDragStart', { volume: 0.5 });
   };
   return (
     <>
@@ -1911,7 +1915,7 @@ function ChargeRoll({ disabled, onRoll }: { disabled: boolean; onRoll: (power: n
       if (next !== s.stage) { s.stage = next; setStage(next as 0 | 1 | 2 | 3); }
       if (!s.lit && s.power >= 2) {
         s.lit = true;
-        playSfx('gainGoldenHp', { volume: 0.6, cents: 900 });
+        cue('charge:lit', 'gainGoldenHp', { volume: 0.6, cents: 900 });
       }
       s.raf = requestAnimationFrame(tick);
     };
@@ -2007,7 +2011,7 @@ function MenuShell({ x, y, tableW, tableH, rows, onClose, head, side }: { x: num
   const left = Math.max(8, Math.min(x, tableW - W - 24)), top = Math.max(8, Math.min(y, tableH - H - 24));
   return (
     <>
-      <div data-ui="" onPointerDown={(e) => { e.stopPropagation(); playSfx('floatMenuClose'); onClose(); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }} style={{ position: 'absolute', inset: 0, zIndex: 900 }} aria-label="Close the menu" />
+      <div data-ui="" onPointerDown={(e) => { e.stopPropagation(); cue('ui:close', 'floatMenuClose'); onClose(); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }} style={{ position: 'absolute', inset: 0, zIndex: 900 }} aria-label="Close the menu" />
       <div role="menu" onPointerDown={(e) => e.stopPropagation()} style={{ position: 'absolute', zIndex: 901, left, top, width: W }}>
         <Chamfer c={9} fill={T.panelLit} line={T.gold} width={1.3} inner={{ padding: 7 }}>
           {head}
@@ -2034,7 +2038,7 @@ function TableMenu({ rows, presets, onRollPreset, onRollPair, onDeletePreset, no
   const [hover, setHover] = useState(false);
   const list = presets.map((p, slot) => ({ p, slot })).filter((x): x is { p: DicePreset; slot: number } => !!x.p);
   const head = (
-    <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={open} onClick={() => { playSfx('floatMenuHighlight', { volume: 0.4 }); setOpen((o) => !o); }} onPointerEnter={() => { setHover(true); setOpen(true); }} onPointerLeave={() => setHover(false)}
+    <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={open} onClick={() => { cue('ui:hover', 'floatMenuHighlight', { volume: 0.4 }); setOpen((o) => !o); }} onPointerEnter={() => { setHover(true); setOpen(true); }} onPointerLeave={() => setHover(false)}
       style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', display: 'flex', alignItems: 'center', width: '100%', height: 38, padding: '0 12px', marginBottom: 2, background: hover || open ? 'rgba(200,27,24,0.85)' : 'transparent', color: T.ivory, fontFamily: T.bold, fontSize: 13.5 }}>
       <span style={{ flex: 1 }}>Roll dice</span>
       <Glyph d='<path d="M9 6l6 6-6 6"/>' size={14} color={T.ivory} />
@@ -2055,7 +2059,7 @@ function TableMenu({ rows, presets, onRollPreset, onRollPair, onDeletePreset, no
           ) : (
             <div key={p.id} style={{ display: 'flex', alignItems: 'center' }}>
               <div style={{ flex: 1, minWidth: 0 }}><MenuRow label={p.name} sub={summarise(p.dice)} onPress={() => { rest.onClose(); onRollPreset(p); }} /></div>
-              <button type="button" title={`Delete ${p.name}`} aria-label={`Delete ${p.name}`} onClick={() => { playSfx('buttonTap', { volume: 0.4 }); setConfirm(slot); }} style={{ all: 'unset', cursor: 'pointer', display: 'flex', padding: 9 }}>
+              <button type="button" title={`Delete ${p.name}`} aria-label={`Delete ${p.name}`} onClick={() => { cue('ui:tap', 'buttonTap', { volume: 0.4 }); setConfirm(slot); }} style={{ all: 'unset', cursor: 'pointer', display: 'flex', padding: 9 }}>
                 <Glyph d='<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>' size={14} color={T.muted} />
               </button>
             </div>
@@ -2101,7 +2105,7 @@ function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, throwIt, sp
 function MenuRow({ label, sub, danger, onPress }: { label: string; sub?: string; danger?: boolean; onPress: () => void }) {
   const [hover, setHover] = useState(false);
   return (
-    <button type="button" role="menuitem" onClick={onPress} onPointerEnter={() => { setHover(true); playSfx('floatMenuHighlight', { volume: 0.4 }); }} onPointerLeave={() => setHover(false)}
+    <button type="button" role="menuitem" onClick={onPress} onPointerEnter={() => { setHover(true); cue('ui:hover', 'floatMenuHighlight', { volume: 0.4 }); }} onPointerLeave={() => setHover(false)}
       style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, width: '100%', height: 38, padding: '0 12px', background: hover ? (danger ? T.red : 'rgba(200,27,24,0.85)') : 'transparent', color: danger && !hover ? '#E2705A' : T.ivory, fontFamily: T.bold, fontSize: 13.5 }}>
       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
       {sub ? <span style={{ marginLeft: 'auto', color: hover ? 'rgba(253,252,247,0.8)' : T.muted, fontFamily: T.medium, fontSize: 12.5, whiteSpace: 'nowrap' }}>{sub}</span> : null}

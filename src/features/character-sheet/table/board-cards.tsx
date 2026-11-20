@@ -8,10 +8,10 @@
 import { memo, useEffect, useRef, useState } from 'react';
 
 import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
-import { playSfx } from '@/lib/sfx';
 import { CardFace, type TableCard } from './desk-carousel';
 import type { BoardCard } from './table-store';
 import { T } from './table-ui';
+import { cue } from './table-sound';
 
 export const MIN_W = 96;
 /** A laid card's size until it is resized; a click on the size grip comes back to it. */
@@ -134,7 +134,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
       window.removeEventListener('pointercancel', up);
       setDrag(null);
       // A click puts the card back upright (owner, v0.47.2); a drag turns it.
-      if (!moved) { playSfx('cardDragEnd', { volume: 0.5 }); onRotate(0); }
+      if (!moved) { cue('card:place', 'cardDragEnd', { volume: 0.5 }); onRotate(0); }
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -158,7 +158,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
     let moved = false;
     let last = { fx: cx / feltW, fy: cy / feltH };
     if (mode === 'move') {
-      playSfx('cardDragStart', { volume: 0.6 });
+      cue('card:lift', 'cardDragStart', { volume: 0.6 });
       // Caught: a sliding physical card stops in the hand the moment it is pressed.
       onDragTo(cx, cy, rot);
     }
@@ -183,13 +183,13 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       setDrag(null);
-      if (mode === 'size' && !moved) { playSfx('cardDragEnd', { volume: 0.5 }); onResize(DEFAULT_W); return; }
+      if (mode === 'size' && !moved) { cue('card:place', 'cardDragEnd', { volume: 0.5 }); onResize(DEFAULT_W); return; }
       if (mode === 'move') {
         if (moved) onSettle();
         onDragTo(last.fx * feltW, last.fy * feltH, rot, true);
-        if (!moved) { if (pages > 1) { playSfx('gearScroll2', { volume: 0.5 }); onTurn(); } return; }
+        if (!moved) { if (pages > 1) { cue('card:turn', 'gearScroll2', { volume: 0.5 }); onTurn(); } return; }
         const over = overTray(u.clientX, u.clientY);
-        playSfx(over ? 'tokenRemove' : 'cardDragEnd', { volume: 0.7 });
+        cue('card:place', over ? 'tokenRemove' : 'cardDragEnd', { volume: 0.7 });
         // A card let go half off the felt (and not over the tray) slides back on.
         if (!over && last.fy * feltH > feltH - 20) onMove(last.fx, (feltH - 20) / feltH, false);
         onDrop(over);

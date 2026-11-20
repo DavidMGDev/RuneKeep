@@ -22,7 +22,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRe
 import { Display } from '@/constants/theme';
 import { DIE_COLOR, DIE_INK, type DieType, FEAR_INK, FEAR_PURPLE, HOPE_GOLD, HOPE_INK, kindScale, tokenFill, type TokenKind } from '../components/card-tokens-data';
 import type { PoolDie } from '@/lib/dice-pool';
-import { playSfx, playSynth } from '@/lib/sfx';
+import { playSynth } from '@/lib/sfx';
 import type { CardCategory } from '../card-data';
 import { CategoryGlyph } from '../sheet/deck-toggle-icon';
 import { createFireLayer, type FireLayer } from './piece-fire';
@@ -30,6 +30,7 @@ import type { DiceEngine, DieSpec, Finish, Shape, Walls } from './dice-engine';
 import type { Bounds, Impact, Obstacle } from './dice-physics';
 import { loadDicePlaces, saveDicePlaces } from './table-store';
 import { Glyph, DIE_GLYPHS, glyphImage, type GlyphKey, T, TButton, tinted } from './table-ui';
+import { cue, knockCue } from './table-sound';
 
 export type ActionKey = 'cards' | 'state' | 'sort';
 export interface TableAction { key: ActionKey; label: string; onPress: () => void; disabled?: boolean }
@@ -276,6 +277,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
   onTidied: () => void;
   /** Settings are open: everything goes home and each row can be dragged somewhere else. */
   editing: boolean;
+  /** Pieces hidden from play (owner, v0.47.14): gone from the table except while editing. */
+  hidden?: string[];
+  /** Hide these pieces, or show them again when they are all hidden already. */
+  onHide?: (keys: string[]) => void;
   onMoveGroup: (g: PlaceGroup, x: number, y: number) => void;
   onFlipGroup: (g: 'ctl' | 'sup') => void;
   /** Split a row into pieces placed on their own (from where each lies now, px), or join them back into it. */
@@ -291,6 +296,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
   onReady?: () => void;
 }>(function TableDice(props, ref) {
   const { host, width, height, bounds, obstacles, walls, decks, current, onPickDeck, actions, controls, controlFinish, numberFinish, tokens, inert, places, editing } = props;
+  const hid = editing ? [] : props.hidden ?? [];
+  const hidKey = hid.join('|');
   const canvas = useRef<HTMLCanvasElement>(null);
   const [engine, setEngine] = useState<DiceEngine | null>(null);
   const [failed, setFailed] = useState(false);
@@ -334,12 +341,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
         eng = e;
         if (__DEV__) (globalThis as { __rkEngine?: DiceEngine }).__rkEngine = e;
         e.onImpact((hit: Impact) => {
-          void import('./dice-engine').then((m) => m.knock(playSynth, hit));
+          if (!knockCue(hit.kind, hit.speed)) void import('./dice-engine').then((m) => m.knock(playSynth, hit));
           if (hit.kind === 'rail' && hit.speed > 2400) live.current.onHardHit(hit.speed);
           if (hit.other) live.current.onKnock?.(hit.key, hit.other);
         });
         e.onHitStop((at, ms, strong) => {
-          playSfx('loseArmor', { volume: 0.9, cents: -900 });
+          cue('impact:stop', 'loseArmor', { volume: 0.9, cents: -900 });
           live.current.onHitStop?.(at, ms, strong);
         });
         e.onBreak((keys, at, burning, first, hits) => {
@@ -349,7 +356,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
           const p = pending.current;
           if (p) { for (const k of all) p.keys.delete(k); if (p.keys.size === 0) { pending.current = null; p.done(); } }
           setBurning((b) => (b.some((k) => all.includes(k)) ? b.filter((k) => !all.includes(k)) : b));
-          playSfx('loseArmor', { volume: burning ? 0.75 : 0.55, cents: Math.round(Math.random() * 400 - 200) });
+          cue('piece:break', 'loseArmor', { volume: burning ? 0.75 : 0.55, cents: Math.round(Math.random() * 400 - 200) });
           live.current.onBreak?.(all, at, burning, first, hits);
         });
         setEngine(e);
@@ -531,7 +538,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
   useEffect(() => {
     if (!engine || !glyphs || width < 50) return;
     for (const k of ACTIONS) {
-      if (!showDice) { engine.remove(k); continue; }
+      if (!showDice || hid.includes(k)) { engine.remove(k); continue; }
       const img = glyphs.get(GLYPH[k]);
       if (!img) continue;
       // The icon on the top face and the one opposite it only (owner); the sides stay plain, and the die always
@@ -541,7 +548,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const at = placeOf(k);
       engine.add(spec, at.x, at.y, { face: 0 });
     }
-  }, [engine, glyphs, showDice, controlFinish, props.ctlMotion, props.ctlSize, width > 50]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [engine, glyphs, showDice, controlFinish, props.ctlMotion, props.ctlSize, width > 50, hidKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const deckFace = useMemo(() => {
     const n = FACES_OF[catShape(decks.length)];
@@ -553,7 +560,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
 
   useEffect(() => {
     if (!engine || !deckArt || !decks.length || width < 50) return;
-    if (!showDice) { engine.remove(CAT); return; }
+    if (!showDice || hid.includes(CAT)) { engine.remove(CAT); return; }
     const shape = catShape(decks.length);
     // The icons keep their own colours; on a light die a soft dark halo separates them (owner: no plate).
     const halo = controlFinish === 'obsidian' ? undefined : 'rgba(10,8,4,0.9)';
@@ -565,7 +572,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const at = placeOf(CAT);
     engine.add(spec, at.x, at.y, { face: deckFace.indexOf(live.current.current) });
     if (!fresh) engine.setFace(CAT, deckFace.indexOf(live.current.current));
-  }, [engine, deckArt, deckFace, showDice, controlFinish, props.ctlMotion, props.catSize, width > 50]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [engine, deckArt, deckFace, showDice, controlFinish, props.ctlMotion, props.catSize, width > 50, hidKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The deck changed (a pick, the wheel, a key): the die shows it at once, no roll first (owner).
   useEffect(() => {
@@ -606,6 +613,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
     if (!engine) return;
     const want = new Set<string>();
     props.supply.forEach((t) => {
+      if (hid.includes(t.key)) return;
       if (t.key === 'src:die' && props.diceChest) {
         want.add('src:die');
         const sig = `chest:${props.diceChest}`;
@@ -626,7 +634,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
         engine.add({ ...sp.spec, spawner: true }, at.x, at.y, { face: sp.face });
       }
     });
-    if (props.domat && backArt) {
+    if (props.domat && backArt && !hid.includes(DOMAT_KEY)) {
       want.add(DOMAT_KEY);
       if (!engine.has(DOMAT_KEY)) {
         const at = placeOf(DOMAT_KEY);
@@ -634,7 +642,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       }
     }
     for (const k of engine.keys()) if (k.startsWith('src:') && !want.has(k)) { engine.remove(k); built.current.delete(k); }
-  }, [engine, supplyKey, numberFinish, backArt, props.diceChest]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [engine, supplyKey, numberFinish, backArt, props.diceChest, hidKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // Loose tokens: added where they were left, removed when they go onto a card or back to the supply.
   const looseKey = props.loose.map((t) => `${t.key}:${t.token.kind}:${t.token.dieType ?? ''}:${t.token.color ?? ''}`).join('|');
   useEffect(() => {
@@ -666,7 +674,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       }
     });
     setTimeout(() => live.current.onDiscard?.(bases), bases.length * 35 + 750);
-    playSfx('floatMenuClose', { volume: 0.5, cents: 600 });
+    cue('chest:dissolve', 'floatMenuClose', { volume: 0.5, cents: 600 });
   }, []);
 
   // Labels ride under their pieces. One stable ref callback per piece, so a re-render never detaches a label.
@@ -743,7 +751,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
   const rollInPlace = useCallback((key: string) => {
     const e = engineRef.current;
     if (!e) return;
-    playSfx('gearScroll1', { volume: 0.3 });
+    cue('piece:reroll', 'gearScroll1', { volume: 0.3 });
     const p = live.current;
     if (key === CAT) {
       e.rollInPlace(key);
@@ -757,7 +765,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       // Anchored: it cannot move, so it turns over to a new face where it lies.
       const base = baseOf(key);
       const piece = p.tokens.find((t) => t.key === base);
-      if (!piece || piece.kind !== 'die') { playSfx('placeToken', { volume: 0.4 }); return; }
+      if (!piece || piece.kind !== 'die') { cue('piece:bump', 'placeToken', { volume: 0.4 }); return; }
       const parts = tokenSpecs(piece, numberFinish).map((s) => s.spec.key);
       const tops = parts.map((k) => {
         const n = e.state(k) ? FACES_OF[shapeOf(piece.dieType ?? 'd6')] : 6;
@@ -867,7 +875,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const fire = (pr: { key: string }, power: number, burning = false) => {
       shakeAll(pr.key, 0);
       engine.release();
-      playSfx(power > 0.6 ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.3 + power * 0.45, cents: Math.round(power * 600 + (burning ? 500 : 0)) });
+      cue(burning ? 'throw:fire' : 'throw:charged', power > 0.6 ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.3 + power * 0.45, cents: Math.round(power * 600 + (burning ? 500 : 0)) });
       // Launched pieces push harder, and what they hit pushes on, five generations deep; a burning one far harder.
       if (burning) {
         setBurning((b) => [...new Set([...b, ...partsOf(pr.key)])]);
@@ -894,7 +902,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (!pr.lit && pr.swing >= 2) {
         pr.lit = true;
         setBurning((b) => [...new Set([...b, ...partsOf(pr.key)])]);
-        playSfx('gainGoldenHp', { volume: 0.6, cents: 900 });
+        cue('piece:ignite', 'gainGoldenHp', { volume: 0.6, cents: 900 });
       }
     };
     let lastTick = 0;
@@ -921,7 +929,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
         if (!pr.lit && pr.charge >= 1.3) {
           pr.lit = true;
           setBurning((b) => [...new Set([...b, ...partsOf(pr.key)])]);
-          playSfx('gainGoldenHp', { volume: 0.5, cents: 900 });
+          cue('piece:ignite', 'gainGoldenHp', { volume: 0.5, cents: 900 });
         }
         if (pr.charge >= 2) { press = null; host.style.cursor = 'grab'; fire(pr, 1, true); return; }
       }
@@ -951,7 +959,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       });
       // Landed, they stay put until one is chosen.
       setTimeout(() => engine.pin(pinned.filter((k) => engine.has(k)), 3_600_000), 950);
-      playSfx('cardFullscreenEnter', { volume: 0.6, cents: 300 });
+      cue('chest:open', 'cardFullscreenEnter', { volume: 0.6, cents: 300 });
     };
     /** Grabbed from the offer: this one (or every offered piece in the selection) is kept, the rest dissolve. */
     const choose = (base: string) => {
@@ -969,7 +977,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const src = live.current.supply.find((t) => t.key === baseOf(key));
       if (!src) return;
       fling(spawn(src.token, at.x, at.y), 900 + Math.random() * 500, undefined, outward(at.x, at.y));
-      playSfx('placeToken', { volume: 0.4, cents: 200 + Math.random() * 300 });
+      cue('spawner:toss', 'placeToken', { volume: 0.4, cents: 200 + Math.random() * 300 });
     };
     const onDown = (e: PointerEvent) => {
       if (inertRef.current || onUi(e.target)) return;
@@ -1010,7 +1018,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
           lastTick = 0;
           chargeRaf = requestAnimationFrame(tick);
           host.style.cursor = 'grabbing';
-          playSfx('placeToken', { volume: 0.6, cents: 300 });
+          cue('spawner:take', 'placeToken', { volume: 0.6, cents: 300 });
           return;
         }
         // The empty felt: drag a box to select pieces.
@@ -1035,7 +1043,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
         if (!src || !at) return;
         grabbed = spawn(src.token, at.x, at.y);
         spawned = true;
-        playSfx('placeToken', { volume: 0.6, cents: 200 });
+        cue('spawner:take', 'placeToken', { volume: 0.6, cents: 200 });
       }
       // A control die is not picked up by a click (owner, v0.47.10: clicks nudged it): only a drag lifts it.
       const isControl = grabbed === CAT || ACTIONS.includes(grabbed as ActionKey);
@@ -1045,7 +1053,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       else if (!isControl) lift(grabbed, p.x, p.y);
       lastTick = 0;
       host.style.cursor = 'grabbing';
-      playSfx('placeToken', { volume: 0.35, cents: 300 });
+      cue('piece:grab', 'placeToken', { volume: 0.35, cents: 300 });
       if (chargeable(grabbed) && !chargeRaf) chargeRaf = requestAnimationFrame(tick);
     };
     const onMove = (e: PointerEvent) => {
@@ -1109,7 +1117,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
         selection.current = keys;
         engine.select(keys);
         live.current.onSelect(keys);
-        if (keys.length) playSfx('cardSelect', { volume: 0.5 });
+        if (keys.length) cue('select', 'cardSelect', { volume: 0.5 });
         return;
       }
       if (!press || e.pointerId !== press.id) return;
@@ -1122,9 +1130,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (pr.charge > 0 && !pr.moved) { if (!pr.lit) heat(pr.key, 0); fire(pr, Math.min(1, pr.charge), pr.lit); return; }
       if (!pr.lit) heat(pr.key, 0);
       if (pr.swing > 0 || pr.lit) shakeAll(pr.key, 0);
-      if (pr.moved && live.current.onDropPiece(pr.key, e.clientX, e.clientY)) {
+      // Nothing still on fire settles onto a card (owner, v0.47.14): it flies on instead.
+      const afire = pr.lit || partsOf(pr.key).some((k) => lit.current.has(k));
+      if (pr.moved && !afire && live.current.onDropPiece(pr.key, e.clientX, e.clientY)) {
         engine.release();
-        if (pr.lit) setBurning((b) => b.filter((k) => !partsOf(pr.key).includes(k)));
         return;
       }
       const group = pr.moved && selection.current.includes(pr.key) ? [...selection.current] : null;
@@ -1137,7 +1146,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
         const breaker = pr.lit ? { left: 99, fire: true } : { left: 2, fire: false };
         if (speed < 250) fling(pr.key, Math.max(want, pr.lit ? 11500 : 1400), boost, undefined, breaker);
         else for (const k of partsOf(pr.key)) engine.empower(k, want / speed, boost, breaker);
-        playSfx(pr.lit ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.5 + Math.min(1, pr.swing) * 0.3, cents: pr.lit ? 1100 : Math.round(pr.swing * 400) });
+        cue(pr.lit ? 'throw:fire' : 'throw:swing', pr.lit ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.5 + Math.min(1, pr.swing) * 0.3, cents: pr.lit ? 1100 : Math.round(pr.swing * 400) });
         if (pr.lit) live.current.onHardHit(7000);
         if (pr.key.startsWith('free:')) watchLoose(pr.key);
         return;
@@ -1156,7 +1165,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (!pr.moved && performance.now() - pr.t < 450) {
         if (pr.key === CAT) {
           const s = engine.state(CAT);
-          if (s) { playSfx('floatMenuOpen'); setRing({ x: s.x, y: s.y }); }
+          if (s) { cue('ui:open', 'floatMenuOpen'); setRing({ x: s.x, y: s.y }); }
         } else if (pr.key === DOMAT_KEY) {
           const s = engine.state(DOMAT_KEY);
           if (s) live.current.onDomatDraw({ x: s.x, y: s.y });
@@ -1165,7 +1174,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
           if (a && !a.disabled) a.onPress();
         }
       } else {
-        if (speed > 900) playSfx('gearScroll1', { volume: 0.25 });
+        if (speed > 900) cue('throw', 'gearScroll1', { volume: 0.25 });
         // The deck die thrown: the deck it lands on opens.
         if (pr.key === CAT && speed > 250 && !live.current.toys) {
           thrownCat = true;
@@ -1376,7 +1385,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
           keys.push(spec.key);
         });
       });
-      playSfx('gearScroll1', { volume: 0.35 });
+      cue('roll:throw', 'gearScroll1', { volume: 0.35 });
       return waitFor(keys, () => {
         // Development only: `__rkRig = [6, 6]` turns the next throw's dice to those faces as they land (to see a critical).
         const rig = __DEV__ ? (globalThis as { __rkRig?: number[] }).__rkRig : undefined;
@@ -1397,14 +1406,14 @@ export const TableDice = forwardRef<TableDiceHandle, {
         engine.toss(k, Math.cos(ang) * sp, Math.sin(ang) * sp, pw > 0.2 || burning ? { gen: 4, power: burning ? 5 : 1 + 2 * pw } : undefined, burning ? { left: 99, fire: true } : pw > 0.3 ? { left: 2, fire: false } : undefined);
       }
       if (burning) { setBurning((b) => [...new Set([...b, ...all])]); live.current.onHardHit(6000); }
-      playSfx(burning ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.35 + pw * 0.3, cents: burning ? 900 : Math.round(pw * 500) });
+      cue(burning ? 'throw:fire' : 'roll:throw', burning ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.35 + pw * 0.3, cents: burning ? 900 : Math.round(pw * 500) });
       return waitFor(all, () => readGroups(engine, groups)).then(celebrate);
     },
     clearRoll: () => { if (engine) clear(engine); },
     resetHome: () => {
       if (!engine) return;
       sendHome();
-      playSfx('gearScroll2', { volume: 0.45 });
+      cue('table:home', 'gearScroll2', { volume: 0.45 });
     },
     tidy: () => {
       if (!engine) return;
@@ -1426,10 +1435,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
         const target = k.startsWith('roll:') ? 'src:die' : toKey(baseOf(k));
         const h = homeOf(sup.some((s) => s.key === target) ? target : 'src:die') ?? { x: 60, y: 60 };
         engine.vanish(k, h.x, h.y, i * STAGGER);
-        if (i % 2 === 0 && i < 24) setTimeout(() => playSfx('placeToken', { volume: 0.3, cents: 300 + i * 40 }), i * STAGGER + 420);
+        if (i % 2 === 0 && i < 24) setTimeout(() => cue('table:tidyPiece', 'placeToken', { volume: 0.3, cents: 300 + Math.round(Math.random() * 300 - 150) }), i * STAGGER + 420);
       });
       sendHome();
-      playSfx('gearScroll2', { volume: 0.5 });
+      cue('table:tidy', 'gearScroll2', { volume: 0.5 });
       setTimeout(() => {
         for (const k of keys) engine.remove(k);
         rolled.current.clear();
@@ -1438,7 +1447,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
         live.current.onTidied();
       }, keys.length * STAGGER + 800);
     },
-    openDecks: (at) => { playSfx('floatMenuOpen'); setRing(at); },
+    openDecks: (at) => { cue('ui:open', 'floatMenuOpen'); setRing(at); },
     hasRoll: () => rolled.current.size > 0,
     carry: (card) => {
       if (!engine || !card) { carried.current = []; return; }
@@ -1496,14 +1505,14 @@ export const TableDice = forwardRef<TableDiceHandle, {
   const ready = !!engine && !!glyphs;
 
   // The row handles while settings are open: drag one to move its row, flip it to stand it on end.
-  const groups: { g: PlaceGroup; box: Bounds; label: string; piece?: string; chain?: 'split' | 'join' }[] = [];
+  const groups: { g: PlaceGroup; box: Bounds; label: string; piece?: string; chain?: 'split' | 'join'; /** What its eye hides. */ keys?: string[] }[] = [];
   const ctlApart = ACTIONS.some((k) => places.apart?.[k]);
   const supKeys = [...props.supply.map((t) => t.key), ...(props.domat ? [DOMAT_KEY] : [])];
   const supApart = supKeys.some((k) => places.apart?.[k]);
   /** A frame round one piece split off its row. */
   const pieceBox = (key: string, r: number, label: string, g: PlaceGroup) => {
     const h = homeOf(key);
-    if (h) groups.push({ g, piece: key, chain: 'join', box: { left: h.x - r, right: h.x + r, top: h.y - r, bottom: h.y + r + 8 }, label });
+    if (h) groups.push({ g, piece: key, chain: 'join', keys: [key], box: { left: h.x - r, right: h.x + r, top: h.y - r, bottom: h.y + r + 8 }, label });
   };
   if (editing) {
     const sn = props.supply.length + (props.domat ? 1 : 0);
@@ -1515,11 +1524,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
       groups.push({ g: 'ctl', box: { left: l - 8, right: l + btnBox.w + 8, top: t - 8, bottom: t + btnBox.h + 8 }, label: 'Controls' });
     } else if (controls !== 'hidden' && ctlApart) {
       for (const a of actions) pieceBox(a.key, (ACTION_SIZE * props.ctlSize) / 2 + 12, a.label, 'ctl');
-      groups.push({ g: 'cat', box: { left: places.cat.x - 58, right: places.cat.x + 58, top: places.cat.y - 58, bottom: places.cat.y + 64 }, label: 'Deck die' });
+      groups.push({ g: 'cat', keys: [CAT], box: { left: places.cat.x - 58, right: places.cat.x + 58, top: places.cat.y - 58, bottom: places.cat.y + 64 }, label: 'Deck die' });
     } else if (controls !== 'hidden') {
       const hw = places.ctl.dir === 'row' ? half(ACTIONS.length, CTL_GAP.row) : 44, hh = places.ctl.dir === 'row' ? 50 : half(ACTIONS.length, CTL_GAP.column);
-      groups.push({ g: 'ctl', chain: 'split', box: { left: places.ctl.x - hw, right: places.ctl.x + hw, top: places.ctl.y - hh, bottom: places.ctl.y + hh }, label: 'Control dice' });
-      groups.push({ g: 'cat', box: { left: places.cat.x - 58, right: places.cat.x + 58, top: places.cat.y - 58, bottom: places.cat.y + 64 }, label: 'Deck die' });
+      groups.push({ g: 'ctl', chain: 'split', keys: [...ACTIONS], box: { left: places.ctl.x - hw, right: places.ctl.x + hw, top: places.ctl.y - hh, bottom: places.ctl.y + hh }, label: 'Control dice' });
+      groups.push({ g: 'cat', keys: [CAT], box: { left: places.cat.x - 58, right: places.cat.x + 58, top: places.cat.y - 58, bottom: places.cat.y + 64 }, label: 'Deck die' });
     }
     if (sn && supApart) {
       for (const k of supKeys) pieceBox(k, k === 'src:die' ? 62 : 40, props.supply.find((t) => t.key === k)?.label ?? 'Many Things', 'sup');
@@ -1527,7 +1536,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const keys = supKeys;
       const len = keys.reduce((a, k) => a + slotOf(k, places.sup.dir), 0) / 2 + 6;
       const hw = places.sup.dir === 'row' ? len : 64, hh = places.sup.dir === 'row' ? 54 : len;
-      groups.push({ g: 'sup', chain: 'split', box: { left: places.sup.x - hw, right: places.sup.x + hw, top: places.sup.y - hh, bottom: places.sup.y + hh }, label: 'Supply' });
+      groups.push({ g: 'sup', chain: 'split', keys: supKeys, box: { left: places.sup.x - hw, right: places.sup.x + hw, top: places.sup.y - hh, bottom: places.sup.y + hh }, label: 'Supply' });
     }
   }
 
@@ -1536,21 +1545,21 @@ export const TableDice = forwardRef<TableDiceHandle, {
       <canvas ref={canvas} style={{ position: 'absolute', left: 0, top: 0, width, height, pointerEvents: 'none', zIndex: 20 }} />
       {marquee ? <div style={{ position: 'absolute', left: marquee.left, top: marquee.top, width: marquee.right - marquee.left, height: marquee.bottom - marquee.top, border: '1px solid rgba(224,181,99,0.8)', background: 'rgba(224,181,99,0.08)', zIndex: 22, pointerEvents: 'none' }} /> : null}
       {/* Labels under the control dice; each is also that die's keyboard handle (Tab, then Enter). */}
-      {ready && showDice && !props.toys ? actions.map((a) => (
+      {ready && showDice && !props.toys ? actions.filter((a) => !hid.includes(a.key)).map((a) => (
         <button key={a.key} type="button" className="rk-die-label" ref={setLabel(a.key)} disabled={a.disabled} aria-label={a.label} onClick={() => { if (!a.disabled) a.onPress(); }} style={{ ...labelStyle, color: hoverKey === a.key ? T.ivory : a.disabled ? 'rgba(147,142,136,0.5)' : T.muted }}>{a.label}</button>
       )) : null}
-      {ready && deckArt && showDice && !props.toys ? (
+      {ready && deckArt && showDice && !props.toys && !hid.includes(CAT) ? (
         <button type="button" className="rk-die-label" ref={setLabel(CAT)} aria-label={`Decks. ${currentDeck?.label ?? ''}, ${currentDeck?.count ?? 0} cards. Choose a deck`} aria-haspopup="listbox"
-          onClick={() => { const s = engine?.state(CAT); playSfx('floatMenuOpen'); setRing(s ? { x: s.x, y: s.y } : { x: 74, y: height - 88 }); }}
+          onClick={() => { const s = engine?.state(CAT); cue('ui:open', 'floatMenuOpen'); setRing(s ? { x: s.x, y: s.y } : { x: 74, y: height - 88 }); }}
           style={{ ...labelStyle, color: hoverKey === CAT ? T.ivory : T.goldText }}>{currentDeck?.label ?? ''}<span style={{ color: T.muted, marginLeft: 6 }}>{currentDeck?.count ?? ''}</span></button>
       ) : null}
       {/* The supply's markings: what each one throws out. */}
-      {ready ? props.supply.map((t) => (
+      {ready ? props.supply.filter((t) => !hid.includes(t.key)).map((t) => (
         <div key={`${t.key}${props.diceChest && t.key === 'src:die' ? ':chest' : ''}`} ref={setLabel(props.diceChest && t.key === 'src:die' ? t.key : t.token.kind === 'die' && t.token.dieType === 'duality' ? `${t.key}:h` : t.token.kind === 'die' && t.token.dieType === 'd100' ? `${t.key}:t` : t.key)} style={{ ...labelStyle, fontSize: 10.5, letterSpacing: 0.9, color: hoverKey && baseOf(hoverKey) === t.key ? T.ivory : T.muted, textTransform: t.token.kind === 'die' && !props.diceChest ? 'none' : 'uppercase' }}>{props.diceChest && t.key === 'src:die' ? 'Dice' : t.label}</div>
       )) : null}
       {/* Small, so it never crowds the row (owner, v0.47.8); the minute's wait shows while there is one. */}
       {/* Its name is gone (owner, v0.47.11): the cards in stock, and how long until the next. */}
-      {ready && props.domat ? (
+      {ready && props.domat && !hid.includes(DOMAT_KEY) ? (
         <div ref={setLabel(DOMAT_KEY)} aria-label={`Deck of Many Things: ${props.domat.stock} in stock${props.domat.wait ? `, next in ${props.domat.wait} seconds` : ''}`}
           style={{ ...labelStyle, fontSize: 10.5, letterSpacing: 0.6, color: hoverKey === DOMAT_KEY ? T.ivory : T.muted, fontVariantNumeric: 'tabular-nums' }}>
           <span style={{ color: props.domat.stock ? T.goldText : T.muted }}>{props.domat.stock}</span>
@@ -1569,6 +1578,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
           onMove={(x, y) => (g.piece ? props.onMovePiece(g.piece, x, y) : props.onMoveGroup(g.g, x, y))}
           onFlip={g.g === 'cat' || g.piece ? undefined : () => props.onFlipGroup(g.g as 'ctl' | 'sup')}
           chain={g.chain}
+          hidden={g.keys ? g.keys.every((k) => props.hidden?.includes(k)) : undefined}
+          onHide={g.keys && props.onHide ? () => props.onHide?.(g.keys!) : undefined}
           onChain={g.chain === 'split' ? () => {
             // Split where they lie now, so nothing moves until it is dragged.
             const at: Record<string, { x: number; y: number }> = {};
@@ -1580,8 +1591,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
       <div ref={glyphHost} aria-hidden="true" style={{ position: 'absolute', left: -10000, top: 0, width: 1, height: 1, overflow: 'hidden' }}>
         {decks.map((d) => <div key={d.key} data-deck={d.key} style={{ width: 48, height: 48 }}><CategoryGlyph category={d.key} meta={d.meta} /></div>)}
       </div>
-      {ring ? <DeckRing at={ring} width={width} height={height} decks={decks} current={current} onPick={(c) => { setRing(null); if (c !== current) onPickDeck(c); }} onClose={() => { playSfx('floatMenuClose'); setRing(null); }} onNewCategory={props.onNewCategory ? () => { setRing(null); props.onNewCategory?.(); } : undefined} /> : null}
-      {engine && ready && deckArt && showDice && decks.length > 1 && !props.toys ? (
+      {ring ? <DeckRing at={ring} width={width} height={height} decks={decks} current={current} onPick={(c) => { setRing(null); if (c !== current) onPickDeck(c); }} onClose={() => { cue('ui:close', 'floatMenuClose'); setRing(null); }} onNewCategory={props.onNewCategory ? () => { setRing(null); props.onNewCategory?.(); } : undefined} /> : null}
+      {engine && ready && deckArt && showDice && decks.length > 1 && !props.toys && !hid.includes(CAT) ? (
         <DeckArrows engine={engine} size={(catShape(decks.length) === 'd20' ? 112 : catShape(decks.length) === 'd12' ? 100 : catShape(decks.length) === 'd8' ? 94 : 84) * props.catSize}
           onStep={(dir) => { const i = decks.findIndex((d) => d.key === current); const next = decks[(i + dir + decks.length) % decks.length]; if (next) onPickDeck(next.key); }} />
       ) : null}
@@ -1590,7 +1601,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
 });
 
 /** A dashed frame round a row while settings are open: drag it to move the row, the arrows stand it on end. */
-function GroupHandle({ box, label, dir, onMove, onFlip, chain, onChain }: { box: Bounds; label: string; dir?: 'row' | 'column'; onMove: (x: number, y: number) => void; onFlip?: () => void; /** Split the row into pieces, or join a piece's row back up. */ chain?: 'split' | 'join'; onChain?: () => void }) {
+function GroupHandle({ box, label, dir, onMove, onFlip, chain, onChain, hidden, onHide }: { box: Bounds; label: string; dir?: 'row' | 'column'; onMove: (x: number, y: number) => void; onFlip?: () => void; /** Split the row into pieces, or join a piece's row back up. */ chain?: 'split' | 'join'; onChain?: () => void; hidden?: boolean; onHide?: () => void }) {
   const [hover, setHover] = useState(false);
   const start = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -1599,18 +1610,18 @@ function GroupHandle({ box, label, dir, onMove, onFlip, chain, onChain }: { box:
     const sx = e.clientX, sy = e.clientY;
     const cx = (box.left + box.right) / 2, cy = (box.top + box.bottom) / 2;
     const move = (m: PointerEvent) => onMove(cx + m.clientX - sx, cy + m.clientY - sy);
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); playSfx('cardDragEnd', { volume: 0.5 }); };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); cue('ui:dragEnd', 'cardDragEnd', { volume: 0.5 }); };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
-    playSfx('cardDragStart', { volume: 0.5 });
+    cue('ui:dragStart', 'cardDragStart', { volume: 0.5 });
   };
   return (
     <div data-ui="" onPointerDown={start} onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)}
-      style={{ position: 'absolute', left: box.left, top: box.top, width: box.right - box.left, height: box.bottom - box.top, zIndex: 1250, cursor: 'move', border: `1.5px dashed ${hover ? T.goldBright : 'rgba(224,181,99,0.6)'}`, background: hover ? 'rgba(224,181,99,0.1)' : 'rgba(224,181,99,0.04)', boxSizing: 'border-box' }}>
+      style={{ position: 'absolute', left: box.left, top: box.top, width: box.right - box.left, height: box.bottom - box.top, zIndex: 1250, cursor: 'move', border: `1.5px dashed ${hover ? T.goldBright : hidden ? 'rgba(147,142,136,0.55)' : 'rgba(224,181,99,0.6)'}`, background: hidden ? 'rgba(6,8,13,0.45)' : hover ? 'rgba(224,181,99,0.1)' : 'rgba(224,181,99,0.04)', boxSizing: 'border-box' }}>
       <div style={{ position: 'absolute', left: 0, ...(box.top < 30 ? { top: '100%', marginTop: 4 } : { top: -24 }), display: 'flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' }}>
         <span style={{ color: T.goldText, fontFamily: T.bold, fontSize: 11.5, letterSpacing: 1, textTransform: 'uppercase', textShadow: '0 1px 3px #000' }}>{label}</span>
         {onFlip ? (
-          <button type="button" title={dir === 'row' ? 'Stand the row on end' : 'Lay the row across'} aria-label={dir === 'row' ? `Run the ${label} down` : `Run the ${label} across`} onPointerDown={(e) => e.stopPropagation()} onClick={() => { playSfx('buttonTap', { volume: 0.5 }); onFlip(); }}
+          <button type="button" title={dir === 'row' ? 'Stand the row on end' : 'Lay the row across'} aria-label={dir === 'row' ? `Run the ${label} down` : `Run the ${label} across`} onPointerDown={(e) => e.stopPropagation()} onClick={() => { cue('ui:tap', 'buttonTap', { volume: 0.5 }); onFlip(); }}
             style={{ all: 'unset', cursor: 'pointer', display: 'flex', padding: 2, background: T.panel, border: `1px solid ${T.goldSoft}` }}>
             <span style={{ display: 'flex', transform: dir === 'row' ? 'rotate(90deg)' : 'none' }}><Glyph d='<path d="M4 12h16M8 8l-4 4 4 4M16 8l4 4-4 4"/>' size={14} /></span>
           </button>
@@ -1618,11 +1629,21 @@ function GroupHandle({ box, label, dir, onMove, onFlip, chain, onChain }: { box:
         {/* Split a row into pieces placed one by one, or join a piece back into its row (owner, v0.47.11). */}
         {chain && onChain && (hover || chain === 'join') ? (
           <button type="button" title={chain === 'split' ? 'Split the row: place each piece on its own' : 'Join these back into their row'} aria-label={chain === 'split' ? `Split the ${label}` : `Join ${label} back into its row`}
-            onPointerDown={(e) => e.stopPropagation()} onClick={() => { playSfx('cardSelect', { volume: 0.5 }); onChain(); }}
+            onPointerDown={(e) => e.stopPropagation()} onClick={() => { cue('ui:confirm', 'cardSelect', { volume: 0.5 }); onChain(); }}
             style={{ all: 'unset', cursor: 'pointer', display: 'flex', padding: 2, background: T.panel, border: `1px solid ${T.goldSoft}` }}>
             <Glyph d={chain === 'split'
               ? '<path d="M9 15l-1.5 1.5a3.5 3.5 0 0 1-5-5L4 10"/><path d="M15 9l1.5-1.5a3.5 3.5 0 0 1 5 5L20 14"/><path d="M8 3v2.5M3 8h2.5M16 21v-2.5M21 16h-2.5"/>'
               : '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'} size={14} />
+          </button>
+        ) : null}
+        {/* Hidden from play, seen only here while editing (owner, v0.47.14). */}
+        {onHide && (hover || hidden) ? (
+          <button type="button" title={hidden ? 'Show on the table' : 'Hide from the table (still shown while editing)'} aria-label={hidden ? `Show the ${label}` : `Hide the ${label}`} aria-pressed={hidden}
+            onPointerDown={(e) => e.stopPropagation()} onClick={() => { cue('ui:toggle', hidden ? 'panelOpen' : 'panelClose', { volume: 0.5 }); onHide(); }}
+            style={{ all: 'unset', cursor: 'pointer', display: 'flex', padding: 2, background: hidden ? 'rgba(200,27,24,0.35)' : T.panel, border: `1px solid ${hidden ? T.red : T.goldSoft}` }}>
+            <Glyph d={hidden
+              ? '<path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"/><path d="M4 4l16 16"/>'
+              : '<path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"/><circle cx="12" cy="12" r="2.5"/>'} size={14} />
           </button>
         ) : null}
       </div>
@@ -1725,7 +1746,7 @@ function DeckRing({ at, width, height, decks, current, onPick, onClose, onNewCat
     const f = (to + n) % n;
     setFocus(f);
     setFirst((s) => (f < s ? f : f >= s + SHOW ? f - SHOW + 1 : s));
-    playSfx('floatMenuHighlight', { volume: 0.4 });
+    cue('ui:hover', 'floatMenuHighlight', { volume: 0.4 });
   };
   const scroll = (dir: number) => setFirst((s) => Math.min(Math.max(0, n - SHOW), Math.max(0, s + dir)));
   const choose = (i: number) => { if (i === decks.length) onNewCategory?.(); else { const d = decks[i]; if (d) onPick(d.key); } };
@@ -1754,7 +1775,7 @@ function DeckRing({ at, width, height, decks, current, onPick, onClose, onNewCat
           const active = !isNew && d?.key === current;
           const lit = focus === i;
           return (
-            <div key={isNew ? 'new' : d.key} role="option" aria-selected={active} onPointerEnter={() => { if (focus !== i) { setFocus(i); playSfx('floatMenuHighlight', { volume: 0.4 }); } }} onClick={() => choose(i)} style={{ height: TH, cursor: 'pointer' }}>
+            <div key={isNew ? 'new' : d.key} role="option" aria-selected={active} onPointerEnter={() => { if (focus !== i) { setFocus(i); cue('ui:hover', 'floatMenuHighlight', { volume: 0.4 }); } }} onClick={() => choose(i)} style={{ height: TH, cursor: 'pointer' }}>
               <div style={{ height: '100%', clipPath: 'polygon(9px 0, calc(100% - 9px) 0, 100% 9px, 100% calc(100% - 9px), calc(100% - 9px) 100%, 9px 100%, 0 calc(100% - 9px), 0 9px)', background: active ? T.red : lit ? T.goldBright : isNew ? 'rgba(218,162,73,0.35)' : T.goldSoft, padding: 1.3, boxSizing: 'border-box' }}>
                 <div style={{ width: '100%', height: '100%', clipPath: 'polygon(8.5px 0, calc(100% - 8.5px) 0, 100% 8.5px, 100% calc(100% - 8.5px), calc(100% - 8.5px) 100%, 8.5px 100%, 0 calc(100% - 8.5px), 0 8.5px)', background: active ? T.red : lit ? T.panelLit : 'rgba(14,17,22,0.97)', display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px 0 8px', boxSizing: 'border-box' }}>
                   {isNew ? (
@@ -1800,7 +1821,7 @@ function DeckArrows({ engine, size, onStep }: { engine: DiceEngine; size: number
   // Just clear of the die's edge (owner, v0.47.11: they sat too far out).
   const off = size * 0.45 + 1;
   const Arrow = ({ dir }: { dir: 1 | -1 }) => (
-    <button type="button" data-ui="" aria-label={dir > 0 ? 'Next deck' : 'Previous deck'} onClick={() => { playSfx('carouselScroll', { volume: 0.5 }); onStep(dir); }}
+    <button type="button" data-ui="" aria-label={dir > 0 ? 'Next deck' : 'Previous deck'} onClick={() => { cue('deck:step', 'carouselScroll', { volume: 0.5 }); onStep(dir); }}
       style={{ all: 'unset', position: 'absolute', left: dir > 0 ? off : -off - s, top: -s / 2 - size * 0.05, width: s, height: s, cursor: 'pointer', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.75, transition: 'opacity 140ms, transform 140ms' }}
       onPointerEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = `scale(1.2)`; }}
       onPointerLeave={(e) => { e.currentTarget.style.opacity = '0.75'; e.currentTarget.style.transform = 'none'; }}>

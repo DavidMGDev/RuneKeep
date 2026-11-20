@@ -488,10 +488,11 @@ function detuneBy(node: unknown, cents: number): void {
   if (param) param.value = cents;
 }
 
-function fire(src: number, baseVol: number, varyCents: number, opts?: PlayOpts) {
+function fire(src: number | Promise<AudioBuffer | null>, baseVol: number, varyCents: number, opts?: PlayOpts) {
   const c = getCtx();
   if (!c) return;
-  void decode(src).then((buf) => {
+  // On web a bundled sound is an asset object, not a number: only a promise is a sound the player brought.
+  void (src instanceof Promise ? src : decode(src)).then((buf) => {
     if (!buf) return;
     try {
       const node = c.createBufferSource();
@@ -516,6 +517,19 @@ function fire(src: number, baseVol: number, varyCents: number, opts?: PlayOpts) 
       /* play failed — stay silent */
     }
   });
+}
+
+/** Sounds the player brought themselves (web, v0.47.14), decoded on first use and kept. */
+const own = new Map<string, Promise<AudioBuffer | null>>();
+export function playOwn(name: string, bytes: () => Promise<ArrayBuffer>, opts?: PlayOpts) {
+  const c = getCtx();
+  if (!c || muted) return;
+  let p = own.get(name);
+  if (!p) {
+    p = bytes().then((b) => c.decodeAudioData(b as never)).catch(() => null);
+    own.set(name, p);
+  }
+  fire(p, 1, 60, opts);
 }
 
 // Loading-screen guard (#258): NEVER play an "enter" sound while a loading screen is up. The latest
