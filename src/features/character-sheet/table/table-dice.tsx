@@ -38,6 +38,7 @@ export interface TableAction { key: ActionKey; label: string; onPress: () => voi
 export interface TableDeck { key: CardCategory; label: string; count: number; meta?: { icon?: string; builtin: boolean } }
 
 /** What a token is: a sewing-button token (wood, bone, iron, a colour) or a token die and its value. */
+export type CritStage = 'gather' | 'rumble' | 'word' | 'boom' | 'done';
 export interface TokenInfo { kind: TokenKind; color?: string; dieType?: DieType; dieValue?: number; dieValue2?: number; /** A die's modifier, carried from card to card (v0.47.18). */ mod?: PresetModifier; /** How many times a die's usual size it is: the chest's giant d20 (v0.47.24). */ big?: number }
 /** A token lying loose on the table (not stuck to a card). */
 export interface LoosePiece { key: string; token: TokenInfo; x: number; y: number }
@@ -69,7 +70,8 @@ export type PlaceGroup = 'ctl' | 'sup' | 'cat';
 
 export interface TableDiceHandle {
   /** Throw these dice from (x, y); resolves with the faces that came to rest on top. */
-  roll: (dice: PoolDie[], from: { x: number; y: number }) => Promise<PoolDie[]>;
+  /** `rig`: the faces the dice land on, in order (testing: Roll a crit, v0.47.27). */
+  roll: (dice: PoolDie[], from: { x: number; y: number }, rig?: number[]) => Promise<PoolDie[]>;
   /** Roll the dice among these pieces where they lie (tokens are left alone); resolves with what they show. */
   rollPieces: (keys: string[], power?: number, burning?: boolean) => Promise<PoolDie[]>;
   clearRoll: () => void;
@@ -259,13 +261,17 @@ export const TableDice = forwardRef<TableDiceHandle, {
   /** Something hit a wall hard (px/s): shake the table. */
   onHardHit: (speed: number) => void;
   /** Hope and Fear came up equal: the blast went off from here (table px). */
-  onCrit?: (at: { x: number; y: number }) => void;
+  /**
+   * A critical's sequence (v0.47.27), stage by stage at the point the pair stands: `gather` (the table stops, the pair
+   * flies to the middle), `rumble` (it builds and shakes), `word` (CRITICAL), `boom` (the blast), `done`.
+   */
+  onCrit?: (at: { x: number; y: number }, stage: CritStage) => void;
   /** Good news on a die (Hope winning, a highest face): a glow of light round it, never a shake (owner, v0.47.18). */
   onGood?: (at: { x: number; y: number }, tint: string, big: boolean) => void;
   /** A charged die slammed down here (v0.47.18). */
   onPound?: (at: { x: number; y: number }) => void;
   /** A die or token struck the physical carousel this hard (px/s) (v0.47.25). */
-  onCarouselHit?: (speed: number, charged: boolean) => void;
+  onCarouselHit?: (speed: number, charged: boolean, wall: string) => void;
   /** A water token hit a wall hard and sent a wave across the table from here (v0.47.19). */
   onSplash?: (at: { x: number; y: number }) => void;
   /** A charged throw broke these loose pieces or physical cards (the first where `at` is); they are gone from the table. */
@@ -380,7 +386,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
           if (!knockCue(hit.kind, sparked.current.has(hit.key) ? hit.speed * 0.3 : hit.speed)) void import('./dice-engine').then((m) => m.knock(playSynth, hit));
           if (hit.kind === 'rail' && hit.speed > 2400) live.current.onHardHit(hit.speed);
           if (hit.other) live.current.onKnock?.(hit.key, hit.other);
-          if (hit.wall === 'carousel') live.current.onCarouselHit?.(hit.speed, !!hit.charged);
+          if (hit.wall?.startsWith('carousel')) live.current.onCarouselHit?.(hit.speed, !!hit.charged, hit.wall);
         });
         // A charged die's time is up: it slams down where it is, the lightning goes out of it (v0.47.18).
         e.onPound((key, at) => {
@@ -1804,24 +1810,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const hk = hope && keyOf(hope), fk = fear && keyOf(fear);
       if (!hope || !fear || !hk || !fk || hope.value == null || fear.value == null) continue;
       if (hope.value === fear.value) {
-        later(() => {
-          e.wash(hk, '#fff4d6', 1, 900, 0.76);
-          e.wash(fk, '#fff4d6', 1, 900, 0.76);
-          shake(hk, 0.6, 375);
-          shake(fk, 0.6, 375);
-          // A beat later: the table stops, then the blast throws everything loose away from them.
-          setTimeout(() => {
-            const a = e.state(hk), b = e.state(fk);
-            if (!a || !b) return;
-            const at = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-            e.freeze(140);
-            const spare = [hk, fk, CAT, ...ACTIONS, ...e.keys().filter((k) => k.startsWith('tok:') || k.startsWith('src:'))];
-            // Spared, and held fast while the blast runs out: what it throws cannot knock them about either.
-            e.pin(spare, 1800);
-            e.impulse(at.x, at.y, Math.hypot(size.current.width, size.current.height) * 1.2, 7200, { gen: 3, power: 3 }, spare);
-            live.current.onCrit?.(at);
-          }, 260);
-        });
+        later(() => crit(e, hk, fk));
       } else if (hope.value > fear.value) {
         later(() => { e.wash(hk, '#ffc24a', 0.8, 900, 0.3); const s = e.state(hk); if (s) live.current.onGood?.(s, '#ffd56a', true); });
       } else {
@@ -1830,6 +1819,55 @@ export const TableDice = forwardRef<TableDiceHandle, {
     }
     return landed;
   }, []);
+
+  /**
+   * A critical (owner, v0.47.27: the one effect above all the others). Everything on the table stops where it is; the
+   * pair flies to the middle of the table, on top of everything, showing what it rolled; it builds, shaking harder and
+   * harder for a second and a half; CRITICAL slams in for half a second; then the blast, and the table carries on.
+   * The light, the darkness, the camera and the words are the table's (`onCrit`); the dice are moved here.
+   */
+  const crit = (e: DiceEngine, hk: string, fk: string) => {
+    const W = size.current.width, H = size.current.height;
+    const at = { x: W / 2, y: H / 2 };
+    const gap = (e.screen(hk)?.size ?? 46) * 0.62;
+    const GATHER = 560, RUMBLE = 1500, WORD = 520;
+    e.stage([hk, fk]);
+    // As they lie: the faces they rolled stay up.
+    e.home(hk, at.x - gap, at.y, e.state(hk)?.top);
+    e.home(fk, at.x + gap, at.y, e.state(fk)?.top);
+    live.current.onCrit?.(at, 'gather');
+    let lvl = 0, tick: ReturnType<typeof setInterval> | undefined;
+    setTimeout(() => {
+      live.current.onCrit?.(at, 'rumble');
+      // They tremble, harder and harder, and glow hotter as it builds.
+      tick = setInterval(() => {
+        lvl = Math.min(1, lvl + 0.075);
+        e.jitter(hk, lvl); e.jitter(fk, lvl);
+      }, 110);
+      // Never so bright the numbers wash out: the result is what the moment is about.
+      e.wash(hk, '#ffd98a', 0.45, RUMBLE, 0.12);
+      e.wash(fk, '#ffd98a', 0.45, RUMBLE, 0.12);
+    }, GATHER);
+    setTimeout(() => {
+      // Dead still for the word.
+      clearInterval(tick);
+      e.jitter(hk, 0); e.jitter(fk, 0);
+      e.wash(hk, '#fff1cc', 0.55, 700, 0.45);
+      e.wash(fk, '#fff1cc', 0.55, 700, 0.45);
+      live.current.onCrit?.(at, 'word');
+    }, GATHER + RUMBLE);
+    setTimeout(() => {
+      e.stage(null);
+      const spare = [hk, fk, CAT, ...ACTIONS, ...e.keys().filter((k) => k.startsWith('tok:') || k.startsWith('src:'))];
+      // Spared, and held fast while the blast runs out: what it throws cannot knock them about either.
+      e.pin(spare, 1800);
+      e.impulse(at.x, at.y, Math.hypot(W, H) * 1.2, 8200, { gen: 3, power: 3.5 }, spare);
+      e.wash(hk, '#fff4d6', 0.7, 1100, 0.8);
+      e.wash(fk, '#fff4d6', 0.7, 1100, 0.8);
+      live.current.onCrit?.(at, 'boom');
+    }, GATHER + RUMBLE + WORD);
+    setTimeout(() => live.current.onCrit?.(at, 'done'), GATHER + RUMBLE + WORD + 1400);
+  };
 
   /** Which dice a set of pieces holds (a pair counts once), and what they show once they land. */
   const groupsOf = (keys: string[]) => {
@@ -1930,7 +1968,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
   };
 
   useImperativeHandle(ref, () => ({
-    roll: (dice, from) => {
+    roll: (dice, from, rigged) => {
       if (!engine) return Promise.resolve(dice.map((d) => ({ ...d, value: 1 + Math.floor(Math.random() * (d.type === 'd100' ? 100 : d.type === 'duality' ? 12 : FACES_OF[d.type as Shape])) })));
       clear(engine);
       const keys: string[] = [];
@@ -1955,8 +1993,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
       });
       cue('roll:throw', 'gearScroll1', { volume: 0.35 });
       return waitFor(keys, () => {
-        // Development only: `__rkRig = [6, 6]` turns the next throw's dice to those faces as they land (to see a critical).
-        const rig = __DEV__ ? (globalThis as { __rkRig?: number[] }).__rkRig : undefined;
+        // `__rkRig = [6, 6]` (development) or a rigged roll turns the dice to those faces as they land (to see a critical).
+        const rig = rigged ?? (__DEV__ ? (globalThis as { __rkRig?: number[] }).__rkRig : undefined);
         if (rig) { (globalThis as { __rkRig?: number[] }).__rkRig = undefined; thrown.forEach(({ keys: ks }, i) => { if (rig[i] != null) engine.setFace(ks[0], rig[i] - 1); }); }
         return thrown.map(({ die, keys: ks }) => ({ ...die, value: valueOf(die, ks.map((k) => engine.state(k)?.top ?? 0)) }));
       }).then(celebrate);

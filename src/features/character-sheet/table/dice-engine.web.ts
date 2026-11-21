@@ -149,6 +149,12 @@ export interface DiceEngine {
   wash(key: string, color: string, peak: number, holdMs: number, swell?: number): void;
   /** Stop the whole table for a beat (an impact frame). */
   freeze(ms: number): void;
+  /**
+   * Only these pieces move (null: everything again): the rest of the table holds still exactly as it is, mid-flight
+   * and all, and carries on from there afterwards (v0.47.27: a critical's pair takes the stage). Staged pieces pass
+   * through everything and keep out of nothing.
+   */
+  stage(keys: string[] | null): void;
   /** Hold these pieces where they lie for a while: nothing that hits them moves them (a blast that spares them). */
   pin(keys: string[], ms: number): void;
   /** Let pinned pieces go again now (Reset undoing the Key and Euryale). */
@@ -486,6 +492,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   /** The selection a card carried by hand takes with it. */
   let cardCarry: { lead: string; others: { b: Body; dx: number; dy: number }[] } | null = null;
   let freezeUntil = 0;
+  /** While set, the only pieces that move (see `stage`). */
+  let staged: Set<string> | null = null;
   let restCb: (keys: string[]) => void = () => {};
 
   function resize(w: number, h: number) {
@@ -620,12 +628,13 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     for (let i = fields.length - 1; i >= 0; i--) if (fields[i].until < now) fields.splice(i, 1);
     if (hitstop && now >= hitstop.until) endHitStop();
     const world = { fields: [...fields.map((f) => f.f), ...auras.values()], friction: slip.until > now ? slip.scale : 1, cages: [...cages.values()] };
-    const bodies = [...order.map((d) => d.body), ...cardBodies()];
+    const all = [...order.map((d) => d.body), ...cardBodies()];
+    const bodies = staged ? all.filter((b) => staged!.has(b.key)) : all;
     let steps = 0;
     while (acc >= STEP && steps++ < 12) {
       placeAnchored();
       if (now < freezeUntil) { acc = 0; break; }
-      for (const hit of step(bodies, bounds, STEP, Math.random, obstacles, world)) {
+      for (const hit of step(bodies, bounds, STEP, Math.random, staged ? [] : obstacles, staged ? {} : world)) {
         if (hit.kind === 'break') { broke.push(hit); continue; }
         if (hit.kind === 'pound') { const b = bodyOf(hit.key); if (b) poundCb(hit.key, { x: b.x, y: b.y }); continue; }
         impactCb(hit);
@@ -1486,6 +1495,10 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     },
     freeze(ms) {
       freezeUntil = Math.max(freezeUntil, performance.now() + ms);
+      wake();
+    },
+    stage(keys) {
+      staged = keys ? new Set(keys) : null;
       wake();
     },
     pin(keys, ms) {

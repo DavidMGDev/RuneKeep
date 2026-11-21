@@ -66,6 +66,11 @@ const PACK = {
   'roll:bad': { files: ['crowdaww', 'dronelose', 'zombie-weak-death', 'crashprotectorlose'], vol: 0.55 },
   'roll:plain': { files: ['railcannonpipclick', 'message', 'computersfx-alerts-004'], vol: 0.5 },
   // A critical lands like a held hit (owner, v0.47.18): the heavy impact sounds.
+  // The critical's sequence (owner, v0.47.27): the pair gathered, the build, the word, the blast.
+  'crit:gather': { max: 1.2, files: ['gabrielweaponspawn'], vol: 0.6 },
+  'crit:rise': { max: 2.2, files: ['virtuecharge', 'railcannonfullclickandcharge'], vol: 0.75 },
+  'crit:word': { max: 1.2, files: ['impacts-processed-002', 'shellimpact'], vol: 0.9 },
+  'crit:boom': { max: 3.5, files: ['256960-quaker540-supernatural-explosion', 'blackholeexplosion'], vol: 0.9 },
   'roll:crit': { max: 3, files: ['introhit', 'impacts-processed-001', 'bluezone-bc0251-heavy-metal-impact-steel-barrel-01'], vol: 0.85 },
   'charge:lit': { max: 1.5, files: ['firestart', 'enrage', 'railcannonfullclickandcharge'], vol: 0.6 },
   'select': { files: ['dronescan', 'robohut'], vol: 0.4 },

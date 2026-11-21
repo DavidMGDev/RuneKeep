@@ -333,3 +333,11 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   (`FireLayer.aura`: embers, frost, drops, sparks on a 2D layer); the flames, frost and bolts are for a charge. The
   sound log gives each file a short id (FNV-1a), and a click copies the id and file. A selected scrap carries the rest
   of the selection.
+- v0.47.27: the critical, staged (3.3 s): the table stops (`engine.stage`: only the pair moves, everything else holds
+  mid-flight and carries on after), the pair flies to the middle of the table over everything, faces kept; dark but a
+  spotlight, the camera pushes in (scale on the table root, the shake on its parent so the two never fight); 1.5 s of
+  building (trembling dice, a gold halo, light streaking in, a shake growing to 14 px); dead still, CRITICAL slams in
+  for half a second; the blast (a white-out, rings, sparks, a rune, the camera snaps back, the dark lifts) and the
+  shockwave. The result plaque waits for the blast. Testing: Roll a crit, first in the Many Things picker (rigged
+  faces through `roll`). The physical carousel's hitbox is each card (one moving obstacle per card), and a hit glows
+  red on that card alone.

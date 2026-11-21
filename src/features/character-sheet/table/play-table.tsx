@@ -45,7 +45,7 @@ import type { Bounds, Impact } from './dice-physics';
 import { type DomatCard, DOMAT, DOMAT_MAX, DOMAT_START, type DomatStock, domatStock, drawDomat, type Element, ELEMENTS, elementWinner, takeDomat } from './domat';
 import { LookPanel } from './look-panel';
 import { RollPopup, type RollResult, rollSound } from './roll-dock';
-import { type CardPose, type CardTok, DOMAT_KEY, type LoosePiece, type PlaceGroup, type Places, type SupplyPiece, SUPPLY_HALF, type TableAction, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
+import { type CardPose, type CardTok, DOMAT_KEY, type LoosePiece, type PlaceGroup, type Places, type SupplyPiece, SUPPLY_HALF, type TableAction, type CritStage, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
 import { breakPieces, CardBreak, type CardBreakMode, CardScrap, clipHalf, shardPolys, DomatCardView, type Fx, FX_CSS, FxLayer, localDir, type Pt, scrapShape, shake } from './table-fx';
 import { type BoardCard, loadBoard, loadLook, loadSpread, saveBoard, saveLook, saveSpread, type SavedPiece, type SpreadPlace } from './table-store';
 import { Chamfer, DIE_GLYPHS, Glyph, T, TButton } from './table-ui';
@@ -587,21 +587,28 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
 
   // ---------------------------------------------------------------- rolling: presets, traits, selections
   const [result, setResult] = useState<RollResult | null>(null);
+  /**
+   * A critical keeps its own result back until its blast (owner, v0.47.27: CRITICAL is not to show before the build-up
+   * has had its moment).
+   */
+  const critHold = useRef<{ busy: boolean; pending: RollResult | null }>({ busy: false, pending: null });
+  const showResult = useCallback((r: RollResult) => { if (critHold.current.busy) critHold.current.pending = r; else setResult(r); }, []);
+  const releaseResult = () => { const h = critHold.current; h.busy = false; if (h.pending) { setResult(h.pending); h.pending = null; } };
   const rollFrom = useRef<{ x: number; y: number } | null>(null);
   const rolling = useRef(false);
-  const throwPool = useCallback(async (list: PoolDie[], m: { label: string | null; value: number }) => {
+  const throwPool = useCallback(async (list: PoolDie[], m: { label: string | null; value: number }, rig?: number[]) => {
     if (!list.length || rolling.current || !diceRef.current) return;
     rolling.current = true;
     setResult(null);
     const from = rollFrom.current ?? { x: (play.left + play.right) / 2, y: (openTop + openBottom) / 2 + 60 };
     rollFrom.current = null;
     for (const d of list) rolledDice.current.set(d.id, d);
-    const landed = await diceRef.current.roll(list, from);
+    const landed = await diceRef.current.roll(list, from, rig);
     rolling.current = false;
     for (const d of landed) rolledDice.current.set(d.id, d);
     rollSound(landed);
-    setResult({ total: poolTotal(landed, m.value), verdict: dualityVerdict(landed), dice: landed, label: m.label, mod: m.value });
-  }, [play.left, play.right, openTop, openBottom]);
+    showResult({ total: poolTotal(landed, m.value), verdict: dualityVerdict(landed), dice: landed, label: m.label, mod: m.value });
+  }, [play.left, play.right, openTop, openBottom, showResult]);
   const selRef = useRef<string[]>([]);
   // The sheet's handle: a trait or a preset rolls here, on the table (owner, v0.47.3: no dice bar).
   useEffect(() => {
@@ -1402,7 +1409,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           void h.rollPieces(keys).then((landed) => {
             if (!landed.length) return;
             rollSound(landed);
-            setResult({ total: poolTotal(landed, 0), verdict: dualityVerdict(landed), dice: landed, label: 'Vizier', mod: 0 });
+            showResult({ total: poolTotal(landed, 0), verdict: dualityVerdict(landed), dice: landed, label: 'Vizier', mod: 0 });
           });
         }, 380);
         timers.current.push(storm);
@@ -1447,8 +1454,9 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
    * flashes it red and shoves it towards the nearer edge of the table, hard enough hits off it entirely, and a moment
    * after the last it creeps back into place. Its hitbox is the cards (what a drag of the hand grabs) and moves with it.
    */
-  const shove = useRef({ off: 0, vel: 0, t: 0, hitAt: 0, raf: 0, base: null as null | { left: number; top: number; right: number; bottom: number } });
-  const flashRef = useRef<HTMLDivElement>(null);
+  /** The hand's cards, each a hitbox of its own (owner, v0.47.27: the cards take the hits, not the gaps between them). */
+  type HandCard = { el: HTMLElement; left: number; top: number; right: number; bottom: number };
+  const shove = useRef({ off: 0, vel: 0, t: 0, hitAt: 0, raf: 0, cards: [] as HandCard[], placed: 0 });
   const physRef = useRef(physOn);
   physRef.current = physOn;
   const placeHand = useCallback(() => {
@@ -1456,25 +1464,26 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const h = handRef.current;
     if (h) h.style.transform = s.off ? `translateY(${s.off.toFixed(1)}px)` : '';
     if (!eng) return;
-    eng.setObstacle('carousel', physRef.current && s.base ? { left: s.base.left, right: s.base.right, top: s.base.top + s.off, bottom: s.base.bottom + s.off, only: 'pieces' } : null);
+    const cards = physRef.current ? s.cards : [];
+    cards.forEach((c, i) => eng.setObstacle(`carousel:${i}`, { left: c.left, right: c.right, top: c.top + s.off, bottom: c.bottom + s.off, only: 'pieces' }));
+    for (let i = cards.length; i < s.placed; i++) eng.setObstacle(`carousel:${i}`, null);
+    s.placed = cards.length;
   }, []);
-  /** Where the cards are drawn now, as the hand would be at rest (table px). */
+  /** Where each card is drawn now, as the hand would be at rest (table px): what a drag of the hand grabs. */
   const measureHand = useCallback(() => {
     const h = handRef.current, t = tableRef.current, s = shove.current;
-    if (!h || !t) { s.base = null; return; }
+    s.cards = [];
+    if (!h || !t) return;
     const tr = t.getBoundingClientRect();
-    let l = Infinity, tp = Infinity, r = -Infinity, b = -Infinity;
     for (const el of h.querySelectorAll<HTMLElement>('[data-slot]')) {
       if (el.style.visibility === 'hidden') continue;
       const q = el.getBoundingClientRect();
       if (q.width < 4 || q.right < tr.left || q.left > tr.right) continue;
-      l = Math.min(l, q.left); r = Math.max(r, q.right); tp = Math.min(tp, q.top); b = Math.max(b, q.bottom);
+      s.cards.push({ el, left: q.left - tr.left, right: q.right - tr.left, top: q.top - tr.top - s.off, bottom: q.bottom - tr.top - s.off });
     }
-    if (!Number.isFinite(l)) { s.base = null; return; }
-    s.base = { left: Math.max(0, l - tr.left), right: Math.min(tr.width, r - tr.left), top: tp - tr.top - s.off, bottom: b - tr.top - s.off };
-    const f = flashRef.current, hr = h.getBoundingClientRect();
-    if (f) Object.assign(f.style, { left: `${l - hr.left}px`, top: `${tp - hr.top}px`, width: `${r - l}px`, height: `${b - tp}px` });
   }, []);
+  /** A red glow over one card, once per hit. */
+  const glowOf = useRef(new WeakMap<HTMLElement, HTMLDivElement>()).current;
   useEffect(() => {
     if (!physOn) { shove.current.off = 0; shove.current.vel = 0; placeHand(); return; }
     // The cards move as the hand scrolls and its look changes: measured again now and then.
@@ -1500,20 +1509,33 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     if (s.off !== 0 || Math.abs(s.vel) > 1) s.raf = requestAnimationFrame(shoveTick);
     else { s.raf = 0; s.t = 0; }
   }, [tableH, placeHand]);
-  const onCarouselHit = useCallback((speed: number, charged: boolean) => {
+  const onCarouselHit = useCallback((speed: number, charged: boolean, wall: string) => {
     if (!physRef.current) return;
     const s = shove.current;
-    if (!s.base) return;
+    if (!s.cards.length) return;
     // Towards whichever edge of the table it is nearer.
-    const dir = (s.base.top + s.base.bottom) / 2 > tableH / 2 ? 1 : -1;
+    const mid = (Math.min(...s.cards.map((c) => c.top)) + Math.max(...s.cards.map((c) => c.bottom))) / 2;
+    const dir = mid > tableH / 2 ? 1 : -1;
     // Heavy (owner, v0.47.26: six times harder to push than at first): a charged throw (burning, frozen, lightning)
     // moves it a little, plenty of them put it off the table; a plain throw barely nudges it, a soft one not at all.
     s.vel += dir * (charged ? Math.min(260, speed * 0.02) : Math.min(60, Math.max(0, speed - 700) * 0.006));
     s.hitAt = performance.now();
     const k = Math.min(1, speed / 2600) * (charged ? 1 : 0.45);
-    flashRef.current?.animate([{ opacity: 0 }, { opacity: 0.35 + 0.5 * k, offset: 0.2 }, { opacity: 0 }], { duration: 300, easing: 'ease-out' });
+    // The card that was hit glows red, on its own picture (which lifts with it when it is pointed at).
+    const card = s.cards[Number(wall.split(':')[1])];
+    const face = (card?.el.firstElementChild as HTMLElement | null) ?? card?.el;
+    if (face) {
+      let g = glowOf.get(face);
+      if (!g) {
+        g = document.createElement('div');
+        Object.assign(g.style, { position: 'absolute', inset: '0', pointerEvents: 'none', zIndex: '50', opacity: '0', borderRadius: '14px', background: 'rgba(220,40,30,0.24)', boxShadow: 'inset 0 0 46px 10px rgba(255,50,35,0.9), 0 0 26px rgba(255,50,35,0.6)' });
+        face.appendChild(g);
+        glowOf.set(face, g);
+      }
+      g.animate([{ opacity: 0 }, { opacity: 0.35 + 0.55 * k, offset: 0.2 }, { opacity: 0 }], { duration: 300, easing: 'ease-out' });
+    }
     if (!s.raf) s.raf = requestAnimationFrame(shoveTick);
-  }, [tableH, shoveTick]);
+  }, [tableH, shoveTick, glowOf]);
   useEffect(() => () => cancelAnimationFrame(shove.current.raf), []);
   const lastHit = useRef(0);
   const onHardHit = useCallback((speed: number) => {
@@ -1531,18 +1553,136 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
    * and the blast has thrown every loose piece and physical card away from them. The table flashes gold, a shockwave
    * runs out, runes turn, sparks fly, CRITICAL slams down over them and the table shakes hard.
    */
-  const onCrit = useCallback((at: { x: number; y: number }) => {
+  /**
+   * A critical (owner, v0.47.27: the effect above all others, staged like an impact frame). The table goes dark but
+   * for a spotlight on the pair in the middle and the camera pushes in; it builds, light streaking into them while
+   * the screen shakes harder and harder for a second and a half; dead still, CRITICAL slams in for half a second;
+   * then the blast: a white-out, rings and sparks, the camera snaps back and the dark lifts. All drawn straight into
+   * the page (no re-render), over everything on the table.
+   */
+  const critRef = useRef<{ stage: HTMLDivElement; veil: HTMLDivElement; halo: HTMLDivElement; word?: HTMLDivElement; rumble?: Animation; streaks?: ReturnType<typeof setInterval> } | null>(null);
+  const onCrit = useCallback((at: { x: number; y: number }, stage: CritStage) => {
+    const root = tableRef.current;
+    if (!root) return;
+    const calm = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const diag = Math.hypot(tableW, tableH);
-    addFx({ kind: 'flash', x: at.x, y: at.y, r: 0, ms: 900, tint: '#F9D68D' });
-    addFx({ kind: 'ring', x: at.x, y: at.y, r: diag * 0.75, ms: 900, tint: '#FFE3A0' });
-    addFx({ kind: 'ring', x: at.x, y: at.y, r: diag * 0.4, ms: 700, tint: '#ffffff' });
-    addFx({ kind: 'rune', x: at.x, y: at.y, r: 190, ms: 1500, tint: '#F9D68D' });
-    addFx({ kind: 'spark', x: at.x, y: at.y, r: 260, ms: 900, tint: '#FFF1C8' });
-    addFx({ kind: 'consume', x: at.x, y: at.y, r: 150, ms: 700, tint: '#F2C66A' });
-    addFx({ kind: 'word', x: Math.min(tableW - 220, Math.max(220, at.x)), y: Math.min(tableH - 120, Math.max(190, at.y)), r: 64, ms: 1700, tint: '#E0A830', label: 'CRITICAL' });
-    shake(tableRef.current, 1.6);
-    cue('roll:crit', 'levelUpComplete', { volume: 0.8 });
+    const box = (st: Partial<CSSStyleDeclaration>) => { const d = document.createElement('div'); Object.assign(d.style, { position: 'absolute', pointerEvents: 'none' }, st); return d; };
+    const c = critRef.current;
+    if (stage === 'gather') {
+      if (c) { clearInterval(c.streaks); c.stage.remove(); }
+      // Over everything on the table, and in the way of the pointer until the blast.
+      const stageEl = box({ inset: '0', zIndex: '1300', pointerEvents: 'auto' });
+      const veil = box({ inset: '0', opacity: '0', background: `radial-gradient(circle at ${at.x}px ${at.y}px, rgba(4,3,8,0) 0, rgba(4,3,8,0) 70px, rgba(4,3,8,0.82) 190px, rgba(2,1,4,0.94) 420px)` });
+      const halo = box({ left: `${at.x - 170}px`, top: `${at.y - 170}px`, width: '340px', height: '340px', borderRadius: '50%', opacity: '0', mixBlendMode: 'screen', background: 'radial-gradient(circle, rgba(255,214,120,0) 30%, rgba(255,200,90,0.55) 46%, rgba(255,170,60,0.18) 60%, rgba(255,170,60,0) 72%)' });
+      stageEl.append(veil, halo);
+      root.appendChild(stageEl);
+      veil.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 420, easing: 'ease-out', fill: 'forwards' });
+      critRef.current = { stage: stageEl, veil, halo };
+      critHold.current.busy = true;
+      if (!calm) {
+        // The camera: in as they arrive, creeping closer as it builds, a punch on the word, snapping back with the blast.
+        root.style.transformOrigin = `${at.x}px ${at.y}px`;
+        root.animate([
+          { transform: 'scale(1)', offset: 0, easing: 'cubic-bezier(0.3,0,0.2,1)' },
+          { transform: 'scale(1.16)', offset: 0.17, easing: 'cubic-bezier(0.5,0,0.9,0.7)' },
+          { transform: 'scale(1.34)', offset: 0.63, easing: 'cubic-bezier(0.1,0.9,0.2,1)' },
+          { transform: 'scale(1.46)', offset: 0.67 },
+          { transform: 'scale(1.43)', offset: 0.79, easing: 'cubic-bezier(0.2,0.9,0.1,1)' },
+          { transform: 'scale(0.96)', offset: 0.84, easing: 'ease-out' },
+          { transform: 'scale(1.015)', offset: 0.91, easing: 'ease-in-out' },
+          { transform: 'scale(1)', offset: 1 },
+        ], { duration: 3300 });
+      }
+      cue('crit:gather', 'cardFullscreenEnter', { volume: 0.7 });
+      return;
+    }
+    if (!c) { releaseResult(); return; }
+    if (stage === 'rumble') {
+      cue('crit:rise', 'gainGoldenHp', { volume: 0.8 });
+      c.halo.animate([{ opacity: 0, transform: 'scale(0.6)' }, { opacity: 1, transform: 'scale(1.05)' }], { duration: 1500, easing: 'ease-in', fill: 'forwards' });
+      c.veil.animate([{ filter: 'brightness(1)' }, { filter: 'brightness(0.75)' }], { duration: 1500, fill: 'forwards' });
+      if (!calm) {
+        // The shake: faster and wider the longer it builds.
+        const host = root.parentElement ?? root;
+        const frames: Keyframe[] = [];
+        for (let i = 0; i <= 60; i++) {
+          const k = Math.pow(i / 60, 1.6) * 14 + 0.6;
+          frames.push({ transform: i === 60 ? 'none' : `translate(${((Math.random() - 0.5) * 2 * k).toFixed(1)}px, ${((Math.random() - 0.5) * 2 * k).toFixed(1)}px)` });
+        }
+        c.rumble = host.animate(frames, { duration: 1500, easing: 'linear' });
+      }
+      // Light streaking in to them, more and more of it.
+      let n = 0;
+      c.streaks = setInterval(() => {
+        const count = 1 + Math.floor(n++ / 4);
+        for (let i = 0; i < count; i++) {
+          const deg = Math.random() * 360, r = 180 + Math.random() * 260, len = 30 + Math.random() * 60;
+          const st = box({ left: `${at.x - len}px`, top: `${at.y - 1.5}px`, width: `${len}px`, height: '3px', borderRadius: '2px', mixBlendMode: 'screen', background: 'linear-gradient(90deg, rgba(255,240,200,0), rgba(255,226,150,0.95))', transformOrigin: '100% 50%' });
+          c.stage.appendChild(st);
+          st.animate([
+            { transform: `rotate(${deg}deg) translateX(-${r}px)`, opacity: 0 },
+            { opacity: 1, offset: 0.3 },
+            { transform: `rotate(${deg}deg) translateX(-14px)`, opacity: 0.9 },
+          ], { duration: 260 + Math.random() * 140, easing: 'cubic-bezier(0.5,0,1,0.6)' }).onfinish = () => st.remove();
+        }
+      }, 70);
+      return;
+    }
+    if (stage === 'word') {
+      clearInterval(c.streaks);
+      c.rumble?.cancel();
+      cue('crit:word', 'cardDisable', { volume: 0.9 });
+      const flash = box({ inset: '0', background: '#fff8e6', mixBlendMode: 'screen' });
+      c.stage.appendChild(flash);
+      flash.animate([{ opacity: 0.85 }, { opacity: 0 }], { duration: 240, easing: 'ease-out', fill: 'forwards' });
+      const word = box({ left: `${at.x}px`, top: `${at.y - 118}px`, transform: 'translate(-50%, -50%)' });
+      const txt = document.createElement('div');
+      txt.textContent = 'CRITICAL';
+      Object.assign(txt.style, { fontFamily: T.display, fontSize: '92px', letterSpacing: '6px', whiteSpace: 'nowrap', color: '#FFF4D2', textShadow: '0 0 14px #FFD27A, 0 0 40px #E0A830, 0 0 90px #B8741A, 0 5px 0 #5a3608' });
+      word.appendChild(txt);
+      c.stage.appendChild(word);
+      txt.animate([
+        { transform: 'scale(3.2)', opacity: 0, filter: 'blur(8px)' },
+        { transform: 'scale(0.9)', opacity: 1, filter: 'blur(0px)', offset: 0.32 },
+        { transform: 'scale(1.04)', offset: 0.55 },
+        { transform: 'scale(1)', opacity: 1 },
+      ], { duration: 260, easing: 'cubic-bezier(0.2,0.9,0.3,1)', fill: 'forwards' });
+      // A ring off the slam.
+      const ring = box({ left: `${at.x - 60}px`, top: `${at.y - 178}px`, width: '120px', height: '120px', borderRadius: '50%', border: '3px solid rgba(255,226,150,0.9)', mixBlendMode: 'screen' });
+      c.stage.appendChild(ring);
+      ring.animate([{ transform: 'scale(0.4)', opacity: 1 }, { transform: 'scale(5)', opacity: 0 }], { duration: 480, easing: 'ease-out', fill: 'forwards' });
+      c.word = word;
+      return;
+    }
+    if (stage === 'boom') {
+      releaseResult();
+      cue('crit:boom', 'levelUpComplete', { volume: 1 });
+      cue('roll:crit', 'levelUpComplete', { volume: 0.8 });
+      c.word?.firstElementChild?.animate([{ transform: 'scale(1)', opacity: 1, filter: 'blur(0px)' }, { transform: 'scale(2.1)', opacity: 0, filter: 'blur(10px)' }], { duration: 520, easing: 'cubic-bezier(0.2,0.8,0.2,1)', fill: 'forwards' });
+      const white = box({ inset: '0', background: `radial-gradient(circle at ${at.x}px ${at.y}px, #ffffff 0, #fff3d0 35%, rgba(255,214,140,0.9) 70%)` });
+      c.stage.appendChild(white);
+      white.animate([{ opacity: 1 }, { opacity: 0.9, offset: 0.15 }, { opacity: 0 }], { duration: 620, easing: 'ease-out', fill: 'forwards' });
+      c.veil.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 700, delay: 120, easing: 'ease-out', fill: 'forwards' });
+      c.halo.animate([{ opacity: 1, transform: 'scale(1.05)' }, { opacity: 0, transform: 'scale(3)' }], { duration: 600, easing: 'ease-out', fill: 'forwards' });
+      c.stage.style.pointerEvents = 'none';
+      addFx({ kind: 'flash', x: at.x, y: at.y, r: 0, ms: 900, tint: '#F9D68D' });
+      addFx({ kind: 'ring', x: at.x, y: at.y, r: diag * 0.9, ms: 1000, tint: '#FFE3A0' });
+      addFx({ kind: 'ring', x: at.x, y: at.y, r: diag * 0.55, ms: 800, tint: '#ffffff' });
+      addFx({ kind: 'ring', x: at.x, y: at.y, r: diag * 0.3, ms: 600, tint: '#FFD27A' });
+      addFx({ kind: 'rune', x: at.x, y: at.y, r: 230, ms: 1600, tint: '#F9D68D' });
+      addFx({ kind: 'spark', x: at.x, y: at.y, r: 380, ms: 1100, tint: '#FFF1C8' });
+      addFx({ kind: 'spark', x: at.x, y: at.y, r: 220, ms: 800, tint: '#ffffff' });
+      addFx({ kind: 'consume', x: at.x, y: at.y, r: 190, ms: 800, tint: '#F2C66A' });
+      if (!calm) shake((root.parentElement as HTMLElement | null) ?? root, 1.9);
+      return;
+    }
+    // done
+    releaseResult();
+    clearInterval(c.streaks);
+    c.stage.remove();
+    critRef.current = null;
   }, [addFx, tableW, tableH]);
+  useEffect(() => () => { const c = critRef.current; if (c) { clearInterval(c.streaks); c.stage.remove(); } }, []);
   const onBreak = useCallback((keys: string[], at: { x: number; y: number }, fire: boolean, first: boolean, hits: Impact[]) => {
     const bases = new Set(keys.map(baseOf));
     setLoose(looseRef.current.filter((t) => !bases.has(t.key)));
@@ -1594,7 +1734,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const onGroupRolled = useCallback((landed: PoolDie[]) => {
     rollSound(landed);
     const { mod, label } = modNow();
-    setResult({ total: poolTotal(landed, mod), verdict: dualityVerdict(landed), dice: landed, label, mod });
+    showResult({ total: poolTotal(landed, mod), verdict: dualityVerdict(landed), dice: landed, label, mod });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- modNow reads refs and the stable resolver
   /**
    * A physical card moved: drawn there straight away, and kept (from where physics says it is, never read back from
@@ -2019,8 +2159,6 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             ) : (
               <DeskCarousel key={category} ref={carRef} cards={cards} look={look} initialIndex={middle} onCentre={onCentre} onCentreClick={onCentreClick} takenId={copy?.card.id} />
             )}
-            {/* The physical carousel's hit: a red glow over the cards, once per knock. */}
-            <div ref={flashRef} aria-hidden="true" style={{ position: 'absolute', pointerEvents: 'none', zIndex: 2000, opacity: 0, borderRadius: 10, background: 'rgba(220,40,30,0.22)', boxShadow: 'inset 0 0 36px 6px rgba(255,50,35,0.85), 0 0 22px rgba(255,50,35,0.55)' }} />
           </div>
         )}
 
@@ -2157,7 +2295,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
                 if (!landed.length) return;
                 rollSound(landed);
                 const { mod, label } = modNow();
-                setResult({ total: poolTotal(landed, mod), verdict: dualityVerdict(landed), dice: landed, label, mod });
+                showResult({ total: poolTotal(landed, mod), verdict: dualityVerdict(landed), dice: landed, label, mod });
               });
             }}
             mod={selMod}
@@ -2212,7 +2350,12 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           </div>
         ) : null}
         {picking ? (
-          <DomatPicker left={pad + 62} bottom={pad + 10} onClose={() => setPicking(false)} onPick={(c) => {
+          <DomatPicker left={pad + 62} bottom={pad + 10} onClose={() => setPicking(false)} onCrit={() => {
+            // Testing (owner, v0.47.27): Hope and Fear thrown and landing on the same number.
+            setPicking(false);
+            const pairId = poolId(), n = 1 + Math.floor(Math.random() * 12);
+            void throwPool([{ id: poolId(), type: 'd12', value: null, side: 'hope', pairId }, { id: poolId(), type: 'd12', value: null, side: 'fear', pairId }], { label: null, value: 0 }, [n, n]);
+          }} onPick={(c) => {
             setPicking(false);
             const s = diceRef.current?.engine()?.state(DOMAT_KEY);
             drawCard(s ? { x: s.x, y: s.y } : { x: tableW / 2, y: tableH / 2 }, { pick: c });
@@ -2624,7 +2767,7 @@ function CarriedCard({ copy, tableRef }: { copy: { card: TableCard; x: number; y
 }
 
 /** Every card of the Deck of Many Things in a list, to draw any one (testing). */
-function DomatPicker({ left, bottom, onPick, onClose }: { left: number; bottom: number; onPick: (c: DomatCard) => void; onClose: () => void }) {
+function DomatPicker({ left, bottom, onPick, onCrit, onClose }: { left: number; bottom: number; onPick: (c: DomatCard) => void; onCrit: () => void; onClose: () => void }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => { box.current?.focus(); }, []);
   return (
@@ -2633,6 +2776,12 @@ function DomatPicker({ left, bottom, onPick, onClose }: { left: number; bottom: 
       <div data-ui="" ref={box} role="listbox" aria-label="Deck of Many Things cards" tabIndex={-1} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }}
         style={{ position: 'absolute', left, bottom, zIndex: 1262, width: 290, maxHeight: 420, overflowY: 'auto', outline: 'none', background: 'rgba(11,14,19,0.98)', border: `1px solid ${T.goldSoft}` }} className="rk-scroll">
         <div style={{ padding: '9px 12px 6px', color: T.muted, fontFamily: T.medium, fontSize: 12.5 }}>Testing: draws the card, stock or not.</div>
+        <div role="option" aria-selected={false} onClick={onCrit}
+          onPointerEnter={(e) => { e.currentTarget.style.background = T.panelLit; }} onPointerLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          style={{ cursor: 'pointer', padding: '7px 12px', display: 'flex', gap: 9, alignItems: 'baseline', borderLeft: '3px solid #E0A830' }}>
+          <span style={{ color: T.ivory, fontFamily: T.bold, fontSize: 13.5, whiteSpace: 'nowrap' }}>Roll a crit</span>
+          <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Hope and Fear land on the same number.</span>
+        </div>
         {DOMAT.map((c) => (
           <div key={c.id} role="option" aria-selected={false} onClick={() => onPick(c)}
             onPointerEnter={(e) => { e.currentTarget.style.background = T.panelLit; }} onPointerLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
