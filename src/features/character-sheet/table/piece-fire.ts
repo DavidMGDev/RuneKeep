@@ -15,12 +15,19 @@ export interface FireLayer {
    * fire, frost or lightning jumps to full, flares past it and settles back.
    */
   spike(key: string, cold?: boolean | 'spark'): void;
+  /**
+   * An element token at rest gives off its element's particles, nothing more (owner, v0.47.26: the flames, frost and
+   * bolts are for when it is charged): embers, frost flakes, drops or sparks. `null` stops them.
+   */
+  aura(key: string, el: Aura | null): void;
   /** A bolt of lightning from one point to another for `ms` (table px): a lightning token's arc (v0.47.19). */
   arc(ax: number, ay: number, bx: number, by: number, ms?: number): void;
   /** Put every fire out at once (the table was cleared). */
   clear(): void;
   dispose(): void;
 }
+
+export type Aura = 'fire' | 'ice' | 'water' | 'spark';
 
 /** Where a piece is drawn on the table, and how big it is (px); null once it is gone. */
 export type PieceAt = (key: string) => { x: number; y: number; size: number } | null;
@@ -42,6 +49,65 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
   Object.assign(bolts.style, { position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', pointerEvents: 'none', zIndex: '22' });
   host.appendChild(bolts);
   const g2 = bolts.getContext('2d');
+  // The element tokens' particles, on a 2D layer of their own under the bolts.
+  const dust = document.createElement('canvas');
+  Object.assign(dust.style, { position: 'absolute', left: '0', top: '0', width: '100%', height: '100%', pointerEvents: 'none', zIndex: '21' });
+  host.appendChild(dust);
+  const g3 = dust.getContext('2d');
+  const auras = new Map<string, { el: Aura; acc: number }>();
+  const motes: { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; el: Aura }[] = [];
+  /** How many a second each gives off. */
+  const RATE: Record<Aura, number> = { fire: 9, ice: 6, water: 5, spark: 7 };
+  let dustDirty = false;
+  /** Move and draw the particles; true while there are any to draw. */
+  const drawDust = (dt: number, dpr: number): boolean => {
+    if (!g3) return false;
+    for (const [key, a] of auras) {
+      const at = where(key);
+      if (!at) { auras.delete(key); continue; }
+      a.acc += dt * RATE[a.el];
+      while (a.acc >= 1 && motes.length < 320) {
+        a.acc -= 1;
+        const ang = Math.random() * Math.PI * 2, r = at.size * (0.2 + Math.random() * 0.3);
+        const x = at.x + Math.cos(ang) * r, y = at.y + Math.sin(ang) * r * 0.7;
+        // Embers rise, frost drifts out, drops fall, sparks jump.
+        const v = a.el === 'fire' ? [(Math.random() - 0.5) * 14, -28 - Math.random() * 30] : a.el === 'ice' ? [Math.cos(ang) * 12, Math.sin(ang) * 8 - 4] : a.el === 'water' ? [(Math.random() - 0.5) * 8, 10 + Math.random() * 12] : [Math.cos(ang) * 55, Math.sin(ang) * 55];
+        const max = a.el === 'spark' ? 0.18 + Math.random() * 0.15 : 0.7 + Math.random() * 0.6;
+        motes.push({ x, y, vx: v[0], vy: v[1], life: max, max, size: a.el === 'spark' ? 1.2 : 1.4 + Math.random() * 1.6, el: a.el });
+      }
+    }
+    if (!motes.length) {
+      if (dustDirty) { g3.setTransform(1, 0, 0, 1, 0, 0); g3.clearRect(0, 0, dust.width, dust.height); dustDirty = false; }
+      return auras.size > 0;
+    }
+    const cw = Math.round(host.clientWidth * dpr), ch = Math.round(host.clientHeight * dpr);
+    if (dust.width !== cw || dust.height !== ch) { dust.width = cw; dust.height = ch; }
+    g3.setTransform(1, 0, 0, 1, 0, 0);
+    g3.clearRect(0, 0, cw, ch);
+    g3.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g3.globalCompositeOperation = 'lighter';
+    for (let i = motes.length - 1; i >= 0; i--) {
+      const m = motes[i];
+      m.life -= dt;
+      if (m.life <= 0) { motes.splice(i, 1); continue; }
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+      const t = m.life / m.max;
+      if (m.el === 'spark') {
+        g3.strokeStyle = `rgba(255,236,120,${t})`;
+        g3.lineWidth = m.size;
+        g3.beginPath(); g3.moveTo(m.x, m.y); g3.lineTo(m.x - m.vx * 0.04, m.y - m.vy * 0.04); g3.stroke();
+        continue;
+      }
+      g3.fillStyle = m.el === 'fire' ? `rgba(255,${120 + Math.round(t * 90)},40,${t * 0.9})` : m.el === 'ice' ? `rgba(200,236,255,${t * 0.8})` : `rgba(90,160,255,${t * 0.8})`;
+      g3.beginPath();
+      g3.arc(m.x, m.y, m.size * (m.el === 'fire' ? t : 1), 0, Math.PI * 2);
+      g3.fill();
+    }
+    g3.globalCompositeOperation = 'source-over';
+    dustDirty = true;
+    return true;
+  };
   /** Bolts in flight: each a jagged path, redrawn fresh every few frames while it lasts. */
   const arcs: { ax: number; ay: number; bx: number; by: number; until: number }[] = [];
   gl.useProgram(prog);
@@ -165,7 +231,8 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
     const crackling = drawBolts(now, dpr);
-    if (fires.size || crackling) raf = requestAnimationFrame(frame);
+    const dusty = drawDust(dt, dpr);
+    if (fires.size || crackling || dusty) raf = requestAnimationFrame(frame);
     else last = 0;
   };
   const wake = () => { if (!raf) raf = requestAnimationFrame(frame); };
@@ -185,6 +252,12 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
       boltAt = 0;
       wake();
     },
+    aura(key, el) {
+      if (!el) { auras.delete(key); return; }
+      const a = auras.get(key);
+      if (a) a.el = el; else auras.set(key, { el, acc: Math.random() });
+      wake();
+    },
     arc(ax, ay, bx, by, ms = 260) {
       arcs.push({ ax, ay, bx, by, until: performance.now() + ms });
       boltAt = 0;
@@ -199,6 +272,7 @@ export function createFireLayer(host: HTMLElement, where: PieceAt): FireLayer | 
       cancelAnimationFrame(raf);
       canvas.remove();
       bolts.remove();
+      dust.remove();
       gl.getExtension('WEBGL_lose_context')?.loseContext();
     },
   };

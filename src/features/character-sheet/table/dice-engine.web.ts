@@ -435,6 +435,9 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let fixedObs: Obstacle[] = [];
   const movingObs = new Map<string, Obstacle>();
   const mergeObs = () => { obstacles = movingObs.size ? [...fixedObs, ...movingObs.values()] : fixedObs; };
+  /** Pieces the moving carousel slid along, to be reported as rested once it stops. */
+  const nudged = new Set<string>();
+  let nudgeTimer: ReturnType<typeof setTimeout> | undefined;
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
   interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { b: Body; dx: number; dy: number; orbit?: number; pair?: boolean }[] | null; lid: THREE.Object3D | null; mouth: number; mouthNow: number; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
@@ -916,17 +919,31 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       wake();
     },
     setObstacle(id, o) {
+      const was = movingObs.get(id);
       if (o) movingObs.set(id, { ...o, id }); else movingObs.delete(id);
       mergeObs();
       if (!o || o.only === 'cards') return;
-      // A piece it moves onto is pushed off it.
-      let woke = false;
+      // Resting pieces it moves onto are carried along with it, frame by frame (owner, v0.47.26: knocked loose by it
+      // they stuttered): slid straight out of its way in the direction it moves, still asleep, no bounce. A piece on
+      // the move meets it through the physics as before.
+      const dir = was ? Math.sign(o.top - was.top) : 0;
+      let moved = false;
       for (const d of order) {
         const b = d.body;
-        if (!b.asleep || b.fixed || b.held || b.box) continue;
-        if (b.x + b.r > o.left && b.x - b.r < o.right && b.y + b.r > o.top && b.y - b.r < o.bottom) { b.asleep = false; woke = true; }
+        if (!b.asleep || b.fixed || b.held || b.box || b.ghost || d.vanish) continue;
+        if (b.x + b.r <= o.left || b.x - b.r >= o.right || b.y + b.r <= o.top || b.y - b.r >= o.bottom) continue;
+        // Out the side it is being pushed from: ahead of the obstacle as it goes, else the nearer face.
+        const toTop = dir < 0 || (dir === 0 && b.y < (o.top + o.bottom) / 2);
+        const ny = toTop ? o.top - b.r - 0.5 : o.bottom + b.r + 0.5;
+        b.y = Math.min(bounds.bottom - b.r, Math.max(bounds.top + b.r, ny));
+        nudged.add(d.spec.key);
+        moved = true;
       }
-      if (woke) wake();
+      if (!moved) return;
+      wake();
+      // Where they came to lie is told once the carousel is still again, not every frame.
+      clearTimeout(nudgeTimer);
+      nudgeTimer = setTimeout(() => { const ks = [...nudged].filter((k) => dice.has(k)); nudged.clear(); if (ks.length) restCb(ks); }, 250);
     },
     setObstacles(o) {
       fixedObs = o;

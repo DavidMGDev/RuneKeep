@@ -116,7 +116,8 @@ export interface Impact {
   /** A card set alight by a fire token's touch (v0.47.19): it burns, with no impact frame. */ scorch?: boolean;
   /** The other piece in a knock between two (the elements of the Deck of Many Things read who met whom). */ other?: string;
   /** For a break: how the breaker was moving (px/s), which way a card is torn or cut. */ vx?: number; vy?: number;
-  /** A knock against a named obstacle (the physical carousel), and which way it was struck (its outward normal). */ wall?: string; ny?: number;
+  /** A knock against a named obstacle (the physical carousel), which way it was struck (its outward normal), and
+   *  whether what struck it was charged (burning, frozen, lightning: a breaker). */ wall?: string; ny?: number; charged?: boolean;
 }
 
 /** How fast (px/s, against the piece) a charged throw must hit a loose piece to break it. */
@@ -545,7 +546,7 @@ function pushOut(b: Body, o: Obstacle, hits: Impact[]): void {
   }
   const into = b.vx * dx + b.vy * dy;
   if (into < 0) {
-    if (-into > 60) hits.push({ key: b.key, speed: -into, kind: 'rail', ...(o.id ? { wall: o.id, ny: dy } : {}) });
+    if (-into > 60) hits.push({ key: b.key, speed: -into, kind: 'rail', ...(o.id ? { wall: o.id, ny: dy, charged: !!(b.breaker || b.zap) } : {}) });
     b.vx -= (1 + RAIL_BOUNCE) * into * dx;
     b.vy -= (1 + RAIL_BOUNCE) * into * dy;
   }

@@ -171,13 +171,27 @@ function logSound(file: string, what: string): void {
     Object.assign(soundLog.style, { position: 'fixed', right: '10px', bottom: '10px', zIndex: '99999', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', font: '11px/1.35 system-ui, sans-serif' });
     document.body.appendChild(soundLog);
   }
+  const id = soundId(file);
   const line = document.createElement('div');
-  line.textContent = `${file}  ·  ${what}`;
-  Object.assign(line.style, { color: '#f3e3bc', background: 'rgba(8,10,14,0.78)', padding: '1px 7px', borderRadius: '3px', transition: 'opacity 600ms' });
+  const label = `${id}  ${file}  ·  ${what}`;
+  line.textContent = label;
+  line.title = 'Click to copy';
+  Object.assign(line.style, { color: '#f3e3bc', background: 'rgba(8,10,14,0.78)', padding: '1px 7px', borderRadius: '3px', transition: 'opacity 600ms', pointerEvents: 'auto', cursor: 'pointer' });
+  // A click copies its id and file, to name it when asking for it to be taken out (owner, v0.47.26).
+  line.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    void navigator.clipboard?.writeText(`${id} ${file}`).then(() => { line.textContent = `${id} copied`; setTimeout(() => { line.textContent = label; }, 900); }, () => {});
+  });
   soundLog.appendChild(line);
   while (soundLog.childElementCount > 10) soundLog.firstElementChild?.remove();
-  setTimeout(() => { line.style.opacity = '0'; }, 5000);
-  setTimeout(() => line.remove(), 5700);
+  setTimeout(() => { line.style.opacity = '0'; }, 7000);
+  setTimeout(() => line.remove(), 7700);
+}
+/** A short id for a sound file, the same every time (FNV-1a, four letters and digits). */
+export function soundId(file: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < file.length; i++) { h ^= file.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(36).slice(-4).padStart(4, '0');
 }
 
 /** Play a cue: under Aggressive one of its files, otherwise the Regular sound `id` exactly as asked. */

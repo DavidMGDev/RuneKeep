@@ -1500,16 +1500,17 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     if (s.off !== 0 || Math.abs(s.vel) > 1) s.raf = requestAnimationFrame(shoveTick);
     else { s.raf = 0; s.t = 0; }
   }, [tableH, placeHand]);
-  const onCarouselHit = useCallback((speed: number) => {
+  const onCarouselHit = useCallback((speed: number, charged: boolean) => {
     if (!physRef.current) return;
     const s = shove.current;
     if (!s.base) return;
     // Towards whichever edge of the table it is nearer.
     const dir = (s.base.top + s.base.bottom) / 2 > tableH / 2 ? 1 : -1;
-    // A hard hit moves it about a fifth of its height; a handful of them can put it off the table.
-    s.vel += dir * Math.min(900, 30 + speed * 0.12);
+    // Heavy (owner, v0.47.26: six times harder to push than at first): a charged throw (burning, frozen, lightning)
+    // moves it a little, plenty of them put it off the table; a plain throw barely nudges it, a soft one not at all.
+    s.vel += dir * (charged ? Math.min(260, speed * 0.02) : Math.min(60, Math.max(0, speed - 700) * 0.006));
     s.hitAt = performance.now();
-    const k = Math.min(1, speed / 2600);
+    const k = Math.min(1, speed / 2600) * (charged ? 1 : 0.45);
     flashRef.current?.animate([{ opacity: 0 }, { opacity: 0.35 + 0.5 * k, offset: 0.2 }, { opacity: 0 }], { duration: 300, easing: 'ease-out' });
     if (!s.raf) s.raf = requestAnimationFrame(shoveTick);
   }, [tableH, shoveTick]);
@@ -1986,7 +1987,15 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             />
           </div>
           {shattering.map((s) => <CardBreak key={s.uid} card={s.card} cx={s.cx} cy={s.cy} w={s.w} rot={s.rot} mode={s.mode} dir={s.dir} fxOnly={s.fxOnly} clip={s.clip} onDone={() => setShattering((l) => l.filter((x) => x.uid !== s.uid))} />)}
-          {scraps.map((c) => { const card = lookup(c.id); return card ? <CardScrap key={c.uid} uid={c.uid} card={card} poly={c.poly} w={c.w} x={c.x} y={c.y} rot={c.rot} fading={c.fading} onDrag={(u, px, py, r, end) => { const eng = diceRef.current?.engine(); if (!eng) return; if (end) eng.releaseCard(`card:${u}`); else eng.holdCard(`card:${u}`, px, py, r); }} /> : null; })}
+          {scraps.map((c) => { const card = lookup(c.id); return card ? <CardScrap key={c.uid} uid={c.uid} card={card} poly={c.poly} w={c.w} x={c.x} y={c.y} rot={c.rot} fading={c.fading} onDrag={(u, px, py, r, end) => {
+            const eng = diceRef.current?.engine();
+            if (!eng) return;
+            const key = `card:${u}`;
+            if (end) { eng.releaseCard(key); return; }
+            // A selected scrap carries the rest of the selection, as a selected card does (owner, v0.47.26).
+            if (selectionRef.current.includes(key)) eng.carryWith(key, selectionRef.current.filter((k) => k !== key));
+            eng.holdCard(key, px, py, r);
+          }} /> : null; })}
           {/* Cards in the selection (owner, v0.47.17): ringed in gold, like the dice. */}
           {selection.some((k) => k.startsWith('card:')) ? <style>{selection.filter((k) => k.startsWith('card:')).map((k) => `[data-board-card="${k.slice(5)}"] { outline: 2px solid #E0B563; outline-offset: 3px; } [data-board-card="${k.slice(5)}"] [data-grip] { display: none; }`).join(' ')}</style> : null}
           {Object.keys(cardEls).length ? <style>{Object.entries(cardEls).map(([u, el]) => `[data-board-card="${u}"] { box-shadow: 0 0 0 2px ${ELEMENT_TINT[el]}, 0 0 22px ${ELEMENT_TINT[el]}; }`).join('\n')}</style> : null}

@@ -325,3 +325,11 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   flickered back for a frame, and a second scroll over the chest caught a die flying into it). Dice from the chest's
   wheel and its giant d20 come out in front of it, never from inside it. Every sound played is named in a small log in
   the bottom right corner (its file, then its cue).
+- v0.47.26: the physical carousel is heavy: a charged hit (`Impact.charged`: a breaker or a zap) pushes it 0.02 of its
+  speed, a plain one 0.006 of what is over 700 px/s, a soft one not at all. As it moves it slides resting pieces out
+  of its way in the same frame (`setObstacle` moves them, still asleep, and reports them rested once it stops), so they
+  ride it smoothly instead of being knocked loose. A selection's tokens catch when it is swung, each its own way (fire,
+  or its element), and go burning or frozen when let go. Element tokens at rest give off particles only
+  (`FireLayer.aura`: embers, frost, drops, sparks on a 2D layer); the flames, frost and bolts are for a charge. The
+  sound log gives each file a short id (FNV-1a), and a click copies the id and file. A selected scrap carries the rest
+  of the selection.
