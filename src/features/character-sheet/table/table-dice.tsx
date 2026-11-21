@@ -264,6 +264,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
   onGood?: (at: { x: number; y: number }, tint: string, big: boolean) => void;
   /** A charged die slammed down here (v0.47.18). */
   onPound?: (at: { x: number; y: number }) => void;
+  /** A die or token struck the physical carousel this hard (px/s) (v0.47.25). */
+  onCarouselHit?: (speed: number) => void;
   /** A water token hit a wall hard and sent a wave across the table from here (v0.47.19). */
   onSplash?: (at: { x: number; y: number }) => void;
   /** A charged throw broke these loose pieces or physical cards (the first where `at` is); they are gone from the table. */
@@ -378,6 +380,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
           if (!knockCue(hit.kind, sparked.current.has(hit.key) ? hit.speed * 0.3 : hit.speed)) void import('./dice-engine').then((m) => m.knock(playSynth, hit));
           if (hit.kind === 'rail' && hit.speed > 2400) live.current.onHardHit(hit.speed);
           if (hit.other) live.current.onKnock?.(hit.key, hit.other);
+          if (hit.wall === 'carousel') live.current.onCarouselHit?.(hit.speed);
         });
         // A charged die's time is up: it slams down where it is, the lightning goes out of it (v0.47.18).
         e.onPound((key, at) => {
@@ -723,6 +726,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const t = setTimeout(() => engine.warm(DIE_KINDS.flatMap((type) => tokenSpecs(pieceOf(`free:warm-${type}`, { kind: 'die', dieType: type, dieValue: 1, dieValue2: type === 'duality' ? 1 : undefined }), numberFinish).map((x) => x.spec))), 1500);
     return () => clearTimeout(t);
   }, [engine, props.diceChest, numberFinish]);
+  /** Pieces flying into the chest or the supply, until they are off the loose list too. */
+  const leaving = useRef(new Set<string>());
+  const leave = (keys: string[], ms: number) => { for (const k of keys) leaving.current.add(k); setTimeout(() => { for (const k of keys) leaving.current.delete(k); }, ms + 400); };
   // Loose tokens: added where they were left, removed when they go onto a card or back to the supply.
   const looseKey = props.loose.map((t) => `${t.key}:${t.token.kind}:${t.token.dieType ?? ''}:${t.token.color ?? ''}`).join('|');
   useEffect(() => {
@@ -731,7 +737,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
     for (const t of props.loose) {
       for (const sp of tokenSpecs(pieceOf(t.key, t.token), numberFinish)) {
         want.add(sp.spec.key);
-        if (!engine.has(sp.spec.key)) engine.add(sp.spec, t.x + sp.dx, t.y, { face: sp.face, pop: true });
+        // One on its way into the chest or the supply is gone from the engine before it is gone from the list: never
+        // made again where it lay (owner, v0.47.25: it flickered there for a frame).
+        if (!engine.has(sp.spec.key) && !leaving.current.has(sp.spec.key)) engine.add(sp.spec, t.x + sp.dx, t.y, { face: sp.face, pop: true });
       }
     }
     for (const k of engine.keys()) if (k.startsWith('free:') && !want.has(k)) engine.remove(k);
@@ -1263,8 +1271,19 @@ export const TableDice = forwardRef<TableDiceHandle, {
       // Each die a short pip as it goes in, rising as they go (owner, v0.47.20); the mouth shuts without a sound of its own.
       back.forEach((_, i) => setTimeout(() => cue('chest:stow', 'gearScroll1', { volume: 0.4, cents: Math.min(1400, -200 + i * 140) }), i * STEP + 520));
       const done = back.length * STEP + 650;
+      leave(back.flatMap((b) => partsOf(b)), done);
       setTimeout(() => engine.mimic('src:die', 0), done - 120);
       setTimeout(() => live.current.onDiscard?.(back), done);
+    };
+    /**
+     * Where a die comes out of the chest: just in front of it, towards the open table, never inside it (owner, v0.47.25:
+     * one made in the middle of it was pushed out any side, and stuck against the wall behind it or at its sides).
+     */
+    const mouthOf = (at: { x: number; y: number }, big: number) => {
+      const b = boundsRef.current;
+      const ang = Math.atan2((b.top + b.bottom) / 2 - at.y, (b.left + b.right) / 2 - at.x) + (Math.random() - 0.5) * 0.7;
+      const d = 78 * 0.43 + (TOKEN_DIE_SIZE * big) / 2 + 8, r = (TOKEN_DIE_SIZE * big) / 2 + 2;
+      return { ang, x: Math.min(b.right - r, Math.max(b.left + r, at.x + Math.cos(ang) * d)), y: Math.min(b.bottom - r, Math.max(b.top + r, at.y + Math.sin(ang) * d)) };
     };
     /** Nothing to take: the chest shudders. */
     const refuse = () => { engine.jitter('src:die', 0.5); setTimeout(() => engine.jitter('src:die', 0), 300); cue('domat:empty', 'cardDisable', { volume: 0.4 }); };
@@ -1275,7 +1294,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const feast = () => {
       const at = engine.state('src:die');
       if (!at) return;
-      const bases = [...new Set(engine.keys().filter(isDie).map(baseOf))];
+      const bases = [...new Set(engine.keys().filter((k) => isDie(k) && !leaving.current.has(k)).map(baseOf))];
       if (!bases.length) { refuse(); return; }
       const keys = engine.keys().filter((k) => bases.includes(baseOf(k)));
       for (const k of keys) fireRef.current?.set(k, 0);
@@ -1291,14 +1310,16 @@ export const TableDice = forwardRef<TableDiceHandle, {
         setTimeout(() => cue('chest:stow', 'gearScroll1', { volume: 0.4, cents: Math.min(1600, -300 + i * 90) }), i * STEP + 520);
       });
       const done = bases.length * STEP + 700;
+      leave(keys, done);
       setTimeout(() => {
         for (const k of keys) rolled.current.delete(k);
         live.current.onDiscard?.(bases.filter((x) => x.startsWith('free:')));
         const now = engine.state('src:die') ?? at;
         // About a sixth bigger for every die eaten, up to three and a half times a die.
         const big = Math.min(3.5, 1 + 0.17 * bases.length);
-        const k = spawn({ kind: 'die', dieType: 'd20', dieValue: 1, big }, now.x, now.y);
-        fling(k, 1300 + big * 250, { gen: 3, power: 1 + big }, outward(now.x, now.y));
+        const m = mouthOf(now, big);
+        const k = spawn({ kind: 'die', dieType: 'd20', dieValue: 1, big }, m.x, m.y);
+        fling(k, 1300 + big * 250, { gen: 3, power: 1 + big }, m.ang);
         // Read as a roll once the table knows it (the loose list catches up a render later).
         setTimeout(() => settle.current([k]), 80);
         cue('mimic:pop', 'cardFullscreenEnter', { volume: 0.8, cents: Math.round(-200 * big) });
@@ -1579,8 +1600,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
         const dir = Math.atan2(pr.last.y - pr.y, pr.last.x - pr.x);
         // Each breaks what it meets, but never the other dice of the same throw (once one has landed it is its result).
         const own = zs.flatMap((k) => partsOf(k));
-        for (const k of zs) engine.zap(k, dir + (Math.random() - 0.5) * 2.4, 2300 + Math.random() * 900, 2 + Math.random() * 3, own);
-        for (const k of group ?? []) if (!zs.includes(k) && engine.has(k)) engine.empower(k, Math.max(1, 3000 / Math.max(1, speed)), { gen: 3, power: 2 }, { left: 2, fire: false });
+        // Nor any other piece of the same swung selection (owner, v0.47.25).
+        const mine = new Set([...own, ...(group ?? []).flatMap((k) => partsOf(k))]);
+        for (const k of zs) engine.zap(k, dir + (Math.random() - 0.5) * 2.4, 2300 + Math.random() * 900, 2 + Math.random() * 3, [...mine]);
+        for (const k of group ?? []) if (!zs.includes(k) && engine.has(k)) engine.empower(k, Math.max(1, 3000 / Math.max(1, speed)), { gen: 3, power: 2 }, { left: 2, fire: false, spare: mine });
         cue('throw:fire', 'gainGoldenHp', { volume: 0.8, cents: 300 });
         live.current.onHardHit(7000);
         return;
@@ -1589,7 +1612,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (pr.moved && (pr.lit || pr.swing > 0.25)) {
         const want = pr.lit ? Math.max(11500, speed * 2.8) : speed * (1 + pr.swing * 0.75);
         const boost = { gen: 5, power: pr.lit ? 7 : 1 + 2.5 * pr.swing };
-        const breaker = pr.lit ? { left: 99, fire: true, cold: pr.cold } : { left: 2, fire: false };
+        // A swung selection's own pieces never break each other (owner, v0.47.25).
+        const spare = new Set((group ?? partsOf(pr.key)).flatMap((k) => partsOf(k)));
+        const breaker = pr.lit ? { left: 99, fire: true, cold: pr.cold, spare } : { left: 2, fire: false, spare };
         if (speed < 250) fling(pr.key, Math.max(want, pr.lit ? 11500 : 1400), boost, undefined, breaker);
         // A swung bundle all goes with the swing, as hard as the one in the hand.
         else for (const k of group ?? partsOf(pr.key)) if (engine.has(k)) engine.empower(k, want / speed, boost, breaker);
@@ -1684,14 +1709,15 @@ export const TableDice = forwardRef<TableDiceHandle, {
         const at = engine.state('src:die');
         if (!at) return;
         if (dir < 0) {
-          const pool = [...new Set(engine.keys().filter(isDie).map(baseOf))];
+          const pool = [...new Set(engine.keys().filter((k) => isDie(k) && !leaving.current.has(k)).map(baseOf))];
           if (!pool.length) { refuse(); return; }
           for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
           putAwayRef.current(pool.slice(0, 2), true);
           return;
         }
         const type = DIE_KINDS[Math.floor(Math.random() * DIE_KINDS.length)];
-        fling(spawn({ kind: 'die', dieType: type, dieValue: 1, dieValue2: type === 'duality' ? 1 : undefined }, at.x, at.y), 900 + Math.random() * 500, undefined, outward(at.x, at.y));
+        const m = mouthOf(at, 1);
+        fling(spawn({ kind: 'die', dieType: type, dieValue: 1, dieValue2: type === 'duality' ? 1 : undefined }, m.x, m.y), 900 + Math.random() * 500, undefined, m.ang);
         cue('spawner:toss', 'placeToken', { volume: 0.4, cents: 200 + Math.random() * 300 });
         return;
       }
@@ -1882,6 +1908,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (i % 2 === 0 && i < 24) setTimeout(() => cue('table:tidyPiece', 'placeToken', { volume: 0.3, cents: 300 + Math.round(Math.random() * 300 - 150) }), i * STAGGER + 420);
     });
     const done = keys.length * STAGGER + 800;
+    leave(keys, done);
     setTimeout(() => { for (const k of keys) engine.remove(k); }, done);
     return done;
   };
@@ -1925,10 +1952,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (!all.length) return Promise.resolve([]);
       // Held before letting go (owner, v0.47.11): the harder the charge, the harder they fly; burning, they break things.
       const pw = Math.max(0, Math.min(1, power ?? 0));
+      // Dice rolled together never break each other, however hard (owner, v0.47.25): the roll stays whole.
+      const spare = new Set(all);
       for (const k of all) {
         const ang = Math.random() * Math.PI * 2;
         const sp = burning ? 7000 + Math.random() * 2600 : (380 + Math.random() * 320) * (1 + pw * 7);
-        engine.toss(k, Math.cos(ang) * sp, Math.sin(ang) * sp, pw > 0.2 || burning ? { gen: 4, power: burning ? 5 : 1 + 2 * pw } : undefined, burning ? { left: 99, fire: true } : pw > 0.3 ? { left: 2, fire: false } : undefined);
+        engine.toss(k, Math.cos(ang) * sp, Math.sin(ang) * sp, pw > 0.2 || burning ? { gen: 4, power: burning ? 5 : 1 + 2 * pw } : undefined, burning ? { left: 99, fire: true, spare } : pw > 0.3 ? { left: 2, fire: false, spare } : undefined);
       }
       if (burning) { setBurning((b) => [...new Set([...b, ...all])]); live.current.onHardHit(6000); }
       cue(burning ? 'throw:fire' : 'roll:throw', burning ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.35 + pw * 0.3, cents: burning ? 900 : Math.round(pw * 500) });

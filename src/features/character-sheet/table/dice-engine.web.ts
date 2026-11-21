@@ -64,6 +64,8 @@ export interface DiceEngine {
   setBounds(b: Bounds): void;
   /** Areas dice bounce off (the dice bar, the hand's own area). */
   setObstacles(o: Obstacle[]): void;
+  /** One obstacle that moves on its own, by name (null takes it away): the physical carousel (v0.47.25). */
+  setObstacle(id: string, o: Obstacle | null): void;
   /** Draw the table's edge as 3D rails (stone, brass) or not at all. */
   setWalls(kind: Walls, rect: Bounds, thickness: number): void;
   /** Put a die on the table (or rebuild the one with this key in place: its art, colours, finish or size). */
@@ -83,9 +85,9 @@ export interface DiceEngine {
   /** Let go: the die flies on with the hand's speed (px/s returned). */
   release(): number;
   /** Throw with a velocity; it slides and tumbles and lands where physics puts it. */
-  toss(key: string, vx: number, vy: number, boost?: { gen: number; power: number }, breaker?: { left: number; fire: boolean; strike?: boolean }): void;
+  toss(key: string, vx: number, vy: number, boost?: { gen: number; power: number }, breaker?: Body['breaker']): void;
   /** A piece just let go flies on this many times faster, pushing harder and breaking what it hits (a swung throw). */
-  empower(key: string, mult: number, boost?: { gen: number; power: number }, breaker?: { left: number; fire: boolean; strike?: boolean }): void;
+  empower(key: string, mult: number, boost?: { gen: number; power: number }, breaker?: Body['breaker']): void;
   /**
    * While `key` is held, `partner` follows right beside it (the Hope and Fear pair), or a list of pieces follow it
    * where they lie now (a selection carried together, v0.47.12); null lets them go. Let go, they all fly together.
@@ -429,11 +431,15 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let H = 1;
   let bounds: Bounds = { left: 0, top: 0, right: 1, bottom: 1 };
   let obstacles: Obstacle[] = [];
+  /** The layout's obstacles, and ones that move on their own (the physical carousel), merged into `obstacles`. */
+  let fixedObs: Obstacle[] = [];
+  const movingObs = new Map<string, Obstacle>();
+  const mergeObs = () => { obstacles = movingObs.size ? [...fixedObs, ...movingObs.values()] : fixedObs; };
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
   interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { b: Body; dx: number; dy: number; orbit?: number; pair?: boolean }[] | null; lid: THREE.Object3D | null; mouth: number; mouthNow: number; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
   /** The cards on the table: a physical one is a body, the rest are where they lie. */
-  const cards = new Map<string, { x: number; y: number; w: number; h: number; a: number; body: Body | null; was: boolean; samples: { x: number; y: number; t: number }[] }>();
+  const cards = new Map<string, { x: number; y: number; w: number; h: number; a: number; body: Body | null; was: boolean; samples: { x: number; y: number; t: number }[]; /** A swing building in the hand (v0.47.25), as a die's does: 0 to 2. */ swing?: number; hand?: number; st?: number }>();
   let cardsCb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void = () => {};
   const fields: { f: Field; until: number }[] = [];
   let slip = { scale: 1, until: 0 };
@@ -909,8 +915,22 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       for (const c of cards.values()) if (c.body) c.body.asleep = false;
       wake();
     },
+    setObstacle(id, o) {
+      if (o) movingObs.set(id, { ...o, id }); else movingObs.delete(id);
+      mergeObs();
+      if (!o || o.only === 'cards') return;
+      // A piece it moves onto is pushed off it.
+      let woke = false;
+      for (const d of order) {
+        const b = d.body;
+        if (!b.asleep || b.fixed || b.held || b.box) continue;
+        if (b.x + b.r > o.left && b.x - b.r < o.right && b.y + b.r > o.top && b.y - b.r < o.bottom) { b.asleep = false; woke = true; }
+      }
+      if (woke) wake();
+    },
     setObstacles(o) {
-      obstacles = o;
+      fixedObs = o;
+      mergeObs();
       // A die already lying where an area now is gets pushed off it.
       for (const d of order) {
         const b = d.body;
@@ -1031,6 +1051,9 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       // The top-most of whatever is under the point; a die's whole footprint counts.
       for (let i = order.length - 1; i >= 0; i--) {
         const d = order[i];
+        // One on its way out (into the chest, back to the supply) is no longer there to touch (v0.47.25: it caught
+        // the next scroll over the chest it was flying into).
+        if (d.vanish) continue;
         if (Math.hypot(d.body.x - x, d.body.y - y) <= d.spec.size * 0.55) return d.spec.key;
       }
       return null;
@@ -1301,8 +1324,19 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const a = (rot * Math.PI) / 180;
       c.x = x; c.y = y; c.a = a;
       const now = performance.now();
+      const prev = c.samples[c.samples.length - 1];
       c.samples.push({ x, y, t: now });
       while (c.samples.length > 2 && now - c.samples[0].t > 90) c.samples.shift();
+      // Swung round fast it gathers speed, as a die does (owner, v0.47.25), but a card never catches fire, frost or
+      // lightning: let go, it just flies that much harder and hits that much harder.
+      if (prev && now > prev.t) {
+        const inst = (Math.hypot(x - prev.x, y - prev.y) / (now - prev.t)) * 1000;
+        c.hand = (c.hand ?? 0) + (inst - (c.hand ?? 0)) * Math.min(1, (now - prev.t) / 50);
+        const dts = Math.min(50, now - (c.st ?? now));
+        const rate = Math.min(1.6, Math.max(0, (c.hand - 900) / 1700));
+        c.swing = rate > 0 ? Math.min(2, (c.swing ?? 0) + (dts / 1100) * rate) : Math.max(0, (c.swing ?? 0) - dts / 900);
+      }
+      c.st = now;
       if (cardCarry?.lead === key) {
         for (const o of cardCarry.others) {
           o.b.x = Math.min(bounds.right - o.b.r * 0.5, Math.max(bounds.left + o.b.r * 0.5, x + o.dx));
@@ -1339,10 +1373,14 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       cardCarry = null;
       const sa = c.samples[0], sz = c.samples[c.samples.length - 1];
       const cdt = sa && sz && sz.t > sa.t ? Math.max(0.016, (sz.t - sa.t) / 1000) : 0;
+      const swing = c.swing ?? 0, mult = 1 + swing * 0.75, cap = 3600 * (1 + swing);
+      c.swing = 0; c.hand = 0; c.st = undefined;
+      const boost = swing > 0.25 ? { gen: 5, power: 1 + 2.5 * swing } : undefined;
       for (const o of carried) {
         o.b.held = false;
         o.b.asleep = false;
-        if (cdt) { o.b.vx = Math.max(-3600, Math.min(3600, (sz.x - sa.x) / cdt)); o.b.vy = Math.max(-3600, Math.min(3600, (sz.y - sa.y) / cdt)); }
+        if (cdt) { o.b.vx = Math.max(-cap, Math.min(cap, ((sz.x - sa.x) / cdt) * mult)); o.b.vy = Math.max(-cap, Math.min(cap, ((sz.y - sa.y) / cdt) * mult)); }
+        if (boost) o.b.boost = boost;
       }
       const samples = c.samples;
       c.samples = [];
@@ -1352,10 +1390,11 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const a = samples[0], z = samples[samples.length - 1];
       if (a && z && z.t > a.t) {
         const dt = Math.max(0.016, (z.t - a.t) / 1000);
-        let vx = (z.x - a.x) / dt, vy = (z.y - a.y) / dt;
+        let vx = ((z.x - a.x) / dt) * mult, vy = ((z.y - a.y) / dt) * mult;
         const sp = Math.hypot(vx, vy);
-        if (sp > 3600) { vx *= 3600 / sp; vy *= 3600 / sp; }
+        if (sp > cap) { vx *= cap / sp; vy *= cap / sp; }
         b.vx = vx; b.vy = vy;
+        if (boost) b.boost = boost;
         b.va = (Math.random() - 0.5) * Math.min(6, sp / 500);
       }
       b.asleep = false;

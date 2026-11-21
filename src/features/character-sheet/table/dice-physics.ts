@@ -104,7 +104,11 @@ export interface Body {
 
 export interface Bounds { left: number; top: number; right: number; bottom: number }
 /** Something on the table dice cannot pass through (a panel lying on the felt). */
-export type Obstacle = Bounds;
+/**
+ * A rectangle pieces keep out of. `only`: just the cards, or just the dice and tokens (v0.47.25: the physical
+ * carousel stops dice and tokens, never a card). `id` names it in the hits it takes.
+ */
+export type Obstacle = Bounds & { id?: string; only?: 'cards' | 'pieces' };
 
 export interface Impact {
   key: string; speed: number; kind: 'table' | 'rail' | 'die' | 'break' | 'pound';
@@ -112,6 +116,7 @@ export interface Impact {
   /** A card set alight by a fire token's touch (v0.47.19): it burns, with no impact frame. */ scorch?: boolean;
   /** The other piece in a knock between two (the elements of the Deck of Many Things read who met whom). */ other?: string;
   /** For a break: how the breaker was moving (px/s), which way a card is torn or cut. */ vx?: number; vy?: number;
+  /** A knock against a named obstacle (the physical carousel), and which way it was struck (its outward normal). */ wall?: string; ny?: number;
 }
 
 /** How fast (px/s, against the piece) a charged throw must hit a loose piece to break it. */
@@ -319,7 +324,7 @@ function boxStep(b: Body, bounds: Bounds, dt: number, hits: Impact[], world: Wor
     if (cy > bounds.bottom) pen.push([cy - bounds.bottom, 0, -1]);
     // Inside an obstacle (the hand's own area): out by its nearest side.
     for (const o of obstacles) {
-      if (cx <= o.left || cx >= o.right || cy <= o.top || cy >= o.bottom) continue;
+      if (o.only === 'pieces' || cx <= o.left || cx >= o.right || cy <= o.top || cy >= o.bottom) continue;
       const opts: [number, number, number][] = [[cx - o.left, -1, 0], [o.right - cx, 1, 0], [cy - o.top, 0, -1], [o.bottom - cy, 0, 1]];
       pen.push(opts.reduce((m, q) => (q[0] < m[0] ? q : m)));
     }
@@ -413,7 +418,7 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
       let tx = Math.min(bounds.right - b.r, Math.max(bounds.left + b.r, b.x + (b.vx / sp) * dist));
       let ty = Math.min(bounds.bottom - b.r, Math.max(bounds.top + b.r, b.y + (b.vy / sp) * dist));
       for (const o of obstacles) {
-        if (tx + b.r <= o.left || tx - b.r >= o.right || ty + b.r <= o.top || ty - b.r >= o.bottom) continue;
+        if (o.only === 'cards' || tx + b.r <= o.left || tx - b.r >= o.right || ty + b.r <= o.top || ty - b.r >= o.bottom) continue;
         // It would land in the hand's own area: it lands at that area's nearest edge instead.
         const opts: [number, number, number][] = [[tx - (o.left - b.r), o.left - b.r, ty], [o.right + b.r - tx, o.right + b.r, ty], [ty - (o.top - b.r), tx, o.top - b.r], [o.bottom + b.r - ty, tx, o.bottom + b.r]];
         // Only a way out that stays on the table (the hand's area often spans it wall to wall).
@@ -520,6 +525,7 @@ function circleBox(c: Body, b: Body, hits: Impact[]): void {
 
 /** Keep a die out of a rectangle: push it to the nearest edge and bounce it off, like the rail. */
 function pushOut(b: Body, o: Obstacle, hits: Impact[]): void {
+  if (o.only === 'cards') return;
   const cx = Math.max(o.left, Math.min(b.x, o.right));
   const cy = Math.max(o.top, Math.min(b.y, o.bottom));
   let dx = b.x - cx, dy = b.y - cy;
@@ -539,7 +545,7 @@ function pushOut(b: Body, o: Obstacle, hits: Impact[]): void {
   }
   const into = b.vx * dx + b.vy * dy;
   if (into < 0) {
-    if (-into > 60) hits.push({ key: b.key, speed: -into, kind: 'rail' });
+    if (-into > 60) hits.push({ key: b.key, speed: -into, kind: 'rail', ...(o.id ? { wall: o.id, ny: dy } : {}) });
     b.vx -= (1 + RAIL_BOUNCE) * into * dx;
     b.vy -= (1 + RAIL_BOUNCE) * into * dy;
   }

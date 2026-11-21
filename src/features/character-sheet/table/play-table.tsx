@@ -1439,7 +1439,81 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     if (c === FAVORITES_CATEGORY) ctx.openFavorites();
     else ctx.setCategory(c);
   }, [ctx]);
-  const obstacles = useMemo(() => (ownArea && !playground ? [hand] : []), [ownArea, playground, hand.top, hand.bottom, hand.left, hand.right]); // eslint-disable-line react-hooks/exhaustive-deps
+  // With the physical carousel the hand's own area keeps out only the cards; the dice and tokens meet the hand itself.
+  const physOn = look.physCarousel && !spread && !playground && deck.length > 0;
+  const obstacles = useMemo(() => (ownArea && !playground ? [physOn ? { ...hand, only: 'cards' as const } : hand] : []), [ownArea, playground, physOn, hand.top, hand.bottom, hand.left, hand.right]); // eslint-disable-line react-hooks/exhaustive-deps
+  /**
+   * The physical carousel (owner, v0.47.25): the hand's cards are a body on the table for dice and tokens. Each knock
+   * flashes it red and shoves it towards the nearer edge of the table, hard enough hits off it entirely, and a moment
+   * after the last it creeps back into place. Its hitbox is the cards (what a drag of the hand grabs) and moves with it.
+   */
+  const shove = useRef({ off: 0, vel: 0, t: 0, hitAt: 0, raf: 0, base: null as null | { left: number; top: number; right: number; bottom: number } });
+  const flashRef = useRef<HTMLDivElement>(null);
+  const physRef = useRef(physOn);
+  physRef.current = physOn;
+  const placeHand = useCallback(() => {
+    const s = shove.current, eng = diceRef.current?.engine();
+    const h = handRef.current;
+    if (h) h.style.transform = s.off ? `translateY(${s.off.toFixed(1)}px)` : '';
+    if (!eng) return;
+    eng.setObstacle('carousel', physRef.current && s.base ? { left: s.base.left, right: s.base.right, top: s.base.top + s.off, bottom: s.base.bottom + s.off, only: 'pieces' } : null);
+  }, []);
+  /** Where the cards are drawn now, as the hand would be at rest (table px). */
+  const measureHand = useCallback(() => {
+    const h = handRef.current, t = tableRef.current, s = shove.current;
+    if (!h || !t) { s.base = null; return; }
+    const tr = t.getBoundingClientRect();
+    let l = Infinity, tp = Infinity, r = -Infinity, b = -Infinity;
+    for (const el of h.querySelectorAll<HTMLElement>('[data-slot]')) {
+      if (el.style.visibility === 'hidden') continue;
+      const q = el.getBoundingClientRect();
+      if (q.width < 4 || q.right < tr.left || q.left > tr.right) continue;
+      l = Math.min(l, q.left); r = Math.max(r, q.right); tp = Math.min(tp, q.top); b = Math.max(b, q.bottom);
+    }
+    if (!Number.isFinite(l)) { s.base = null; return; }
+    s.base = { left: Math.max(0, l - tr.left), right: Math.min(tr.width, r - tr.left), top: tp - tr.top - s.off, bottom: b - tr.top - s.off };
+    const f = flashRef.current, hr = h.getBoundingClientRect();
+    if (f) Object.assign(f.style, { left: `${l - hr.left}px`, top: `${tp - hr.top}px`, width: `${r - l}px`, height: `${b - tp}px` });
+  }, []);
+  useEffect(() => {
+    if (!physOn) { shove.current.off = 0; shove.current.vel = 0; placeHand(); return; }
+    // The cards move as the hand scrolls and its look changes: measured again now and then.
+    const go = () => { measureHand(); placeHand(); };
+    const t0 = setTimeout(go, 300);
+    const id = setInterval(go, 700);
+    return () => { clearTimeout(t0); clearInterval(id); };
+  }, [physOn, tableW, tableH, look, category, measureHand, placeHand]);
+  const shoveTick = useCallback((now: number) => {
+    const s = shove.current;
+    const dt = Math.min(0.05, (now - (s.t || now)) / 1000);
+    s.t = now;
+    s.off += s.vel * dt;
+    s.vel *= Math.exp(-5 * dt);
+    // A moment after the last hit it creeps back, quicker the further out it is.
+    if (now - s.hitAt > 700 && Math.abs(s.vel) < 60) {
+      const back = Math.max(16, Math.abs(s.off) * 0.7) * dt;
+      s.off = Math.abs(s.off) <= back ? 0 : s.off - Math.sign(s.off) * back;
+    }
+    // Never further than right off the table.
+    s.off = Math.max(-tableH, Math.min(tableH, s.off));
+    placeHand();
+    if (s.off !== 0 || Math.abs(s.vel) > 1) s.raf = requestAnimationFrame(shoveTick);
+    else { s.raf = 0; s.t = 0; }
+  }, [tableH, placeHand]);
+  const onCarouselHit = useCallback((speed: number) => {
+    if (!physRef.current) return;
+    const s = shove.current;
+    if (!s.base) return;
+    // Towards whichever edge of the table it is nearer.
+    const dir = (s.base.top + s.base.bottom) / 2 > tableH / 2 ? 1 : -1;
+    // A hard hit moves it about a fifth of its height; a handful of them can put it off the table.
+    s.vel += dir * Math.min(900, 30 + speed * 0.12);
+    s.hitAt = performance.now();
+    const k = Math.min(1, speed / 2600);
+    flashRef.current?.animate([{ opacity: 0 }, { opacity: 0.35 + 0.5 * k, offset: 0.2 }, { opacity: 0 }], { duration: 300, easing: 'ease-out' });
+    if (!s.raf) s.raf = requestAnimationFrame(shoveTick);
+  }, [tableH, shoveTick]);
+  useEffect(() => () => cancelAnimationFrame(shove.current.raf), []);
   const lastHit = useRef(0);
   const onHardHit = useCallback((speed: number) => {
     const now = performance.now();
@@ -1914,7 +1988,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           {shattering.map((s) => <CardBreak key={s.uid} card={s.card} cx={s.cx} cy={s.cy} w={s.w} rot={s.rot} mode={s.mode} dir={s.dir} fxOnly={s.fxOnly} clip={s.clip} onDone={() => setShattering((l) => l.filter((x) => x.uid !== s.uid))} />)}
           {scraps.map((c) => { const card = lookup(c.id); return card ? <CardScrap key={c.uid} uid={c.uid} card={card} poly={c.poly} w={c.w} x={c.x} y={c.y} rot={c.rot} fading={c.fading} onDrag={(u, px, py, r, end) => { const eng = diceRef.current?.engine(); if (!eng) return; if (end) eng.releaseCard(`card:${u}`); else eng.holdCard(`card:${u}`, px, py, r); }} /> : null; })}
           {/* Cards in the selection (owner, v0.47.17): ringed in gold, like the dice. */}
-          {selection.some((k) => k.startsWith('card:')) ? <style>{selection.filter((k) => k.startsWith('card:')).map((k) => `[data-board-card="${k.slice(5)}"] { outline: 2px solid #E0B563; outline-offset: 3px; }`).join(' ')}</style> : null}
+          {selection.some((k) => k.startsWith('card:')) ? <style>{selection.filter((k) => k.startsWith('card:')).map((k) => `[data-board-card="${k.slice(5)}"] { outline: 2px solid #E0B563; outline-offset: 3px; } [data-board-card="${k.slice(5)}"] [data-grip] { display: none; }`).join(' ')}</style> : null}
           {Object.keys(cardEls).length ? <style>{Object.entries(cardEls).map(([u, el]) => `[data-board-card="${u}"] { box-shadow: 0 0 0 2px ${ELEMENT_TINT[el]}, 0 0 22px ${ELEMENT_TINT[el]}; }`).join('\n')}</style> : null}
         </div>
 
@@ -1936,6 +2010,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             ) : (
               <DeskCarousel key={category} ref={carRef} cards={cards} look={look} initialIndex={middle} onCentre={onCentre} onCentreClick={onCentreClick} takenId={copy?.card.id} />
             )}
+            {/* The physical carousel's hit: a red glow over the cards, once per knock. */}
+            <div ref={flashRef} aria-hidden="true" style={{ position: 'absolute', pointerEvents: 'none', zIndex: 2000, opacity: 0, borderRadius: 10, background: 'rgba(220,40,30,0.22)', boxShadow: 'inset 0 0 36px 6px rgba(255,50,35,0.85), 0 0 22px rgba(255,50,35,0.55)' }} />
           </div>
         )}
 
@@ -1962,6 +2038,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           height={tableH}
           bounds={play}
           obstacles={obstacles}
+          onCarouselHit={onCarouselHit}
           walls={{ kind: look.walls, rect: { left: 0, top: 0, right: tableW, bottom: tableH }, thickness: pad }}
           places={peeking ? peekPlaces : places}
           decks={tableDecks}

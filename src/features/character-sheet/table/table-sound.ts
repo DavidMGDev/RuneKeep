@@ -158,10 +158,33 @@ const capOf = (c: Cue): number => {
   return p.max ?? (/^(domat|blackhole|mimic|thief|element):/.test(c) ? 6 : 1.1);
 };
 
+/**
+ * Every sound played, named in a small log in the bottom right corner (owner, v0.47.25: to say which to take out of
+ * the pool). The file first, then the moment that played it. Each line fades after a few seconds.
+ */
+let soundLog: HTMLDivElement | null = null;
+function logSound(file: string, what: string): void {
+  if (typeof document === 'undefined') return;
+  if (!soundLog || !soundLog.isConnected) {
+    soundLog = document.createElement('div');
+    soundLog.setAttribute('aria-hidden', 'true');
+    Object.assign(soundLog.style, { position: 'fixed', right: '10px', bottom: '10px', zIndex: '99999', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', font: '11px/1.35 system-ui, sans-serif' });
+    document.body.appendChild(soundLog);
+  }
+  const line = document.createElement('div');
+  line.textContent = `${file}  ·  ${what}`;
+  Object.assign(line.style, { color: '#f3e3bc', background: 'rgba(8,10,14,0.78)', padding: '1px 7px', borderRadius: '3px', transition: 'opacity 600ms' });
+  soundLog.appendChild(line);
+  while (soundLog.childElementCount > 10) soundLog.firstElementChild?.remove();
+  setTimeout(() => { line.style.opacity = '0'; }, 5000);
+  setTimeout(() => line.remove(), 5700);
+}
+
 /** Play a cue: under Aggressive one of its files, otherwise the Regular sound `id` exactly as asked. */
 export function cue(c: Cue, id: SfxId, opts?: PlayOpts): void {
-  if (scheme !== 'aggressive') { playSfx(id, opts); return; }
+  if (scheme !== 'aggressive') { logSound(id, c); playSfx(id, opts); return; }
   const f = pick(c);
+  logSound(f, c);
   const p = PACK[c] as { vol: number; cents?: number };
   playOwn(f, bytes(f), { volume: p.vol * Math.min(1, (opts?.volume ?? 1) * 1.4), cents: p.cents, maxSec: capOf(c) });
 }
@@ -179,6 +202,7 @@ export function knockCue(kind: 'die' | 'table' | 'rail' | 'break', speed: number
   lastKnock = now;
   const c = `hit:${kind}` as const;
   const f = pick(c);
+  logSound(f, c);
   playOwn(f, bytes(f), { volume: PACK[c].vol * level, maxSec: kind === 'break' ? 1.2 : 0.6 });
   return true;
 }

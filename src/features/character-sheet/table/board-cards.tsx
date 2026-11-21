@@ -235,6 +235,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
       ) : null}
       {/* The rotate grip: click for a quarter turn, drag to turn freely. */}
       <div
+        data-grip=""
         onPointerDown={turnStart}
         title="Drag to rotate, click to stand it upright"
         style={{ position: 'absolute', left: -11, top: -11, width: 24, height: 24, cursor: 'grab', opacity: hover || drag === 'turn' ? 1 : 0, transition: 'opacity 140ms', touchAction: 'none' }}>
@@ -245,6 +246,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
       </div>
       {/* The size grip: pull out to grow, in to shrink. */}
       <div
+        data-grip=""
         onPointerDown={(e) => start(e, 'size')}
         title="Drag to resize, click for the normal size"
         style={{ position: 'absolute', right: -11, bottom: -11, width: 24, height: 24, cursor: 'nwse-resize', opacity: hover || drag === 'size' ? 1 : 0, transition: 'opacity 140ms', touchAction: 'none' }}>

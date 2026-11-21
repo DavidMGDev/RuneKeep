@@ -89,6 +89,11 @@ export interface DeckLook {
    * since v0.47.23 (owner: a click views the card), and renamed so every saved table takes the new default once.
    */
   clickTake: boolean;
+  /**
+   * The physical carousel (owner, v0.47.25): dice and tokens knock into the hand's cards, which flash red and are
+   * pushed towards the nearer edge of the table (even off it), then creep back. Physical cards pass over it.
+   */
+  physCarousel: boolean;
   /** What a click on the centre card does, when clicking does not take cards out. */
   centreClick: CentreClick;
   /** How a new deck's cards arrive when you switch decks. */
@@ -158,7 +163,7 @@ export const DEFAULT_LOOK: DeckLook = {
   size: 210, centre: 1, side: 4, spacing: 0.04, pack: 0.35, arc: 0, tilt: 0, lift: 0, rowY: 0.5,
   shrink: 0.085, minScale: 0.3, drop: 0, turn: 0, perspective: 1400, stack: 'centre',
   edge: 'fade', edgeWidth: 17, dim: 0.12, blur: 0, grey: 0, shadow: 0.5, glow: 0, exit: 'fade',
-  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, endDots: true, autoReturn: true, diceChest: true, chest: 'cute', hoverLift: 10, hoverZoom: 1.04, sharp: false, clickTake: false, centreClick: 'view', switchFx: 'slide',
+  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, endDots: true, autoReturn: true, diceChest: true, chest: 'cute', hoverLift: 10, hoverZoom: 1.04, sharp: false, clickTake: false, physCarousel: true, centreClick: 'view', switchFx: 'slide',
   areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'roll', ctlSize: 1, catSize: 1, tokenTray: true,
   handMode: 'carousel', ctlX: 0.86, ctlY: 0.08, ctlDir: 'row', supX: 0.15, supY: 0.08, supDir: 'row', catX: 0.07, catY: 0.36, areaY: -1,
   apart: {},
@@ -259,6 +264,7 @@ export const LOOK_PAGES: LookPage[] = [
         title: 'Cards',
         controls: [
           { kind: 'choice', key: 'switchFx', label: 'Changing deck', help: 'How a deck\'s cards arrive when you switch to it.', options: opts(['slide', 'Slide'], ['deal', 'Deal'], ['fade', 'Fade'], ['none', 'Instant']) },
+          { kind: 'toggle', key: 'physCarousel', label: 'Physical carousel', help: 'Dice and tokens knock into the cards in your hand: each hit flashes red and pushes the hand towards the nearer edge of the table, off it if hit enough, and it creeps back. Physical cards pass over it.' },
           { kind: 'toggle', key: 'clickTake', label: 'Click a card to take it', help: 'On: click any card in the hand to pull a copy out and lay it on the table. Off: a click does what Click a card says, and right click, Lay a copy on the table, takes one out.' },
           { kind: 'choice', key: 'centreClick', label: 'Click a card', help: 'When clicking does not take cards out. View opens any card you click; Equip and Nothing act on the middle card, and any other card slides to the middle first.', options: opts(['view', 'View it'], ['equip', 'Equip'], ['nothing', 'Nothing']) },
           { kind: 'range', key: 'hoverLift', label: 'Hover lift', help: 'How far a card rises under the pointer.', min: 0, max: 60, step: 1, unit: 'px' },

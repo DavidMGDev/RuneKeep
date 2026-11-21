@@ -314,3 +314,14 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   one after another with rising pips, and spits out one d20 rolled across the table and read as a roll, bigger the more
   it ate (`TokenInfo.big`: 1 + 0.17 a die, up to 3.5 times a die; kept with the loose piece). The playground's supply
   takes the wheel too.
+- v0.47.25: the physical carousel (`physCarousel`, on by default and so in every template): the hand's cards are an
+  obstacle for dice and tokens only (`Obstacle.only: 'pieces'`, a named moving obstacle, `engine.setObstacle`); each
+  knock flashes them red and shoves the hand towards the nearer edge of the table (about 0.12 of the hit's speed, off
+  the table after a handful of hard ones), and 0.7 s after the last it creeps back. Cards ignore it (the tray area
+  keeps them out, `only: 'cards'`). A swung physical card gathers speed as a die does (no fire, frost or lightning):
+  let go, it flies up to 2.5 times as fast and hits harder. A selected card hides its rotate and size grips. Dice
+  thrown together (a selection swung, zapped or rolled from the bar) spare each other (`breaker.spare`). Pieces
+  flying into the chest or the supply are kept off the loose list's re-sync and out of hit tests (the stored dice
+  flickered back for a frame, and a second scroll over the chest caught a die flying into it). Dice from the chest's
+  wheel and its giant d20 come out in front of it, never from inside it. Every sound played is named in a small log in
+  the bottom right corner (its file, then its cue).
