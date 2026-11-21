@@ -75,7 +75,7 @@ export function classIdentityFor(cards: LibraryCard[] | undefined, className: st
     return {
       title: (base?.title ?? firstInfo?.className ?? '').trim(),
       color: firstInfo?.color ?? base?.color ?? null,
-      imageUri: firstInfo?.imageUri ?? base?.imageUri ?? null,
+      imageUri: firstInfo?.imageUri || base?.imageUri || null,
       key: undefined,
     };
   }
@@ -98,7 +98,7 @@ export function withClassIdentity(card: LibraryCard, id: ClassIdentity | undefin
     ...card,
     title: opts?.keepTitle === false ? id.title : card.title,
     // The card's own art wins if it has some; otherwise it inherits the class's banner.
-    imageUri: card.imageUri ?? id.imageUri ?? null,
+    imageUri: card.imageUri || id.imageUri || null,
     color: card.color ?? id.color ?? null,
   };
 }

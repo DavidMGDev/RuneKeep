@@ -2441,7 +2441,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               ]} />
           );
         })() : null}
-        {viewing ? <CardViewer key={viewing.id} card={lookup(viewing.id)} from={viewing.from} closing={viewing.closing} onClose={closeView} onGone={() => setViewing(null)} /> : null}
+        {viewing ? <CardViewer key={viewing.id} card={lookup(viewing.id)} live={allById.get(viewing.id)?.interactive ? allById.get(viewing.id)?.live : undefined} from={viewing.from} closing={viewing.closing} onClose={closeView} onGone={() => setViewing(null)} /> : null}
         {menu && !overlay ? (
           <CardMenu id={menu.id} x={menu.x} y={menu.y} tableW={tableW} tableH={tableH} onClose={() => setMenu(null)}
             spread={spread}
@@ -2881,7 +2881,7 @@ function TableMenu({ rows, presets, onRollPreset, onRollPair, onDeletePreset, no
  * A card read large (owner, v0.47.17): over the whole window, with room round it, at full quality, the rest dimmed
  * behind. A click anywhere or Escape puts it away.
  */
-function CardViewer({ card, from, closing, onClose, onGone }: { card: TableCard | undefined; /** Where the card was on screen: it grows out of there and goes back to it. */ from?: { left: number; top: number; width: number; height: number }; closing?: boolean; onClose: () => void; onGone: () => void }) {
+function CardViewer({ card, live, from, closing, onClose, onGone }: { card: TableCard | undefined; /** A card with controls on it (a counter), drawn live so they can be used here (Koy, Nov 2026: nowhere on the desk could they be). */ live?: React.ReactNode; /** Where the card was on screen: it grows out of there and goes back to it. */ from?: { left: number; top: number; width: number; height: number }; closing?: boolean; onClose: () => void; onGone: () => void }) {
   const [win, setWin] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
   const veil = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -2919,9 +2919,9 @@ function CardViewer({ card, from, closing, onClose, onGone }: { card: TableCard 
     <div data-ui="" role="dialog" aria-label="The card, read large" onPointerDown={(e) => { e.stopPropagation(); onClose(); }} onContextMenu={(e) => { e.preventDefault(); onClose(); }}
       style={{ position: 'fixed', inset: 0, zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out', pointerEvents: closing ? 'none' : 'auto' }}>
       <div ref={veil} style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,13,0.78)', opacity: 0 }} />
-      <div ref={box} style={{ width: FORGED_W * k, height: FORGED_H * k, position: 'relative', boxShadow: '0 30px 80px rgba(0,0,0,0.7)', willChange: 'transform' }}>
+      <div ref={box} onPointerDown={live ? (e) => e.stopPropagation() : undefined} style={{ width: FORGED_W * k, height: FORGED_H * k, position: 'relative', boxShadow: '0 30px 80px rgba(0,0,0,0.7)', willChange: 'transform', cursor: live ? 'default' : undefined }}>
         <div style={{ position: 'absolute', left: 0, top: 0, width: FORGED_W, height: FORGED_H, transform: `scale(${k})`, transformOrigin: '0 0' }}>
-          <CardFace card={card} hiRes />
+          {live ? <View style={{ width: FORGED_W, height: FORGED_H }}>{live}</View> : <CardFace card={card} hiRes />}
         </div>
       </div>
     </div>,

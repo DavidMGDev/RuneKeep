@@ -46,6 +46,12 @@ describe('inheritedPage', () => {
     expect(inheritedPage(page('p', 'Warden', { imageUri: 'mine.png' }), b).imageUri).toBe('mine.png');
   });
 
+  it('falls back to the class card banner when the first info card has none', () => {
+    const first = page('p1', 'Warden', { color: '#00aa00' });
+    expect(inheritedPage(page('p2', 'Warden'), b, first).imageUri).toBe('art.png');
+    expect(inheritedPage(first, b, first).color).toBe('#00aa00');
+  });
+
   it('keeps the page own text, which is the only thing that is really the page own', () => {
     expect(inheritedPage(page('p', 'Warden', { text: 'Mine' }), b).text).toBe('Mine');
   });

@@ -21,7 +21,7 @@ import { Body, Display, Rune } from '@/constants/theme';
 import { CATALOG, cardById } from '@/data/catalog';
 import { effectsForCardId } from '@/features/cards/card-effects';
 import { type TraitKey } from '@/features/character-sheet/character';
-import { type CharacterFile, type CustomCardDef, newCharacterId, toSheetCharacter } from '@/lib/character-file';
+import { type CharacterFile, type CustomCardDef, newCharacterId, spellcastOf, toSheetCharacter } from '@/lib/character-file';
 import { withClassCards } from '@/lib/played-class';
 import { getCharacter, saveCharacter } from '@/lib/character-store';
 import { classExpansion, seedOfficialExpansions } from '@/lib/expansions';
@@ -33,7 +33,7 @@ import { listExpansions, saveExpansion } from '@/lib/library-store';
 import { BASE_PICK_ID, ExpansionPicker } from './expansion-picker';
 import { playSfx } from '@/lib/sfx';
 import { CLASS_CARDS } from './components/class-cards';
-import { featurePages, spellcastTraitForSubclass } from '@/data/class-data';
+import { featurePages } from '@/data/class-data';
 import { FORGED_W, ForgedArmorCard, ForgedCard, ForgedLootCard, ForgedTextCard, ForgedWeaponCard } from './components/forged-card';
 import { lootById } from '@/data/loot-data';
 import { armorById, PRIMARY_WEAPONS, SECONDARY_WEAPONS, TIER1_ARMOR, type WeaponKind, weaponById } from '@/data/equipment-data';
@@ -2286,7 +2286,7 @@ export function CreateScreen() {
             characterizing ? (
               <CharacterizeTraitsTab traits={draft.traits} initial={inheritedTraits} onTraits={(traits) => { unskip('traits'); set({ traits }); }} footer={<SkipStep />} />
             ) : (
-              <TraitsTab traits={draft.traits} onTraits={(traits) => set({ traits })} spellcastTrait={spellcastTraitForSubclass(draft.subclassCardId ? cardById(draft.subclassCardId)?.subclass : undefined)} />
+              <TraitsTab traits={draft.traits} onTraits={(traits) => set({ traits })} spellcastTrait={spellcastOf(draft.subclassCardId ? libContent?.subclasses.find((c) => c.id === draft.subclassCardId)?.spellcastTrait : undefined, draft.subclassCardId ? cardById(draft.subclassCardId)?.subclass : undefined)} />
             )
           ) : null}
           {deck === 'level' ? (

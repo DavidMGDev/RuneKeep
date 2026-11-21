@@ -58,7 +58,9 @@ export interface ClassAssembly {
  * re-banners the whole set and never has to go and find them.
  */
 export function inheritedPage(page: LibraryCard, base: LibraryCard, look: LibraryCard = base): LibraryCard {
-  return { ...page, title: base.title, color: page.color ?? look.color, imageUri: page.imageUri ?? look.imageUri, className: base.title };
+  // The class card's own banner is the last resort, as in `classIdentityFor`: a class bannered on its template card
+  // (the editor still offers art there) showed it on its feature cards and not on its pages (Nov 2026, Shaman).
+  return { ...page, title: base.title, color: page.color ?? look.color ?? base.color, imageUri: page.imageUri || look.imageUri || base.imageUri || null, className: base.title };
 }
 
 /**

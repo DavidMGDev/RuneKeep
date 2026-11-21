@@ -627,7 +627,12 @@ export const classLabel = (file: CharacterFile): string => (file.classless ? '' 
  * lookup. An expansion is a file from someone else, and this is the boundary.
  */
 function subclassSpellcast(file: CharacterFile, subclassCardId: string | null | undefined, officialSlug: string | undefined): TraitKey | null {
-  const authored = (subclassCardId ? file.libraryCards?.find((c) => c.id === subclassCardId)?.spellcastTrait : undefined)?.trim().toLowerCase();
+  return spellcastOf(subclassCardId ? file.libraryCards?.find((c) => c.id === subclassCardId)?.spellcastTrait : undefined, officialSlug);
+}
+
+/** The Spellcast trait from what a homebrew subclass authored, else the official map. Creation's trait step asks too. */
+export function spellcastOf(authoredRaw: string | undefined, officialSlug: string | undefined): TraitKey | null {
+  const authored = authoredRaw?.trim().toLowerCase();
   const valid: TraitKey[] = ['agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
   if (authored && (valid as string[]).includes(authored)) return authored as TraitKey;
   return spellcastTraitForSubclass(officialSlug);

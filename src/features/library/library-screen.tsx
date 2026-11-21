@@ -1463,6 +1463,29 @@ export function LibraryScreen() {
               onAddCustom={(lc) => { addStartingItem(pickingItems, lc.id); setPickingItems(null); }}
               onClose={() => setPickingItems(null)}
             />
+          ) : writingItem ? (
+            // The one-field maker for "50 feet of rope" (v0.42.7). It opens from inside the editor, so it is drawn over it
+            // (Koy, Nov 2026: on the library screen it opened behind the editor, and "Write one" seemed to do nothing).
+          <PopupDialog
+            title="Name the item"
+            body="It becomes a real card in this pack, with no picture and no rules text. You can open it later and give it either."
+            confirmLabel="Add it"
+            cancelLabel="Cancel"
+            onConfirm={() => {
+              const title = writtenTitle.trim();
+              const which = writingItem;
+              setWritingItem(null);
+              setWrittenTitle('');
+              if (!title) return;
+              const item: LibraryCard = { id: newId('lc'), contentType: 'inventory', title, text: '', imageUri: null };
+              pendingWritten.current = { which, id: item.id };
+              void persist({ ...selected, cards: [...selected.cards, item] });
+            }}
+            onCancel={() => { setWritingItem(null); setWrittenTitle(''); }}>
+            <View style={{ marginTop: 12 }}>
+              <TextField label="What it is" value={writtenTitle} placeholder="e.g. 50 feet of rope" maxLength={60} onChangeText={setWrittenTitle} />
+            </View>
+          </PopupDialog>
           ) : undefined
         }
         onCancel={() => setEditingCard(null)}
@@ -1862,29 +1885,6 @@ export function LibraryScreen() {
           */}
         {/* The class picker, shared by a page, a feature and a subclass. What differs is only what it
             says it is for, and what the chosen class then does to the card. */}
-        {/* v0.42.7: the one-field maker for "50 feet of rope". */}
-        {writingItem ? (
-          <PopupDialog
-            title="Name the item"
-            body="It becomes a real card in this pack, with no picture and no rules text. You can open it later and give it either."
-            confirmLabel="Add it"
-            cancelLabel="Cancel"
-            onConfirm={() => {
-              const title = writtenTitle.trim();
-              const which = writingItem;
-              setWritingItem(null);
-              setWrittenTitle('');
-              if (!title) return;
-              const item: LibraryCard = { id: newId('lc'), contentType: 'inventory', title, text: '', imageUri: null };
-              pendingWritten.current = { which, id: item.id };
-              void persist({ ...selected, cards: [...selected.cards, item] });
-            }}
-            onCancel={() => { setWritingItem(null); setWrittenTitle(''); }}>
-            <View style={{ marginTop: 12 }}>
-              <TextField label="What it is" value={writtenTitle} placeholder="e.g. 50 feet of rope" maxLength={60} onChangeText={setWrittenTitle} />
-            </View>
-          </PopupDialog>
-        ) : null}
         {askingClassFor ? (
           <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
             <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} />
