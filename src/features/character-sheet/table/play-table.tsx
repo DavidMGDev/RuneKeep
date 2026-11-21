@@ -511,9 +511,9 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const eng = diceRef.current?.engine();
     const overSupply = !isRoll && eng && supply.some((s) => { const st = eng.state(s.key) ?? eng.state(`${s.key}:h`) ?? eng.state(`${s.key}:t`); return st && Math.hypot(st.x - p.x, st.y - p.y) < 34; });
     if (overSupply) {
-      cue('piece:putAway', 'tokenRemove');
-      if (isLoose) setLoose(looseRef.current.filter((t) => t.key !== base));
-      else if (from) ctx.removeToken(from.ref, from.id);
+      // A loose piece flies into the supply as a tidy sends it (owner, v0.47.21); a card's token simply goes.
+      if (isLoose) diceRef.current?.putAway([base]);
+      else if (from) { cue('piece:putAway', 'tokenRemove'); ctx.removeToken(from.ref, from.id); }
       return true;
     }
     // A physical card takes no tokens and gives none up until it is ordinary again (owner, v0.47.5).
@@ -1520,8 +1520,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     return () => { backRef.current = null; };
   }, [backRef]);
 
-  const keyRef = useRef({ deck, overlay, ring: ctx.ring, ctx, canReorder, category });
-  keyRef.current = { deck, overlay, ring: ctx.ring, ctx, canReorder, category };
+  const keyRef = useRef({ deck, overlay, ring: ctx.ring, ctx, canReorder, category, selection });
+  keyRef.current = { deck, overlay, ring: ctx.ring, ctx, canReorder, category, selection };
   useEffect(() => {
     if (!desktop || typeof document === 'undefined') return;
     const onKey = (e: KeyboardEvent) => {
@@ -1540,6 +1540,15 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       if (k.overlay || e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
       const key = e.key.toLowerCase();
       if (key === 'escape') { if (escRef.current()) e.preventDefault(); return; }
+      // Delete or Backspace puts the selected dice and tokens away (owner, v0.47.21); selected cards stay selected.
+      if ((key === 'delete' || key === 'backspace') && k.selection.some((x) => /^(free|roll):/.test(x))) {
+        e.preventDefault();
+        diceRef.current?.putAway([...new Set(k.selection.filter((x) => /^(free|roll):/.test(x)).map(baseOf))]);
+        const rest = k.selection.filter((x) => !/^(free|roll):/.test(x));
+        diceRef.current?.select(rest);
+        setSelection(rest);
+        return;
+      }
       const dir = key === 'arrowright' || key === 'd' ? 1 : key === 'arrowleft' || key === 'a' ? -1 : 0;
       if (dir && k.deck.length) {
         e.preventDefault();
@@ -1992,14 +2001,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               dice.presets.onWrite(slot, { id: `p${Date.now().toString(36)}`, name, dice: selTypes, ...(modifier ? { modifier } : {}) });
               cue('ui:confirm', 'cardSelect', { volume: 0.6 });
             }}
-            onPutBack={() => {
-              const eng = diceRef.current?.engine();
-              const bases = new Set(selection.map(baseOf));
-              for (const k of eng?.keys() ?? []) if (bases.has(baseOf(k))) eng?.shatter(k);
-              setLoose(looseRef.current.filter((t) => !bases.has(t.key)));
-              clearSelection();
-              cue('piece:putAway', 'tokenRemove');
-            }}
+            onPutBack={() => { diceRef.current?.putAway([...new Set(selection.map(baseOf))]); clearSelection(); }}
             onClear={clearSelection} />
         ) : null}
 

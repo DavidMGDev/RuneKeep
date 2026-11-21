@@ -77,6 +77,8 @@ export interface TableDiceHandle {
   resetHome: () => void;
   /** Every loose piece and rolled die flies back into the supply and is gone. */
   tidy: () => void;
+  /** These pieces (by base key) fly back into the supply as the tidy sends them, and are gone (v0.47.21). */
+  putAway: (bases: string[]) => void;
   openDecks: (at: { x: number; y: number }) => void;
   hasRoll: () => boolean;
   /** A laid card was lifted: carry what lies loose on it (null when it is let go). */
@@ -1755,6 +1757,31 @@ export const TableDice = forwardRef<TableDiceHandle, {
     void waitFor(all, () => readGroups(e, groups)).then(celebrate).then((landed) => { if (landed.length) live.current.onGroupRolled?.(landed); });
   };
 
+  /**
+   * Owner (v0.47.4): each piece goes in a beat after the last, arcs and tumbles to its spawner's home, touches nothing
+   * on the way and shrinks away there; gone from the engine once all are in. Returns when that is (ms).
+   */
+  const stow = (keys: string[]): number => {
+    const engine = engineRef.current;
+    if (!engine) return 0;
+    const sup = live.current.supply;
+    const toKey = (base: string): string => {
+      const t = live.current.loose.find((l) => l.key === base)?.token;
+      if (!t) return 'src:die';
+      return t.kind === 'die' ? 'src:die' : t.kind === 'color' ? 'src:color' : 'src:mat';
+    };
+    const STAGGER = 45;
+    keys.forEach((k, i) => {
+      const target = k.startsWith('roll:') ? 'src:die' : toKey(baseOf(k));
+      const h = homeOf(sup.some((x) => x.key === target) ? target : 'src:die') ?? { x: 60, y: 60 };
+      engine.vanish(k, h.x, h.y, i * STAGGER);
+      if (i % 2 === 0 && i < 24) setTimeout(() => cue('table:tidyPiece', 'placeToken', { volume: 0.3, cents: 300 + Math.round(Math.random() * 300 - 150) }), i * STAGGER + 420);
+    });
+    const done = keys.length * STAGGER + 800;
+    setTimeout(() => { for (const k of keys) engine.remove(k); }, done);
+    return done;
+  };
+
   useImperativeHandle(ref, () => ({
     roll: (dice, from) => {
       if (!engine) return Promise.resolve(dice.map((d) => ({ ...d, value: 1 + Math.floor(Math.random() * (d.type === 'd100' ? 100 : d.type === 'duality' ? 12 : FACES_OF[d.type as Shape])) })));
@@ -1816,31 +1843,33 @@ export const TableDice = forwardRef<TableDiceHandle, {
       offered.current = [];
       engine.mimic('src:die', 0);
       fireRef.current?.clear();
-      const sup = live.current.supply;
-      const toKey = (base: string): string => {
-        const t = live.current.loose.find((l) => l.key === base)?.token;
-        if (!t) return 'src:die';
-        return t.kind === 'die' ? 'src:die' : t.kind === 'color' ? 'src:color' : 'src:mat';
-      };
-      // Owner (v0.47.4): each piece goes in a beat after the last, arcs and tumbles to its spawner's home, touches
-      // nothing on the way and shrinks away there. The spawners go home at the same time.
       const keys = engine.keys().filter((k) => k.startsWith('free:') || k.startsWith('roll:'));
-      const STAGGER = 45;
-      keys.forEach((k, i) => {
-        const target = k.startsWith('roll:') ? 'src:die' : toKey(baseOf(k));
-        const h = homeOf(sup.some((s) => s.key === target) ? target : 'src:die') ?? { x: 60, y: 60 };
-        engine.vanish(k, h.x, h.y, i * STAGGER);
-        if (i % 2 === 0 && i < 24) setTimeout(() => cue('table:tidyPiece', 'placeToken', { volume: 0.3, cents: 300 + Math.round(Math.random() * 300 - 150) }), i * STAGGER + 420);
-      });
+      const done = stow(keys);
       sendHome();
       cue('table:tidy', 'gearScroll2', { volume: 0.5 });
       setTimeout(() => {
-        for (const k of keys) engine.remove(k);
         rolled.current.clear();
         selection.current = [];
         live.current.onSelect([]);
         live.current.onTidied();
-      }, keys.length * STAGGER + 800);
+      }, done);
+    },
+    putAway: (bases) => {
+      if (!engine) return;
+      // Put away is the tidy's flight home, never a break (owner, v0.47.21); only these pieces go, the rest stay.
+      const keys = engine.keys().filter((k) => (k.startsWith('free:') || k.startsWith('roll:')) && bases.includes(baseOf(k)));
+      if (!keys.length) return;
+      for (const k of keys) fireRef.current?.set(k, 0);
+      setBurning((bs) => bs.filter((k) => !keys.includes(k)));
+      offered.current = offered.current.filter((o) => !bases.includes(o));
+      selection.current = selection.current.filter((k) => !keys.includes(k));
+      live.current.onSelect(selection.current);
+      cue('piece:putAway', 'tokenRemove');
+      const done = stow(keys);
+      setTimeout(() => {
+        for (const k of keys) rolled.current.delete(k);
+        live.current.onDiscard?.(bases.filter((x) => x.startsWith('free:')));
+      }, done);
     },
     openDecks: (at) => { cue('ui:open', 'floatMenuOpen'); setRing(at); },
     hasRoll: () => rolled.current.size > 0,

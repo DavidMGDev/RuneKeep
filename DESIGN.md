@@ -289,3 +289,7 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   arcs. The chest eats its dice back with one short pip per die, each higher, and shuts without a sound of its own. A
   token pulled off a hand card leaves the card at once as a flat stand-in under the cursor; its 3D piece is made a
   frame later where the cursor is and takes over (making it stalled the first frames of the drag).
+- v0.47.21: Delete or Backspace puts the selected dice and tokens away (selected cards stay selected). Putting away is
+  the tidy's flight home, never a break: `TableDiceHandle.putAway(bases)` sends just those pieces arcing into their
+  supply (`stow`, shared with the tidy), then drops them from the loose list. The selection bar's Put back and a
+  loose piece dropped on the supply use it too.
