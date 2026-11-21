@@ -341,3 +341,9 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   shockwave. The result plaque waits for the blast. Testing: Roll a crit, first in the Many Things picker (rigged
   faces through `roll`). The physical carousel's hitbox is each card (one moving obstacle per card), and a hit glows
   red on that card alone.
+- v0.47.28: every roll is read once. Rolls waiting for their dice are a set (`pending`), not one slot: a second throw
+  used to take the slot, and the first then timed out nine seconds later and was announced again, critical and all.
+  A die thrown again now ends any earlier roll it was in, which comes back empty and shows nothing; only one critical
+  sequence plays at a time. Every throw and roll hops (drawn only, the dice still never pass over each other) as high
+  as it was thrown hard, and spins about an axis of its own as fast as it was thrown, the throw's direction only a
+  third of it (`throwSpin`), so no throw can be steered.

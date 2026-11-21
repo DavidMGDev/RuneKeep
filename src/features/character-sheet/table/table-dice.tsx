@@ -353,7 +353,19 @@ export const TableDice = forwardRef<TableDiceHandle, {
   live.current = props;
   /** What an element token does when it hits something (set further down, once the helpers it uses exist). */
   const elemRef = useRef<(hit: Impact) => void>(() => {});
-  const pending = useRef<{ keys: Set<string>; done: () => void } | null>(null);
+  /**
+   * The rolls waiting for their dice to land, each read exactly once (owner, v0.47.28: a hard throw was announced
+   * twice, the critical played twice over). Several can wait at once; a die thrown again belongs to its new throw.
+   */
+  type Waiting = { keys: Set<string>; done: () => void; drop: () => void };
+  const pending = useRef(new Set<Waiting>());
+  /** These dice have landed (or broken): every roll left with none to wait for is read. */
+  const landedKeys = (keys: string[]) => {
+    for (const w of [...pending.current]) {
+      for (const k of keys) w.keys.delete(k);
+      if (!w.keys.size) { pending.current.delete(w); w.done(); }
+    }
+  };
   /** Pieces rolling (a right click, a fling, a throw of the deck die), and what to do when each lands. */
   const rolling = useRef(new Map<string, () => void>());
   /** The dice the last roll threw, and which pool die each belongs to. */
@@ -404,8 +416,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
           // A pair breaks whole; a broken die no longer holds up a roll waiting for it to land.
           const all = [...new Set(keys.flatMap((k) => e.keys().filter((x) => baseOf(x) === baseOf(k))).concat(keys))];
           for (const k of all) { if (e.has(k)) e.shatter(k); rolled.current.delete(k); rolling.current.delete(k); }
-          const p = pending.current;
-          if (p) { for (const k of all) p.keys.delete(k); if (p.keys.size === 0) { pending.current = null; p.done(); } }
+          landedKeys(all);
           setBurning((b) => (b.some((k) => all.includes(k)) ? b.filter((k) => !all.includes(k)) : b));
           cue('piece:break', 'loseArmor', { volume: burning ? 0.75 : 0.55, cents: Math.round(Math.random() * 400 - 200) });
           live.current.onBreak?.(all, at, burning, first, hits);
@@ -544,11 +555,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
     if (!engine) return;
     engine.onRest((keys) => {
       setBurning((b) => (b.some((k) => keys.includes(k)) ? b.filter((k) => !keys.includes(k)) : b));
-      const p = pending.current;
-      if (p) {
-        for (const k of keys) p.keys.delete(k);
-        if (p.keys.size === 0) { pending.current = null; p.done(); }
-      }
+      landedKeys(keys);
       for (const k of keys) {
         const act = rolling.current.get(k);
         if (act) { rolling.current.delete(k); act(); continue; }
@@ -1777,10 +1784,15 @@ export const TableDice = forwardRef<TableDiceHandle, {
 
   // ---------------------------------------------------------------- rolls, tidying and reset
   const waitFor = useCallback((keys: string[], read: () => PoolDie[]) => new Promise<PoolDie[]>((resolve) => {
-    const finish = () => { clearTimeout(guard); resolve(read()); };
+    // Any earlier roll with one of these dice in it is over: thrown again, they are this roll's now. It is never read
+    // (it comes back empty, so nothing is shown for it), or the same dice were announced twice.
+    for (const w of [...pending.current]) if (keys.some((k) => w.keys.has(k))) { pending.current.delete(w); w.drop(); }
+    let over = false;
+    const end = (out: () => PoolDie[]) => { if (over) return; over = true; clearTimeout(guard); resolve(out()); };
+    const w: Waiting = { keys: new Set(keys), done: () => end(read), drop: () => end(() => []) };
     // A die held in someone's hand never lands: after a while the roll reads what is on top regardless.
-    const guard = setTimeout(() => { if (pending.current?.done === finish) pending.current = null; finish(); }, 9000);
-    pending.current = { keys: new Set(keys), done: finish };
+    const guard = setTimeout(() => { if (pending.current.delete(w)) end(read); }, 9000);
+    pending.current.add(w);
   }), []);
 
   /**
@@ -1826,7 +1838,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
    * harder for a second and a half; CRITICAL slams in for half a second; then the blast, and the table carries on.
    * The light, the darkness, the camera and the words are the table's (`onCrit`); the dice are moved here.
    */
+  const critOn = useRef(false);
   const crit = (e: DiceEngine, hk: string, fk: string) => {
+    // One at a time: a second critical while one plays only glows (it never restarts the show half way).
+    if (critOn.current) { e.wash(hk, '#fff4d6', 0.7, 700, 0.4); e.wash(fk, '#fff4d6', 0.7, 700, 0.4); return; }
+    critOn.current = true;
     const W = size.current.width, H = size.current.height;
     const at = { x: W / 2, y: H / 2 };
     const gap = (e.screen(hk)?.size ?? 46) * 0.62;
@@ -1866,7 +1882,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       e.wash(fk, '#fff4d6', 0.7, 1100, 0.8);
       live.current.onCrit?.(at, 'boom');
     }, GATHER + RUMBLE + WORD);
-    setTimeout(() => live.current.onCrit?.(at, 'done'), GATHER + RUMBLE + WORD + 1400);
+    setTimeout(() => { critOn.current = false; live.current.onCrit?.(at, 'done'); }, GATHER + RUMBLE + WORD + 1400);
   };
 
   /** Which dice a set of pieces holds (a pair counts once), and what they show once they land. */

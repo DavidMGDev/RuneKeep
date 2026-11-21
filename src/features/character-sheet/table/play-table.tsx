@@ -592,7 +592,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
    * has had its moment).
    */
   const critHold = useRef<{ busy: boolean; pending: RollResult | null }>({ busy: false, pending: null });
-  const showResult = useCallback((r: RollResult) => { if (critHold.current.busy) critHold.current.pending = r; else setResult(r); }, []);
+  const showResult = useCallback((r: RollResult) => { if (!r.dice.length) return; if (critHold.current.busy) critHold.current.pending = r; else setResult(r); }, []);
   const releaseResult = () => { const h = critHold.current; h.busy = false; if (h.pending) { setResult(h.pending); h.pending = null; } };
   const rollFrom = useRef<{ x: number; y: number } | null>(null);
   const rolling = useRef(false);
@@ -605,6 +605,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     for (const d of list) rolledDice.current.set(d.id, d);
     const landed = await diceRef.current.roll(list, from, rig);
     rolling.current = false;
+    // Thrown again before it landed: the new throw tells its own result, this one none (v0.47.28).
+    if (!landed.length) return;
     for (const d of landed) rolledDice.current.set(d.id, d);
     rollSound(landed);
     showResult({ total: poolTotal(landed, m.value), verdict: dualityVerdict(landed), dice: landed, label: m.label, mod: m.value });

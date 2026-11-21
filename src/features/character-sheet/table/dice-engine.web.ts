@@ -446,7 +446,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let nudgeTimer: ReturnType<typeof setTimeout> | undefined;
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { b: Body; dx: number; dy: number; orbit?: number; pair?: boolean }[] | null; lid: THREE.Object3D | null; mouth: number; mouthNow: number; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
+  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { b: Body; dx: number; dy: number; orbit?: number; pair?: boolean }[] | null; lid: THREE.Object3D | null; mouth: number; mouthNow: number; /** A thrown die's hop (v0.47.28), drawn only: px up and px/s. */ hopZ?: number; hopV?: number; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
   /** The cards on the table: a physical one is a body, the rest are where they lie. */
   const cards = new Map<string, { x: number; y: number; w: number; h: number; a: number; body: Body | null; was: boolean; samples: { x: number; y: number; t: number }[]; /** A swing building in the hand (v0.47.25), as a die's does: 0 to 2. */ swing?: number; hand?: number; st?: number }>();
   let cardsCb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void = () => {};
@@ -492,6 +492,23 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   /** The selection a card carried by hand takes with it. */
   let cardCarry: { lead: string; others: { b: Body; dx: number; dy: number }[] } | null = null;
   let freezeUntil = 0;
+  /** This frame's length (s), and whether any die is still in the air from a throw's hop. */
+  let frameDt = 0;
+  let hopping = false;
+  /**
+   * Every throw and roll (owner, v0.47.28: they could be steered): the die hops up as high as it was thrown hard,
+   * and turns about an axis of its own, as fast as it was thrown, the way it was thrown only in small part.
+   */
+  const throwSpin = (vx: number, vy: number, r: number, speed: number): [number, number, number] => {
+    const th = Math.random() * Math.PI * 2, u = Math.random() * 2 - 1, s0 = Math.sqrt(1 - u * u);
+    const m = (7 + speed * 0.02) * (0.6 + Math.random() * 0.8);
+    return [(vy / r) * 0.35 + s0 * Math.cos(th) * m, (vx / r) * 0.35 + s0 * Math.sin(th) * m, u * m * 0.6];
+  };
+  const hop = (d: Die | undefined, speed: number) => {
+    if (!d || d.body.box || d.spec.shape === 'chip') return;
+    d.hopV = Math.min(1300, 180 + speed * 0.22 * (0.7 + Math.random() * 0.6));
+    d.hopZ = d.hopZ ?? 0;
+  };
   /** While set, the only pieces that move (see `stage`). */
   let staged: Set<string> | null = null;
   let restCb: (keys: string[]) => void = () => {};
@@ -555,7 +572,14 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     d.group.scale.setScalar(rad * d.scale * washNow(d).grow);
     const jx = d.jitter ? (Math.random() - 0.5) * d.jitter * rad * 0.5 : 0;
     const jy = d.jitter ? (Math.random() - 0.5) * d.jitter * rad * 0.5 : 0;
-    d.group.position.set(b.x - W / 2 + jx, (H / 2 - b.y + jy) / COS, model.inR * rad + b.z + (b.held ? 6 : 0));
+    // A throw's hop: up and back down with a bounce, drawn only (the dice never leave the felt for each other).
+    if (d.hopV || d.hopZ) {
+      d.hopV = (d.hopV ?? 0) - 3400 * frameDt;
+      d.hopZ = (d.hopZ ?? 0) + d.hopV * frameDt;
+      if (d.hopZ <= 0) { d.hopZ = 0; d.hopV = d.hopV < -280 ? -d.hopV * 0.3 : 0; }
+      hopping = true;
+    }
+    d.group.position.set(b.x - W / 2 + jx, (H / 2 - b.y + jy) / COS, model.inR * rad + b.z + (d.hopZ ?? 0) + (b.held ? 6 : 0));
     d.group.quaternion.set(b.q[0], b.q[1], b.q[2], b.q[3]);
     if (d.jitter > 0.02) d.group.rotateZ((Math.random() - 0.5) * d.jitter * 0.5);
     for (const f of d.follow) f.style.transform = `translate(${(b.x + jx).toFixed(1)}px, ${(b.y + jy - b.z * 0.4).toFixed(1)}px)`;
@@ -622,6 +646,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     try { frameBody(t); } finally { inFrame = false; }
   }
   function frameBody(t: number) {
+    frameDt = Math.min(0.05, Math.max(0, (t - last) / 1000));
+    hopping = false;
     acc += Math.min(0.05, (t - last) / 1000);
     last = t;
     const now = performance.now();
@@ -710,7 +736,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     renderer.render(scene, camera);
     if (rested.length) restCb(rested.filter((k) => dice.has(k)));
     const jittering = order.some((d) => d.jitter > 0);
-    if (!allAsleep(bodies) || easing || held || shards.length || fields.length || auras.size || hitstop || jittering || slip.until > now || woke) raf = requestAnimationFrame(frame);
+    if (!allAsleep(bodies) || hopping || easing || held || shards.length || fields.length || auras.size || hitstop || jittering || slip.until > now || woke) raf = requestAnimationFrame(frame);
   }
 
   /**
@@ -1147,14 +1173,17 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
           const pvx = vx * (0.92 + Math.random() * 0.12), pvy = vy * (0.92 + Math.random() * 0.12);
           if (pb.box) { pb.vx = pvx; pb.vy = pvy; pb.va = (Math.random() - 0.5) * 4; pb.asleep = false; continue; }
           // Each rolls as the hand's own die does (owner, v0.47.17: they slid out unturned, so their faces were not fair).
-          launch(pb, pvx, pvy, 0, [pvy / pb.r + (Math.random() - 0.5) * speed * 0.01, pvx / pb.r + (Math.random() - 0.5) * speed * 0.01, (Math.random() - 0.5) * speed * 0.006]);
+          launch(pb, pvx, pvy, 0, throwSpin(pvx, pvy, pb.r, speed));
+          hop(dice.get(pb.key), speed);
         }
         die.tether = null;
       }
       // Let go off its card, an anchored piece is loose until the table decides where it belongs.
       if (die.anchor) { die.anchor = null; b.fixed = false; b.ghost = false; }
       const r = b.r;
-      launch(b, vx, vy, 0, [vy / r + (Math.random() - 0.5) * speed * 0.01, vx / r + (Math.random() - 0.5) * speed * 0.01, (Math.random() - 0.5) * speed * 0.006]);
+      launch(b, vx, vy, 0, throwSpin(vx, vy, r, speed));
+      // A die let go nearly still is set down, not thrown.
+      if (speed > 120) hop(die, speed);
       wake();
       return speed;
     },
@@ -1170,8 +1199,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       if (d.tether) { for (const t of d.tether) t.b.held = false; d.tether = null; }
       d.jitter = 0;
       const sp = Math.hypot(vx, vy);
-      const k = 0.012 * sp + 8;
-      launch(d.body, vx, vy, 0, [(Math.random() - 0.5) * 2 * k, (Math.random() - 0.5) * 2 * k, (Math.random() - 0.5) * k]);
+      launch(d.body, vx, vy, 0, throwSpin(vx, vy, d.body.r, sp));
+      hop(d, sp);
       if (boost) d.body.boost = boost;
       if (breaker) { d.body.breaker = { ...breaker }; brokeOnce.delete(key); }
       wake();
@@ -1213,7 +1242,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       if (!d) return;
       const ang = Math.random() * Math.PI * 2;
       const sp = 140 + Math.random() * 160;
-      launch(d.body, Math.cos(ang) * sp, Math.sin(ang) * sp, 0, [(Math.random() - 0.5) * 70, (Math.random() - 0.5) * 70, (Math.random() - 0.5) * 20]);
+      launch(d.body, Math.cos(ang) * sp, Math.sin(ang) * sp, 0, throwSpin(Math.cos(ang) * sp, Math.sin(ang) * sp, d.body.r, 900));
+      hop(d, 900);
       wake();
     },
     setFace(key, face) {
