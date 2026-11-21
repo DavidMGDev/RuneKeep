@@ -360,3 +360,6 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   cannot settle; landing, it loses 70% of the spin. Pressed once: up 760 px/s, falling at 3200, spinning 34 rad/s and up.
   Held: higher, slower, faster. Held to the full: light fire, falling at 620 (about four seconds up), spinning about
   120 rad/s, the fire out as it lands. It no longer breaks anything.
+- v0.47.32: a die's height shows on screen by exactly sin(TILT), not 0.4, so the fire and every effect stay on a die
+  in the air. The Roll button's leap is set by its peak and hang time (tap 300 up for 0.6 s; full hold 760 for 3.4 s),
+  the peak never higher than keeps the die on screen (the full leap went off the top, fire and all).

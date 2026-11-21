@@ -208,6 +208,7 @@ const CHIP_H = 0.26;
  */
 const TILT = 0.32; // v0.47.2 (owner): higher, a little less isometric, so lower edges read
 const COS = Math.cos(TILT);
+const SIN_TILT = Math.sin(TILT);
 
 let models: Promise<Record<Shape, ShapeModel>> | null = null;
 
@@ -1112,7 +1113,9 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     },
     screen(key) {
       const d = dice.get(key);
-      return d && d.vanish !== 'flying' ? { x: d.body.x, y: d.body.y - (d.body.z + (d.hopZ ?? 0)) * 0.4, size: d.spec.size * d.scale } : null;
+      // Its height shows on screen by the camera's tilt exactly (v0.47.32: 0.4 was near enough for a hop, but the Roll
+      // button's leap goes far higher, and the fire drawn there drifted off the die).
+      return d && d.vanish !== 'flying' ? { x: d.body.x, y: d.body.y - (d.body.z + (d.hopZ ?? 0)) * SIN_TILT, size: d.spec.size * d.scale } : null;
     },
     hit(x, y) {
       // The top-most of whatever is under the point; a die's whole footprint counts.

@@ -2026,8 +2026,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const pw = burning ? 1 : Math.max(0, Math.min(1, power ?? 0));
       let hang = 0;
       for (const k of all) {
-        const up = (760 + 640 * pw) * (0.9 + Math.random() * 0.2);
-        const g = burning ? 620 : 3200 - 1700 * pw;
+        // By how high it goes and how long it hangs (v0.47.32: by speed alone the full leap went off the top of the
+        // screen, fire and all): never higher than keeps it in view.
+        const at = engine.state(k);
+        const T = (burning ? 3.4 : 0.62 + 1.2 * pw) * (0.92 + Math.random() * 0.16);
+        const peak = Math.min((burning ? 760 : 300 + 380 * pw) * (0.9 + Math.random() * 0.2), Math.max(120, ((at?.y ?? 400) - 50) / 0.31));
+        const up = (4 * peak) / T, g = (8 * peak) / (T * T);
         // However long it hangs, it lands only a little way from where it rose.
         const ang = Math.random() * Math.PI * 2, drift = (40 + Math.random() * 60) / Math.max(0.5, (2 * up) / g);
         const spin = (34 + 46 * pw + (burning ? 40 : 0)) * (0.85 + Math.random() * 0.3);
