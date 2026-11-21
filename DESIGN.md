@@ -305,3 +305,7 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   longer recompiles. Reset sends drawn Many Things cards back into the deck and the stock counts them again. The
   service worker no longer keeps an image the host answered with the app's page (a card drawn before its art shipped
   kept showing its letter for good).
+- v0.47.23: a click on any card in the hand views it by default (`centreClick: 'view'`); taking a copy on click is
+  the `clickTake` switch, off by default, renamed from `clickPull` so every saved table takes the new default once. A
+  fixed piece (the dice chest) is stepped while it flies home: physics skipped fixed bodies whole, so once out of
+  place the chest never went back, whatever reset it.

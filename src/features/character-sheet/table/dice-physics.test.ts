@@ -70,6 +70,16 @@ describe('dice physics', () => {
     expect(a.y).toBeCloseTo(100, 0);
     expect(a.top).toBe(4);
   });
+
+  it('flies a fixed piece home too (v0.47.23: the dice chest never went back)', () => {
+    const c = makeBody('c', 400, 300, 30, CUBE);
+    c.fixed = true;
+    sendHome(c, 150, 120);
+    expect(allAsleep([c])).toBe(false);
+    run([c], seeded(3));
+    expect(c.x).toBeCloseTo(150, 0);
+    expect(c.y).toBeCloseTo(120, 0);
+  });
 });
 
 describe('dice physics, no tunnelling (v0.47.1)', () => {

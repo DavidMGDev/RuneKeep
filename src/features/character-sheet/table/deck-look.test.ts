@@ -28,10 +28,15 @@ describe('deck look', () => {
   });
 
   it('keeps a table saved by an older version: its layout stays, renamed settings carry over', () => {
-    const old = { ...TABLE_PRESETS[1].look, centreClick: 'take', clickPull: false, retired: 3 } as Record<string, unknown>;
+    const old = { ...TABLE_PRESETS[1].look, centreClick: 'take', clickTake: undefined, retired: 3 } as Record<string, unknown>;
+    delete old.clickTake;
     const l = cleanLook(old);
-    expect(l.clickPull).toBe(true);
-    expect(l.centreClick).toBe('nothing');
+    expect(l.clickTake).toBe(true);
+    expect(l.centreClick).toBe('view');
+    // v0.47.23: a table saved with the old take-on-click default views on click instead.
+    const before = { ...TABLE_PRESETS[1].look, clickPull: true, centreClick: 'nothing' } as Record<string, unknown>;
+    delete before.clickTake;
+    expect([cleanLook(before).clickTake, cleanLook(before).centreClick]).toEqual([false, 'view']);
     for (const k of ['supX', 'supY', 'supDir', 'ctlX', 'ctlY', 'catX', 'catY', 'size', 'walls'] as const) expect(l[k]).toEqual(TABLE_PRESETS[1].look[k]);
     // A look missing settings added since keeps everything it has and takes the defaults for the rest.
     const partial = cleanLook({ supX: 0.31, supY: 0.42 });

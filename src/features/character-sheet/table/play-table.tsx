@@ -358,9 +358,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   copiesRef.current = copies;
 
   const onCentreClick = useCallback((card: TableCard, rect: DOMRect, p: { x: number; y: number }) => {
-    if (look.clickPull) takeCopy(card, rect, p);
-    else if (look.centreClick === 'equip') ctx.toggleCard(card.id);
-  }, [look.clickPull, look.centreClick, takeCopy, ctx]);
+    if (look.clickTake) takeCopy(card, rect, p);
+    else if (look.centreClick === 'view') {
+      // A click views the card (owner, v0.47.23), growing out of it where it is drawn.
+      cue('ui:open', 'cardFullscreenEnter', { volume: 0.6 });
+      setViewing({ id: card.id, from: { left: rect.left, top: rect.top, width: rect.width, height: rect.height } });
+    } else if (look.centreClick === 'equip') ctx.toggleCard(card.id);
+  }, [look.clickTake, look.centreClick, takeCopy, ctx]);
   /**
    * Throw on the table (owner, v0.47.8): a copy leaves the hand as a physical card, flung towards the middle of the
    * felt, turning as it goes.

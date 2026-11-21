@@ -343,8 +343,9 @@ function boxStep(b: Body, bounds: Bounds, dt: number, hits: Impact[], world: Wor
 function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle[], world: World = {}): Impact[] {
   const hits: Impact[] = [];
   for (const b of bodies) {
-    // A fixed piece (the supply, an anchored token) only ever turns over where it lies.
-    if (b.asleep || b.held || b.broken || (b.fixed && !b.settle) || (b.ghost && !b.settle && !b.home)) continue;
+    // A fixed piece (the supply, an anchored token) only ever turns over where it lies, or is sent home (v0.47.23,
+    // owner: the dice chest, fixed, once out of its place never went back, whatever reset it).
+    if (b.asleep || b.held || b.broken || (b.fixed && !b.settle && !b.home) || (b.ghost && !b.settle && !b.home)) continue;
     // Charged with lightning: it never slows; its time up, it pounds down where it is and lands on a random face.
     if (b.zap) {
       b.zap.left -= dt;
@@ -730,7 +731,7 @@ export function snapFace(b: Body, face: number, ms = 120): void {
 }
 
 /** Every body at rest (nothing moving, nothing turning, nothing flying home). */
-export const allAsleep = (bodies: Body[]): boolean => bodies.every((b) => (b.asleep || (b.fixed && !b.settle)) && !b.held);
+export const allAsleep = (bodies: Body[]): boolean => bodies.every((b) => (b.asleep || (b.fixed && !b.settle && !b.home)) && !b.held);
 
 /** Send a body home in an arc, landing on `face` (or the one on top now). */
 export function sendHome(b: Body, x: number, y: number, face?: number, dur = 0.5, spin?: Vec3, lift?: number): void {

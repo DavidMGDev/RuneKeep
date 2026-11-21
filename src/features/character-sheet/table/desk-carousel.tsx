@@ -400,8 +400,8 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       const hit = (e.target as HTMLElement).closest?.('[data-slot]') as HTMLElement | null;
       if (!hit) return;
       const i = Number(hit.dataset.slot);
-      // Click to take (owner, v0.47.8): any card comes straight out; otherwise only the settled centre card acts.
-      if (lookRef.current.clickPull || (i === centerRef.current && Math.abs(s.target - s.pos) < 0.3)) {
+      // Click to take (owner, v0.47.8) or to view (v0.47.23): any card acts at once; otherwise only the settled centre card.
+      if (lookRef.current.clickTake || lookRef.current.centreClick === 'view' || (i === centerRef.current && Math.abs(s.target - s.pos) < 0.3)) {
         const card = cardsRef.current[i];
         // From the card as it is drawn (lifted and zoomed when lit), so the copy leaves from right there.
         const face = (hit.firstElementChild as HTMLElement | null) ?? hit;

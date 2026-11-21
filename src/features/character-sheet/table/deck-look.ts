@@ -10,7 +10,7 @@
 export type EdgeEffect = 'fade' | 'blur' | 'darken' | 'grey' | 'none';
 export type ExitStyle = 'fade' | 'shrink' | 'sink' | 'cut';
 export type StackOrder = 'centre' | 'left' | 'right';
-export type CentreClick = 'equip' | 'nothing';
+export type CentreClick = 'view' | 'equip' | 'nothing';
 
 export interface DeckLook {
   // The hand: size and spacing
@@ -84,8 +84,11 @@ export interface DeckLook {
   hoverZoom: number;
   /** Every card drawn at full quality, always (owner, v0.47.17); heavy, so off unless asked for. */
   sharp: boolean;
-  /** A plain click on any card in the hand takes a copy of it out to lay on the table (owner, v0.47.8). */
-  clickPull: boolean;
+  /**
+   * A plain click on any card in the hand takes a copy of it out to lay on the table (owner, v0.47.8). Off by default
+   * since v0.47.23 (owner: a click views the card), and renamed so every saved table takes the new default once.
+   */
+  clickTake: boolean;
   /** What a click on the centre card does, when clicking does not take cards out. */
   centreClick: CentreClick;
   /** How a new deck's cards arrive when you switch decks. */
@@ -155,7 +158,7 @@ export const DEFAULT_LOOK: DeckLook = {
   size: 210, centre: 1, side: 4, spacing: 0.04, pack: 0.35, arc: 0, tilt: 0, lift: 0, rowY: 0.5,
   shrink: 0.085, minScale: 0.3, drop: 0, turn: 0, perspective: 1400, stack: 'centre',
   edge: 'fade', edgeWidth: 17, dim: 0.12, blur: 0, grey: 0, shadow: 0.5, glow: 0, exit: 'fade',
-  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, endDots: true, autoReturn: true, diceChest: true, chest: 'cute', hoverLift: 10, hoverZoom: 1.04, sharp: false, clickPull: true, centreClick: 'nothing', switchFx: 'slide',
+  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, endDots: true, autoReturn: true, diceChest: true, chest: 'cute', hoverLift: 10, hoverZoom: 1.04, sharp: false, clickTake: false, centreClick: 'view', switchFx: 'slide',
   areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'roll', ctlSize: 1, catSize: 1, tokenTray: true,
   handMode: 'carousel', ctlX: 0.86, ctlY: 0.08, ctlDir: 'row', supX: 0.15, supY: 0.08, supDir: 'row', catX: 0.07, catY: 0.36, areaY: -1,
   apart: {},
@@ -256,8 +259,8 @@ export const LOOK_PAGES: LookPage[] = [
         title: 'Cards',
         controls: [
           { kind: 'choice', key: 'switchFx', label: 'Changing deck', help: 'How a deck\'s cards arrive when you switch to it.', options: opts(['slide', 'Slide'], ['deal', 'Deal'], ['fade', 'Fade'], ['none', 'Instant']) },
-          { kind: 'toggle', key: 'clickPull', label: 'Click a card to take it', help: 'On: click any card in the hand to pull a copy out and lay it on the table. Off: a click brings a card to the middle, and right click, Lay a copy on the table, takes one out.' },
-          { kind: 'choice', key: 'centreClick', label: 'Click the centre card', help: 'When clicking does not take cards out: what a click on the middle card does. Any other card slides to the middle first.', options: opts(['nothing', 'Nothing'], ['equip', 'Equip']) },
+          { kind: 'toggle', key: 'clickTake', label: 'Click a card to take it', help: 'On: click any card in the hand to pull a copy out and lay it on the table. Off: a click does what Click a card says, and right click, Lay a copy on the table, takes one out.' },
+          { kind: 'choice', key: 'centreClick', label: 'Click a card', help: 'When clicking does not take cards out. View opens any card you click; Equip and Nothing act on the middle card, and any other card slides to the middle first.', options: opts(['view', 'View it'], ['equip', 'Equip'], ['nothing', 'Nothing']) },
           { kind: 'range', key: 'hoverLift', label: 'Hover lift', help: 'How far a card rises under the pointer.', min: 0, max: 60, step: 1, unit: 'px' },
           { kind: 'range', key: 'hoverZoom', label: 'Hover zoom', help: 'How much a card grows under the pointer.', min: 1, max: 2.5, step: 0.01 },
           { kind: 'toggle', key: 'sharp', label: 'Sharp cards', help: 'Every card at full quality all the time, so it reads well at any size. Heavy on slower computers: the hand can stutter.' },
@@ -465,7 +468,10 @@ export function randomTables(n: number, seed: number): DeckLook[] {
  */
 function migrateLook(src: Record<string, unknown>): Record<string, unknown> {
   // v0.47.8: 'Take a copy' on the centre card became the Click a card to take it switch.
-  if (src.centreClick === 'take') { src.clickPull = true; src.centreClick = 'nothing'; }
+  if (src.centreClick === 'take') { src.clickTake = true; src.centreClick = 'view'; }
+  // v0.47.23 (owner): a click views a card by default. A table saved before it (no clickTake yet, the old clickPull
+  // was on by default) takes the new default once, and a centre click left at Nothing becomes View.
+  if (!('clickTake' in src) && (src.centreClick === undefined || src.centreClick === 'nothing')) src.centreClick = 'view';
   return src;
 }
 
