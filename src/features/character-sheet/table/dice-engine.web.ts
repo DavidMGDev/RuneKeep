@@ -501,12 +501,13 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
    */
   const throwSpin = (vx: number, vy: number, r: number, speed: number): [number, number, number] => {
     const th = Math.random() * Math.PI * 2, u = Math.random() * 2 - 1, s0 = Math.sqrt(1 - u * u);
-    const m = (7 + speed * 0.02) * (0.6 + Math.random() * 0.8);
+    // Even a soft roll spins up well (owner, v0.47.29: a gentle one could still be placed); harder, faster still.
+    const m = (18 + speed * 0.022) * (0.7 + Math.random() * 0.6);
     return [(vy / r) * 0.35 + s0 * Math.cos(th) * m, (vx / r) * 0.35 + s0 * Math.sin(th) * m, u * m * 0.6];
   };
   const hop = (d: Die | undefined, speed: number) => {
     if (!d || d.body.box || d.spec.shape === 'chip') return;
-    d.hopV = Math.min(1300, 180 + speed * 0.22 * (0.7 + Math.random() * 0.6));
+    d.hopV = Math.min(1400, 340 + speed * 0.24 * (0.7 + Math.random() * 0.6));
     d.hopZ = d.hopZ ?? 0;
   };
   /** While set, the only pieces that move (see `stage`). */
@@ -892,17 +893,26 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     const pair = list.find((t) => t.pair);
     const cx = pair ? pair.dx / 2 : 0, cy = pair ? pair.dy / 2 : 0;
     const core = pair ? Math.hypot(cx, cy) + Math.max(hb.r, pair.b.r) : hb.r;
-    // The ring: wide enough for the bundle to sit shoulder to shoulder, turning about one and a half times a second.
+    // The rings (owner, v0.47.29: one ring grew past the screen for a big selection): the first hugs the hand, and
+    // each one full, the rest go round it in the next, shoulder to shoulder, every other ring turning the other way.
     const n = Math.max(1, circling.length);
     const big = Math.max(0, ...circling.map((t) => t.b.r));
-    const ring = Math.max(core + big + (pair ? 12 : 6), (n * (2 * big + 4)) / (2 * Math.PI));
-    const spin = orbitA;
+    const r0 = core + big + (pair ? 12 : 6), pitch = 2 * big + 4;
+    const slots: { r: number; a: number }[] = [];
+    for (let k = 0, left = n; left > 0; k++) {
+      const r = r0 + k * (2 * big + 6);
+      const m = Math.min(left, Math.max(1, Math.floor((2 * Math.PI * r) / pitch)));
+      const turn = orbitA * (k % 2 ? -0.7 : 1) + k * 0.4;
+      for (let j = 0; j < m; j++) slots.push({ r, a: turn + (j / m) * Math.PI * 2 });
+      left -= m;
+    }
     for (const t of list) {
       const pb = t.b;
       pb.x += mx;
       pb.y += my;
-      const ox = t.orbit === undefined ? t.dx : cx + Math.cos(spin + (t.orbit / n) * Math.PI * 2) * ring;
-      const oy = t.orbit === undefined ? t.dy : cy + Math.sin(spin + (t.orbit / n) * Math.PI * 2) * ring;
+      const sl = t.orbit === undefined ? null : slots[t.orbit] ?? slots[slots.length - 1];
+      const ox = sl ? cx + Math.cos(sl.a) * sl.r : t.dx;
+      const oy = sl ? cy + Math.sin(sl.a) * sl.r : t.dy;
       const [tx, ty] = caged(pb, Math.min(bounds.right - pb.r, Math.max(bounds.left + pb.r, hb.x + ox)), Math.min(bounds.bottom - pb.r, Math.max(bounds.top + pb.r, hb.y + oy)));
       pb.x += (tx - pb.x) * 0.3;
       pb.y += (ty - pb.y) * 0.3;

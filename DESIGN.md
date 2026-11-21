@@ -347,3 +347,9 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   sequence plays at a time. Every throw and roll hops (drawn only, the dice still never pass over each other) as high
   as it was thrown hard, and spins about an axis of its own as fast as it was thrown, the throw's direction only a
   third of it (`throwSpin`), so no throw can be steered.
+- v0.47.29: even a soft throw spins up well (18 rad/s and up, plus 0.022 of the speed) and hops (340 px/s and up). A
+  carried selection circles the hand in rings: the first hugs it, and once a ring is full the rest go round it in the
+  next, every other ring turning the other way (40 dice stay within about 180 px). Taken out of the sound pools and
+  the app at the owner's call: the process and window-close interface blips, crowdaww, the creaking door, mp-thyend2,
+  ui-startup, the autobots shutdown (Playground off now powers down with dark-ui-power-on-off-dark-02), the metallic
+  double alert, gab-taunt6, chainsawthrown, dronehurt and door-2-open.

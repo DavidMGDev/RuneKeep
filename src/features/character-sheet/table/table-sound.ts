@@ -10,12 +10,13 @@ import { playOwn, playSfx, type PlayOpts, type SfxId } from '@/lib/sfx';
 
 const UI_HOVER = ['g4f-sfx11-exointerface-cursor-click-25', 'click', 'click1'];
 const UI_TAP = ['key-press-in', 'key-press-out', 'countingclick'];
-const UI_OPEN = ['door-2-open', 'dark-ui-power-on-off-dark-01', 'g4f-sfx11-exointerface-process-short-06'];
-const UI_CLOSE = ['door-1-close', 'door-2-close', 'g4f-sfx11-exointerface-window-close-short-16', 'dark-ui-power-on-off-dark-02'];
+const UI_OPEN = ['dark-ui-power-on-off-dark-01'];
+const UI_CLOSE = ['door-1-close', 'door-2-close', 'dark-ui-power-on-off-dark-02'];
 const BREAKS = ['headbreak', 'headbreak2', 'limbbreak', 'glasshit', 'glass-break-vase-d50-fienup-003', '443293-deathscyp-wood-break-2', 'bigrockbreak', 'bonusbreak2', 'bonusbreak3'];
 // Only the steps loud enough to hear (owner, v0.47.17: two of the five played nothing).
 const STEPS = ['footstep-stone1', 'woodimpact', 'cratebounce'];
-const TAUNTS = Array.from({ length: 12 }, (_, i) => `gab-taunt${i + 1}`);
+// Taken out by the owner (v0.47.29): gab-taunt6.
+const TAUNTS = Array.from({ length: 12 }, (_, i) => `gab-taunt${i + 1}`).filter((f) => f !== 'gab-taunt6');
 
 /**
  * Each cue's files (one is picked each time, never the same twice running), its loudness, how long it may ring before
@@ -26,7 +27,7 @@ const PACK = {
   'ui:tap': { files: UI_TAP, vol: 0.4 },
   'ui:open': { files: UI_OPEN, vol: 0.45 },
   'ui:close': { files: UI_CLOSE, vol: 0.45 },
-  'ui:toggle': { files: ['accent-interface-ui-alert-clean-metallic-double-fast', 'beep-high', 'beepbeep-high', 'beepbeep-high-0'], vol: 0.4 },
+  'ui:toggle': { files: ['beep-high', 'beepbeep-high', 'beepbeep-high-0'], vol: 0.4 },
   'ui:confirm': { max: 1, files: ['g4f-sfx11-exointerface-action-confirm-long-05', 'batterycharged', 'message'], vol: 0.5 },
   'ui:error': { files: ['error', 'ui-mechanical-error-11-fx-01', 'negative-notification-25'], vol: 0.5 },
   'ui:delete': { files: ['sandboxdelete'], vol: 0.5 },
@@ -63,7 +64,7 @@ const PACK = {
   'roll:hope': { files: ['hpget'], vol: 0.55 },
   'roll:fear': { max: 2, files: ['dronespot'], vol: 0.4 },
   'roll:muted': { files: ['dronecharge', 'virtuecharge'], vol: 0.55 },
-  'roll:bad': { files: ['crowdaww', 'dronelose', 'zombie-weak-death', 'crashprotectorlose'], vol: 0.55 },
+  'roll:bad': { files: ['dronelose', 'zombie-weak-death', 'crashprotectorlose'], vol: 0.55 },
   'roll:plain': { files: ['railcannonpipclick', 'message', 'computersfx-alerts-004'], vol: 0.5 },
   // A critical lands like a held hit (owner, v0.47.18): the heavy impact sounds.
   // The critical's sequence (owner, v0.47.27): the pair gathered, the build, the word, the blast.
@@ -84,9 +85,9 @@ const PACK = {
   'table:tidy': { max: 1.6, files: ['portalheavy', 'portal3'], vol: 0.5 },
   'table:tidyPiece': { files: ['hpget', 'railcannonpipclick', 'countingclick'], vol: 0.3 },
   'table:clear': { files: ['sandboxdelete'], vol: 0.55 },
-  'playground:on': { max: 1.6, files: ['ui-startup', 'tv-on'], vol: 0.55 },
-  'playground:off': { max: 1.6, files: ['bluezone-autobots-shutdown-003'], vol: 0.55 },
-  'chest:open': { max: 1.6, files: ['85678-tmkappelt-door-old-creaking-2', 'massregurgitate'], vol: 0.55 },
+  'playground:on': { max: 1.6, files: ['tv-on'], vol: 0.55 },
+  'playground:off': { max: 1.6, files: ['dark-ui-power-on-off-dark-02'], vol: 0.55 },
+  'chest:open': { max: 1.6, files: ['massregurgitate'], vol: 0.55 },
   'chest:dissolve': { max: 1.6, files: ['portalstalker', 'portal3'], vol: 0.5 },
   'mimic:pop': { files: ['massregurgitate'], vol: 0.65 },
   'mimic:swallow': { files: ['massdeath', 'mp-crush'], vol: 0.65 },
@@ -97,7 +98,7 @@ const PACK = {
   'element:ice': { files: ['iceunfreeze', 'sandboxfreeze'], vol: 0.45 },
   'element:water': { files: ['watersplash', 'watersmallsplash'], vol: 0.45 },
   'domat:draw': { files: ['gabrielweaponspawn', 'portalmindflayer', 'portalinsurrectionist2'], vol: 0.6 },
-  'domat:empty': { files: ['error', 'dronehurt'], vol: 0.5 },
+  'domat:empty': { files: ['error'], vol: 0.5 },
   'domat:play': { files: ['virtueattack', 'gabrielweaponbreak'], vol: 0.6 },
   'domat:calm': { files: ['iceunfreeze'], vol: 0.45 },
   'domat:gust': { files: ['whooshloud', 'whoosh-organic-styrofoam-plank-airy-smooth-texture-1'], vol: 0.65 },
@@ -121,8 +122,8 @@ const PACK = {
   'domat:rewind': { files: ['animeslashreverse', 'zombie-weak-death-reverse'], vol: 0.55 },
   'domat:throne': { files: TAUNTS, vol: 0.7 },
   'domat:gems': { files: ['coinspin', 'coinflip'], vol: 0.55, cents: -600 },
-  'domat:talons': { files: ['saw', 'chainsawthrown', 'animeslash'], vol: 0.6 },
-  'domat:ruin': { files: ['mp-thyend', 'mp-thyend2', 'mp-weak'], vol: 0.7 },
+  'domat:talons': { files: ['saw', 'animeslash'], vol: 0.6 },
+  'domat:ruin': { files: ['mp-thyend', 'mp-weak'], vol: 0.7 },
   'hit:die': { files: ['plastichit', 'shellimpact', 'glasshit'], vol: 0.5 },
   'hit:table': { files: ['woodimpact', 'cratebounce', 'footstep-stone1', 'sandhit'], vol: 0.5 },
   'hit:rail': { files: ['bluezone-bc0236-metal-debris-097', 'bluezone-bc0238-impact-002', 'hookarmclink', 'skullimpact'], vol: 0.5 },
