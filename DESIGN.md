@@ -309,3 +309,8 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   the `clickTake` switch, off by default, renamed from `clickPull` so every saved table takes the new default once. A
   fixed piece (the dice chest) is stepped while it flies home: physics skipped fixed bodies whole, so once out of
   place the chest never went back, whatever reset it.
+- v0.47.24: the dice chest's wheel: down throws out a die (as before), up takes two dice off the table, any two, into
+  its open mouth (`putAwayRef` with `mouth`, shared with Put back). Right click on it swallows every die on the table,
+  one after another with rising pips, and spits out one d20 rolled across the table and read as a roll, bigger the more
+  it ate (`TokenInfo.big`: 1 + 0.17 a die, up to 3.5 times a die; kept with the loose piece). The playground's supply
+  takes the wheel too.
