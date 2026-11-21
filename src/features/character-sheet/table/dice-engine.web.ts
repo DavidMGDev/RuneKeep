@@ -176,6 +176,8 @@ export interface DiceEngine {
   onImpact(cb: (i: Impact) => void): void;
   /** Called with the keys of dice that have just come to rest. */
   onRest(cb: (keys: string[]) => void): void;
+  /** Paint and compile these pieces' looks ahead of time, off screen, so they cost nothing when they first appear. */
+  warm(specs: DieSpec[]): void;
   dispose(): void;
 }
 
@@ -741,6 +743,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       shared = { tex, mats: [mm.face, mm.edge], refs: 0 };
       looks.set(look, shared);
     }
+    if (shared.refs === 0) { const i = spare.indexOf(look); if (i >= 0) spare.splice(i, 1); }
     shared.refs++;
     const tex = shared.tex;
     const m = { face: shared.mats[0], edge: shared.mats[1] };
@@ -757,13 +760,27 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     return { group, tex, mats: [m.face, m.edge], look, lid: null };
   }
 
+  /**
+   * Looks no die wears any more, kept a while (owner, v0.47.22: the chest stalled on every open, each time painting
+   * its dice's faces again and compiling their shaders again, as the last ones had been thrown away). Oldest first.
+   */
+  const spare: string[] = [];
   function dropVisuals(d: Die) {
     scene.remove(d.group);
-    const shared = looks.get(d.look);
+    releaseLook(d.look);
+  }
+  function releaseLook(look: string) {
+    const shared = looks.get(look);
     if (!shared || --shared.refs > 0) return;
-    looks.delete(d.look);
-    shared.tex.dispose();
-    for (const m of shared.mats) m.dispose();
+    spare.push(look);
+    while (spare.length > 40) {
+      const old = spare.shift()!;
+      const sh = looks.get(old);
+      if (!sh || sh.refs > 0) continue;
+      looks.delete(old);
+      sh.tex.dispose();
+      for (const m of sh.mats) m.dispose();
+    }
   }
 
   /** A piece or a physical card by key. */
@@ -1461,6 +1478,13 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     onImpact(cb) { impactCb = cb; },
     onBreak(cb) { breakCb = cb; },
     onRest(cb) { restCb = cb; },
+    warm(specs) {
+      const made = specs.filter((sp) => sp.shape !== 'mimic' && sp.shape !== 'chest').map((sp) => visuals(sp));
+      if (!made.length) return;
+      for (const v of made) { v.group.position.set(1e5, 1e5, 0); renderer.initTexture(v.tex); }
+      const done = () => { for (const v of made) { scene.remove(v.group); releaseLook(v.look); } };
+      void renderer.compileAsync(scene, camera).then(done, done);
+    },
     dispose() {
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
@@ -1468,6 +1492,8 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       order.length = 0;
       for (const sh of shards) scene.remove(sh.mesh);
       shards.length = 0;
+      for (const sh of looks.values()) { sh.tex.dispose(); for (const m of sh.mats) m.dispose(); }
+      looks.clear();
       shardGeo.dispose();
       for (const m of shardMats.values()) m.dispose();
       ringGeo.dispose();

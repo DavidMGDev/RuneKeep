@@ -49,6 +49,11 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+/** The app's own page, served in place of a file that is not there. */
+function isPage(res) {
+  return (res.headers.get('content-type') || '').includes('text/html');
+}
+
 /** Content-addressed or immutable: worth keeping, never worth revalidating. */
 function isAsset(url) {
   return /\/assets\/|\/_expo\/static\/(?!js\/)|\.(png|jpg|jpeg|webp|gif|svg|ico|woff2?|ttf|otf|mp3|wav|m4a)$/i.test(url.pathname);
@@ -62,13 +67,15 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return; // never touch third-party requests
 
   if (isAsset(url)) {
-    // Cache first: serve instantly, fetch and store on a miss.
+    // Cache first: serve instantly, fetch and store on a miss. A file the host did not have yet comes back as the
+    // app's page (200, text/html) and was kept as if it were the image, so that card never showed its art again
+    // (v0.47.22: eight Many Things cards drawn before their art shipped). Such an entry is fetched afresh and replaced.
     event.respondWith(
       caches.match(request).then(
         (hit) =>
-          hit ??
+          (hit && !isPage(hit) ? hit : null) ??
           fetch(request).then((res) => {
-            if (res.ok) {
+            if (res.ok && !isPage(res)) {
               const copy = res.clone();
               void caches.open(CACHE).then((c) => c.put(request, copy));
             }

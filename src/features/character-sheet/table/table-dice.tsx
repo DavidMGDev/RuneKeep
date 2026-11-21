@@ -507,6 +507,33 @@ export const TableDice = forwardRef<TableDiceHandle, {
   }, [placesKey, engine]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const returns = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  /**
+   * Knocked or thrown away, the supply and the control dice find their way back after a moment (owner, v0.47.12).
+   * Whatever lies in its spot is pushed out of the way as it comes, so it is not shoved off again on landing.
+   */
+  const returnLater = (k: string, restart: boolean) => {
+    const engine = engineRef.current;
+    if (!engine || !live.current.autoReturn || live.current.toys || live.current.editing) return;
+    if (k !== CAT && !ACTIONS.includes(k as ActionKey) && !k.startsWith('src:')) return;
+    if (!restart && returns.current.has(k)) return;
+    const h = homeOf(k), s = engine.state(k);
+    if (!h || !s || Math.hypot(s.x - h.x, s.y - h.y) < 12) return;
+    clearTimeout(returns.current.get(k));
+    returns.current.set(k, setTimeout(() => {
+      returns.current.delete(k);
+      const now = engine.state(k), h2 = homeOf(k);
+      if (!now?.asleep || !h2 || live.current.toys || Math.hypot(now.x - h2.x, now.y - h2.y) < 12) return;
+      engine.impulse(h2.x, h2.y, (engine.screen(k)?.size ?? 60) * 0.9 + 30, 520, undefined, homeKeys());
+      engine.home(k, h2.x, h2.y, k === CAT ? deckFaceRef.current.indexOf(live.current.current) : ACTIONS.includes(k as ActionKey) ? 0 : undefined);
+    }, 1300));
+  };
+  // A piece shoved off its spot while asleep never comes to rest again, so the rest above never sees it (owner,
+  // v0.47.22: one landing on a token in its slot was pushed aside and stayed there): look every so often as well.
+  useEffect(() => {
+    if (!engine) return;
+    const id = setInterval(() => { for (const k of homeKeys()) returnLater(k, false); }, 1500);
+    return () => clearInterval(id);
+  }, [engine]); // eslint-disable-line react-hooks/exhaustive-deps -- returnLater reads only refs
   // Rests: a roll resolves, a right-click roll acts, and where the home pieces lie is remembered.
   useEffect(() => {
     if (!engine) return;
@@ -533,20 +560,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
         if (st) live.current.onLooseRest(baseOf(k), st.x, st.y);
       }
       // Knocked or thrown away, the supply and the control dice find their way back after a moment (owner, v0.47.12).
-      if (live.current.autoReturn && !live.current.toys && !live.current.editing) {
-        for (const k of keys) {
-          if (k !== CAT && !ACTIONS.includes(k as ActionKey) && !k.startsWith('src:')) continue;
-          const h = homeOf(k), s = engine.state(k);
-          if (!h || !s || Math.hypot(s.x - h.x, s.y - h.y) < 12) continue;
-          clearTimeout(returns.current.get(k));
-          returns.current.set(k, setTimeout(() => {
-            returns.current.delete(k);
-            const now = engine.state(k), h2 = homeOf(k);
-            if (!now?.asleep || !h2 || live.current.toys || Math.hypot(now.x - h2.x, now.y - h2.y) < 12) return;
-            engine.home(k, h2.x, h2.y, k === CAT ? deckFaceRef.current.indexOf(live.current.current) : ACTIONS.includes(k as ActionKey) ? 0 : undefined);
-          }, 1300));
-        }
-      }
+      for (const k of keys) returnLater(k, true);
       const places = loadDicePlaces();
       let changed = false;
       for (const k of keys) {
@@ -558,7 +572,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       }
       if (changed) saveDicePlaces(places);
     });
-  }, [engine, homeOf]);
+  }, [engine, homeOf]); // eslint-disable-line react-hooks/exhaustive-deps -- returnLater reads only refs
 
   // ---------------------------------------------------------------- the deck icons, as pictures for the die
   const deckKey = decks.map((d) => `${d.key}:${d.meta?.icon ?? ''}`).join('|');
@@ -703,6 +717,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
     }
     for (const k of engine.keys()) if (k.startsWith('src:') && !want.has(k)) { engine.remove(k); built.current.delete(k); }
   }, [engine, supplyKey, numberFinish, backArt, props.diceChest, hidKey, lockKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The chest's dice made ahead, once the table is up and still (owner, v0.47.22: its first open stalled on them).
+  useEffect(() => {
+    if (!engine || !props.diceChest) return;
+    const t = setTimeout(() => engine.warm(DIE_KINDS.flatMap((type) => tokenSpecs(pieceOf(`free:warm-${type}`, { kind: 'die', dieType: type, dieValue: 1, dieValue2: type === 'duality' ? 1 : undefined }), numberFinish).map((x) => x.spec))), 1500);
+    return () => clearTimeout(t);
+  }, [engine, props.diceChest, numberFinish]);
   // Loose tokens: added where they were left, removed when they go onto a card or back to the supply.
   const looseKey = props.loose.map((t) => `${t.key}:${t.token.kind}:${t.token.dieType ?? ''}:${t.token.color ?? ''}`).join('|');
   useEffect(() => {
@@ -1008,14 +1028,28 @@ export const TableDice = forwardRef<TableDiceHandle, {
     /** Shake a piece and its partner together. */
     const shakeAll = (key: string, v: number) => { for (const k of partsOf(key)) engine.jitter(k, v); };
     /** How far a held piece has caught (0 none, 1 ablaze), for it and its partner. */
-    const heat = (key: string, v: number) => { for (const k of partsOf(key)) fireRef.current?.set(k, v); };
+    // Put out, an element token goes back to its own glow.
+    const heat = (key: string, v: number) => { for (const k of partsOf(key)) { const a = v === 0 ? auraOf(k) : null; fireRef.current?.set(k, a ? a[0] : v, a ? a[1] : undefined); } };
+    const elOf = (k: string) => (k.startsWith('free:') ? tokenElement(live.current.loose.find((l) => l.key === baseOf(k))?.token.kind ?? 'wood') : undefined);
+    /** What a charge turns into: an element token always its own element (owner, v0.47.22), else fire swung and frost held. */
+    const lookOf = (key: string, held: boolean): boolean | 'spark' => { const el = elOf(key); return el === 'fire' ? false : el === 'ice' || el === 'water' ? true : el === 'spark' ? 'spark' : held; };
+    const glow = (key: string, v: number, look: boolean | 'spark') => { for (const k of partsOf(key)) fireRef.current?.set(k, look === 'spark' ? v * 0.65 : v, look); };
+    /** It caught, as fire, frost or lightning: cranked to the max with its sound. */
+    const catchOn = (pr: NonNullable<typeof press>, look: boolean | 'spark') => {
+      const parts = partsOf(pr.key);
+      pr.lit = true;
+      if (look === true) { pr.cold = true; for (const k of parts) frozen.current.add(k); }
+      if (look === 'spark') for (const k of parts) sparked.current.add(k);
+      spike(parts, look);
+      setBurning((b) => [...new Set([...b, ...parts])]);
+      if (look === false) cue('piece:ignite', 'gainGoldenHp', { volume: 0.6, cents: 900 });
+      else cue('piece:charge', 'gainGoldenHp', { volume: 0.55, cents: look === true ? 1500 : 700 });
+    };
     /** While a charge builds it only glows a little (owner, v0.47.20): the full effect waits for the moment it catches. */
     const TINY = 0.16;
     const tiny = (v: number) => Math.min(TINY, Math.max(0, v) * TINY);
     /** It caught: the effect cranked to the max at once, with its sound. */
     const spike = (keys: string[], cold: boolean | 'spark') => { for (const k of keys) fireRef.current?.spike(k, cold); };
-    /** How far a held piece has frozen, frost fumes rising off it (v0.47.18). */
-    const chill = (key: string, v: number) => { for (const k of partsOf(key)) fireRef.current?.set(k, v, true); };
     /** Still on the table: a die or token, or a physical card (the engine's `has` knows only the dice). */
     const present = (k: string) => engine.has(k) || (k.startsWith('card:') && !!engine.state(k));
     /** Lift a piece; the other of a pair comes along beside it (owner, v0.47.11: Hope and Fear are pulled together). */
@@ -1105,14 +1139,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
         return;
       }
       // The fire shows as the swing builds, well before it is fully alight (owner, v0.47.11).
-      if (!pr.lit) heat(pr.key, tiny((pr.swing - 0.35) / 1.65));
-      if (__DEV__) (globalThis as { __rkSwing?: unknown }).__rkSwing = { hand: Math.round(pr.hand), swing: +pr.swing.toFixed(2), lit: pr.lit };
-      if (!pr.lit && pr.swing >= 2) {
-        pr.lit = true;
-        spike(partsOf(pr.key), false);
-        setBurning((b) => [...new Set([...b, ...partsOf(pr.key)])]);
-        cue('piece:ignite', 'gainGoldenHp', { volume: 0.6, cents: 900 });
-      }
+      const look = lookOf(pr.key, false);
+      if (!pr.lit) glow(pr.key, tiny((pr.swing - 0.35) / 1.65), look);
+      if (__DEV__) (globalThis as { __rkSwing?: unknown }).__rkSwing = { hand: Math.round(pr.hand), swing: +pr.swing.toFixed(2), lit: pr.lit, look };
+      if (!pr.lit && pr.swing >= 2) catchOn(pr, look);
     };
     let lastTick = 0;
     const tick = () => {
@@ -1134,15 +1164,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
         shakeAll(pr.key, Math.min(1, pr.charge));
         // It smoulders from early in the shake and is alight by 1.3; let go then and it goes burning. At 2 it goes off
         // by itself (owner, v0.47.11: the fire has to show well before the launch).
-        if (!pr.lit && !bundled(pr.key)) chill(pr.key, tiny((pr.charge - 0.3) / 1.0));
-        if (!pr.lit && !bundled(pr.key) && pr.charge >= 1.3) {
-          pr.lit = true;
-          pr.cold = true;
-          for (const k of partsOf(pr.key)) frozen.current.add(k);
-          spike(partsOf(pr.key), true);
-          setBurning((b) => [...new Set([...b, ...partsOf(pr.key)])]);
-          cue('piece:charge', 'gainGoldenHp', { volume: 0.5, cents: 1500 });
-        }
+        if (!pr.lit && !bundled(pr.key)) glow(pr.key, tiny((pr.charge - 0.3) / 1.0), lookOf(pr.key, true));
+        if (!pr.lit && !bundled(pr.key) && pr.charge >= 1.3) catchOn(pr, lookOf(pr.key, true));
         if (pr.charge >= 2) { press = null; host.style.cursor = 'grab'; fire(pr, 1, pr.lit, pr.cold); return; }
       }
       chargeRaf = requestAnimationFrame(tick);
@@ -1497,6 +1520,13 @@ export const TableDice = forwardRef<TableDiceHandle, {
         return;
       }
       const group = pr.moved && selection.current.includes(pr.key) ? [...selection.current] : null;
+      // A die picked up and carried is selected (owner, v0.47.22), as a shift-click would; only one really dragged by
+      // the hand, never one bumped or barely nudged. Added after the throw is read, so it does not count this throw.
+      if (pr.moved && isDie(pr.key) && Math.hypot(pr.last.x - pr.x, pr.last.y - pr.y) > 14 && !selection.current.includes(pr.key)) {
+        selection.current = [...new Set([...selection.current, ...partsOf(pr.key)])];
+        engine.select(selection.current);
+        live.current.onSelect(selection.current);
+      }
       const zs = pr.zap ? zapKeys(pr.key) : [];
       const speed = pr.deferred ? 0 : engine.release();
       // A die charged on its own counts as a roll of it, as a charged selection does.

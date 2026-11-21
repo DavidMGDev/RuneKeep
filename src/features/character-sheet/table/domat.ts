@@ -49,7 +49,7 @@ const EFFECTS: Record<string, { effect: DomatEffect; table: string; tint: string
   knight: { effect: 'knight', table: 'A knight gallops round the table for 12 seconds, bouncing off the walls and knocking aside everything in its path.', tint: '#C0C8D0' },
   moon: { effect: 'moon', table: 'The felt freezes for 30 seconds: everything drifts and slides.', tint: '#A8B8F0' },
   rogue: { effect: 'thief', table: 'A thief darts about for 12 seconds pocketing every loose piece it touches, then drops the lot.', tint: '#5A6A50' },
-  ruin: { effect: 'ruin', table: 'Tears apart the cards laid around it (the copies; your decks are untouched).', tint: '#8A5A3A' },
+  ruin: { effect: 'ruin', table: 'A bolt of ruin flies from piece to piece and breaks every loose die and token, even ones added while it hunts.', tint: '#8A5A3A' },
   skull: { effect: 'blackhole', table: 'Pulls everything in, then bursts, blowing apart the cards at its heart.', tint: '#D8D8D8' },
   star: { effect: 'wish', table: 'Every die on the table turns to its highest face.', tint: '#F0E08A' },
   sun: { effect: 'gust', table: 'A sun rises: for 14 seconds every loose piece orbits it, then it flares and flings them all away.', tint: '#FFD24A' },

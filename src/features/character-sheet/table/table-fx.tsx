@@ -356,7 +356,13 @@ export function CardScrap({ uid, card, poly, w, x, y, rot, fading, onDrag }: { u
     const ox = cx - (e.clientX - host.left), oy = cy - (e.clientY - host.top);
     const r = Number(el.dataset.rot ?? rot) || 0;
     try { el.setPointerCapture(e.pointerId); } catch { /* gone */ }
-    const move = (m: PointerEvent) => onDrag(uid, m.clientX - host.left + ox, m.clientY - host.top + oy, r, false);
+    const move = (m: PointerEvent) => {
+      const nx = m.clientX - host.left + ox, ny = m.clientY - host.top + oy;
+      // Drawn under the hand as it goes (owner, v0.47.22: it stayed put until let go); physics skips a held card.
+      el.style.left = `${nx - el.offsetWidth / 2}px`;
+      el.style.top = `${ny - el.offsetHeight / 2}px`;
+      onDrag(uid, nx, ny, r, false);
+    };
     const up = (m: PointerEvent) => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); onDrag(uid, m.clientX - host.left + ox, m.clientY - host.top + oy, r, true); };
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', up);

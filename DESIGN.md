@@ -293,3 +293,15 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   the tidy's flight home, never a break: `TableDiceHandle.putAway(bases)` sends just those pieces arcing into their
   supply (`stow`, shared with the tidy), then drops them from the loose list. The selection bar's Put back and a
   loose piece dropped on the supply use it too.
+- v0.47.22: a scrap carried by hand is drawn under the cursor as it goes (physics skips a held card, so it stayed put
+  till let go). Put back and Delete take selected scraps too (they fade away). An element token's charge is its own
+  element, swung or held: ice and water frost, lightning crackles, fire burns. A die dragged more than 14 px by the hand
+  joins the selection on release (both halves of a pair; never a token, never one bumped). The supply and the control
+  dice also look for being off their spot every 1.5 s (one shoved while asleep never came to rest again, so it stayed
+  off), and push aside whatever lies in their spot as they come back. The playground keeps the supply and the chest.
+  Ruin is now a bolt that flies from piece to piece, breaking every loose die and token (pieces added meanwhile too),
+  each hit held a beat, faster with each, until none is left. The chest's dice are painted and compiled once the table
+  is up (`engine.warm`), and a look no die wears is kept (up to 40) instead of thrown away, so opening the chest no
+  longer recompiles. Reset sends drawn Many Things cards back into the deck and the stock counts them again. The
+  service worker no longer keeps an image the host answered with the app's page (a card drawn before its art shipped
+  kept showing its letter for good).
