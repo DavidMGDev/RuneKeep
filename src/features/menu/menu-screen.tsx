@@ -16,7 +16,7 @@ import { useReducedMotion } from '@/hooks/use-reduced-motion';
 import { showToast } from '@/components/toast';
 import { resetTours, shouldShow } from '@/lib/onboarding-store';
 import { useLayout } from '@/hooks/use-layout';
-import { useDesktopPage } from '@/hooks/use-desktop';
+import { DESKTOP_PAGE_PAD, useDesktopPage } from '@/hooks/use-desktop';
 import { playSfx, preloadSfx , sfxDiagnostics } from '@/lib/sfx';
 import { applyStoredMute, setUiMuted } from '@/lib/sfx-prefs';
 
@@ -64,7 +64,7 @@ function DriftRow({ y, cards, duration, reverse, opacity, thumbW = THUMB_W }: { 
   );
 }
 
-function MenuAction({ label, sub, glyph, onPress, delayIndex, locked }: { label: string; sub: string; glyph: 'characters' | 'cards'; onPress: () => void; delayIndex: number; locked?: boolean }) {
+function MenuAction({ label, sub, glyph, onPress, delayIndex, locked, labelSize = 24 }: { label: string; sub: string; glyph: 'characters' | 'cards' | 'campaigns'; onPress: () => void; delayIndex: number; locked?: boolean; /** Three across on a desktop window: a size that fits "Characters" (fit-to-width does nothing on web). */ labelSize?: number }) {
   // Web (the verify pipeline) renders the settled state directly — the entrance is native-only.
   const enter = useSharedValue(Platform.OS === 'web' ? 1 : 0);
   const press = useSharedValue(1);
@@ -108,6 +108,13 @@ function MenuAction({ label, sub, glyph, onPress, delayIndex, locked }: { label:
                   <Polygon points="22,3 38,10 38,24 22,41 6,24 6,10" fill="none" stroke={edge} strokeWidth={2} strokeLinejoin="miter" />
                   <Polyline points="14,18 22,26 30,18" fill="none" stroke={accent} strokeWidth={2.6} strokeLinejoin="miter" />
                 </>
+              ) : glyph === 'campaigns' ? (
+                <>
+                  {/* a banner on its pole: the flag a campaign rides under */}
+                  <Polyline points="9,41 9,4" fill="none" stroke={edge} strokeWidth={2} />
+                  <Polygon points="9,6 36,6 30,14 36,22 9,22" fill="none" stroke={bright} strokeWidth={2} strokeLinejoin="miter" />
+                  <Polyline points="15,14 24,14" fill="none" stroke={accent} strokeWidth={2.6} />
+                </>
               ) : (
                 <>
                   {/* fanned cards */}
@@ -117,7 +124,7 @@ function MenuAction({ label, sub, glyph, onPress, delayIndex, locked }: { label:
               )}
             </Svg>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <FitLine style={{ color: ivory, fontSize: 24, fontFamily: Display.black, letterSpacing: 2, textTransform: 'uppercase' }}>{label}</FitLine>
+              <FitLine style={{ color: ivory, fontSize: labelSize, fontFamily: Display.black, letterSpacing: labelSize < 24 ? 1.2 : 2, textTransform: 'uppercase' }}>{label}</FitLine>
               <FitLine minScale={0.7} style={{ color: muted, fontSize: 12, fontFamily: Body.medium, letterSpacing: 0.4, marginTop: 3 }}>{locked ? 'Set a party active to unlock' : sub}</FitLine>
             </View>
             <Svg width={16} height={16} viewBox="0 0 16 16">
@@ -269,6 +276,7 @@ export function MenuScreen() {
         onToggleMute={toggleMute}
         onCharacters={() => { playSfx('selectCharacter'); router.push('/characters'); }}
         onCards={() => { playSfx('enterCardViewer'); router.push('/library' as Href); }}
+        onCampaigns={() => { playSfx('selectCharacter'); router.push('/parties' as Href); }}
         updateDialog={updateDialog}
         onUpdateDialog={setUpdateDialog}
       />
@@ -365,14 +373,15 @@ function TipsButton() {
 /**
  * The menu on a desktop window (v0.45.0). The same gate, laid out for the width: the title on top, the card
  * library drifting through a wide band across the middle (bigger thumbs, both edges fading into the ink), and
- * the two destinations side by side below it. Campaigns stay on the phone; the desktop app is for play.
+ * the destinations side by side below it. Campaigns joined them once their page had a desktop layout.
  */
-function DesktopMenu({ rows, muted, onToggleMute, onCharacters, onCards, updateDialog, onUpdateDialog }: {
+function DesktopMenu({ rows, muted, onToggleMute, onCharacters, onCards, onCampaigns, updateDialog, onUpdateDialog }: {
   rows: { thumb: number; id: string }[][];
   muted: boolean;
   onToggleMute: () => void;
   onCharacters: () => void;
   onCards: () => void;
+  onCampaigns: () => void;
   updateDialog: React.ReactNode;
   onUpdateDialog: (node: React.ReactNode) => void;
 }) {
@@ -382,6 +391,7 @@ function DesktopMenu({ rows, muted, onToggleMute, onCharacters, onCards, updateD
   const thumbH = (bandH - rowGap) / 2;
   const thumbW = Math.round((thumbH * 188) / 263);
   const fade = Math.round(Math.min(260, W * 0.18));
+  const rowW = Math.min(1100, W - 2 * DESKTOP_PAGE_PAD);
   return (
     <View style={{ flex: 1 }}>
       {/* Scrolls when the window is too short for everything (an update banner at 1100x640), instead of clipping it. */}
@@ -407,15 +417,17 @@ function DesktopMenu({ rows, muted, onToggleMute, onCharacters, onCards, updateD
         </Svg>
       </View>
       <View style={{ flex: 1, alignItems: 'center', paddingTop: Math.round(H * 0.035), paddingBottom: 24, gap: 18 }}>
-        <View style={{ flexDirection: 'row', gap: 28 }}>
-          <View style={{ width: 380 }}><MenuAction label="Characters" sub="Your roster" glyph="characters" delayIndex={0} onPress={onCharacters} /></View>
-          <View style={{ width: 380 }}><MenuAction label="Cards" sub="Archive and homebrew" glyph="cards" delayIndex={1} onPress={onCards} /></View>
+        {/* Three across, sharing the window inside the page's margins (1020px at the narrowest desktop window). */}
+        <View style={{ flexDirection: 'row', gap: 24, width: rowW }}>
+          <View style={{ flex: 1 }}><MenuAction label="Characters" sub="Your roster" glyph="characters" delayIndex={0} labelSize={20} onPress={onCharacters} /></View>
+          <View style={{ flex: 1 }}><MenuAction label="Cards" sub="Archive and homebrew" glyph="cards" delayIndex={1} labelSize={20} onPress={onCards} /></View>
+          <View style={{ flex: 1 }}><MenuAction label="Campaigns" sub="Run a game" glyph="campaigns" delayIndex={2} labelSize={20} onPress={onCampaigns} /></View>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <MuteToggle muted={muted} onToggle={onToggleMute} />
           <TipsButton />
         </View>
-        <View style={{ width: 788 }}><UpdateBanner onDialog={onUpdateDialog} /></View>
+        <View style={{ width: rowW }}><UpdateBanner onDialog={onUpdateDialog} /></View>
         <Text style={{ color: Rune.muted, fontSize: 10, fontFamily: Body.medium, letterSpacing: 1.6, textTransform: 'uppercase' }}>Created by Koy and David</Text>
       </View>
     </ScrollView>

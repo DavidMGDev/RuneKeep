@@ -15,6 +15,7 @@ const NAV: { label: string; href: string; route: string; match: (p: string) => b
   { label: 'Characters', href: '/characters', route: 'characters', match: (p) => p === '/characters' || p === '/create' },
   { label: 'Cards', href: '/library', route: 'library', match: (p) => p === '/library' },
   { label: 'Archive', href: '/gallery', route: 'gallery', match: (p) => p === '/gallery' },
+  { label: 'Campaigns', href: '/parties', route: 'parties', match: (p) => p === '/parties' },
 ];
 
 /**

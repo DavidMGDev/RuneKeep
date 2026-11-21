@@ -363,3 +363,11 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
 - v0.47.32: a die's height shows on screen by exactly sin(TILT), not 0.4, so the fire and every effect stay on a die
   in the air. The Roll button's leap is set by its peak and hang time (tap 300 up for 0.6 s; full hold 760 for 3.4 s),
   the peak never higher than keeps the die on screen (the full leap went off the top, fire and all).
+- v0.47.33 (Koy's playtest): a homebrew subclass's Spellcast trait shows on creation's trait step; "Write one" opens
+  over the class card editor (it opened behind it); a card with a counter is live in the desk's card viewer; a class's
+  pages fall back to the class card's own banner, as its feature cards already did.
+- v0.48.0: Campaigns on desktop. `/parties` is a desktop page, in the top bar and third on the desktop menu. Laid out
+  like the roster: the campaigns in a list, the selected one's pane beside it (badge, Open sessions, New session, Edit
+  cast, Edit details, Delete with its two asks; the cast with who is away; the sessions newest first, each saying how
+  many encounters and which is running). A click selects and a second click opens; Up, Down and Enter as on the roster.
+  Sessions, a session, the cast editor and encounters still open in the phone frame.
