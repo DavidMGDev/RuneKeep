@@ -74,6 +74,8 @@ export interface Body {
    * it breaks whatever loose piece it passes through and touches nothing else, until it slows down.
    */
   /** `strike`: an aimed shot (a held piece let go, v0.47.16) whose first break is held as an impact frame, unlit. */
+  /** Seconds left in the air (the Roll button's leap): no friction, no grip on the spin, no settling (v0.47.31). */
+  air?: number;
   breaker?: { left: number; fire: boolean; strike?: boolean; /** Frozen (v0.47.18): breaks as fire does, cold. */ cold?: boolean; /** Never these (the dice of the same charged throw, v0.47.18). */ spare?: Set<string> };
   /** A loose token or die: a charged throw can break it. */
   breakable?: boolean;
@@ -435,7 +437,14 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
     b.z = 0;
     b.vz = 0;
     if (world.fields?.length) applyFields(b, world.fields, dt);
-    {
+    // In the air (the Roll button's leap, v0.47.31): no felt to slow it or take hold of its spin until it comes down,
+    // and then it lands hard, most of the spin gone at once.
+    const airborne = (b.air ?? 0) > 0;
+    if (airborne) {
+      b.air = Math.max(0, b.air! - dt);
+      if (!b.air) b.w = [b.w[0] * 0.3, b.w[1] * 0.3, b.w[2] * 0.3];
+    }
+    if (!airborne) {
       // Sliding friction and the roll taking hold of the spin.
       const sp = Math.hypot(b.vx, b.vy);
       if (sp > 0 && !b.zap) {
@@ -471,7 +480,7 @@ function subStep(bodies: Body[], bounds: Bounds, dt: number, obstacles: Obstacle
     for (const c of world.cages ?? []) cageStep(b, c, hits);
     // Inside a field nothing settles: the field decides when it is over.
     const inField = world.fields?.some((f) => f.kind === 'wind' || Math.hypot(b.x - f.x, b.y - f.y) < f.r);
-    if (!inField && !b.zap && Math.hypot(b.vx, b.vy) < SETTLE_SPEED && Math.hypot(b.w[0], b.w[1]) < SETTLE_SPIN) beginSettle(b);
+    if (!inField && !b.zap && !airborne && Math.hypot(b.vx, b.vy) < SETTLE_SPEED && Math.hypot(b.w[0], b.w[1]) < SETTLE_SPIN) beginSettle(b);
   }
   collide(bodies, hits);
   return hits;

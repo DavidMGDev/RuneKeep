@@ -355,3 +355,8 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   double alert, gab-taunt6, chainsawthrown, dronehurt and door-2-open.
 - v0.47.30: railcannonfull taken out (the critical's voice keeps batterycharged and harpooncharged). The sound log
   and the testing button (draw any Many Things card, Roll a crit) show only in development.
+- v0.47.31: the selection bar's Roll leaps the dice where they lie (`engine.leap`, `Body.air`): straight up, spinning
+  hard about any axis, drifting 40 to 100 px whatever the hang time. In the air a die has no friction, keeps its spin and
+  cannot settle; landing, it loses 70% of the spin. Pressed once: up 760 px/s, falling at 3200, spinning 34 rad/s and up.
+  Held: higher, slower, faster. Held to the full: light fire, falling at 620 (about four seconds up), spinning about
+  120 rad/s, the fire out as it lands. It no longer breaks anything.

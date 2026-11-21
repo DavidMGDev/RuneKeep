@@ -85,6 +85,11 @@ export interface DiceEngine {
   /** Let go: the die flies on with the hand's speed (px/s returned). */
   release(): number;
   /** Throw with a velocity; it slides and tumbles and lands where physics puts it. */
+  /**
+   * The Roll button (owner, v0.47.31): straight up `up` px/s, falling at `g` px/s², spinning at `spin` rad/s about any
+   * axis, drifting only a little (vx, vy); in the air it keeps its spin, and loses most of it as it lands.
+   */
+  leap(key: string, vx: number, vy: number, up: number, g: number, spin: number): void;
   toss(key: string, vx: number, vy: number, boost?: { gen: number; power: number }, breaker?: Body['breaker']): void;
   /** A piece just let go flies on this many times faster, pushing harder and breaking what it hits (a swung throw). */
   empower(key: string, mult: number, boost?: { gen: number; power: number }, breaker?: Body['breaker']): void;
@@ -446,7 +451,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let nudgeTimer: ReturnType<typeof setTimeout> | undefined;
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { b: Body; dx: number; dy: number; orbit?: number; pair?: boolean }[] | null; lid: THREE.Object3D | null; mouth: number; mouthNow: number; /** A thrown die's hop (v0.47.28), drawn only: px up and px/s. */ hopZ?: number; hopV?: number; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
+  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { b: Body; dx: number; dy: number; orbit?: number; pair?: boolean }[] | null; lid: THREE.Object3D | null; mouth: number; mouthNow: number; /** A thrown die's hop (v0.47.28), drawn only: px up, px/s, and its own fall (px/s², the leap's slow one). */ hopZ?: number; hopV?: number; hopG?: number; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
   /** The cards on the table: a physical one is a body, the rest are where they lie. */
   const cards = new Map<string, { x: number; y: number; w: number; h: number; a: number; body: Body | null; was: boolean; samples: { x: number; y: number; t: number }[]; /** A swing building in the hand (v0.47.25), as a die's does: 0 to 2. */ swing?: number; hand?: number; st?: number }>();
   let cardsCb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void = () => {};
@@ -575,9 +580,9 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     const jy = d.jitter ? (Math.random() - 0.5) * d.jitter * rad * 0.5 : 0;
     // A throw's hop: up and back down with a bounce, drawn only (the dice never leave the felt for each other).
     if (d.hopV || d.hopZ) {
-      d.hopV = (d.hopV ?? 0) - 3400 * frameDt;
+      d.hopV = (d.hopV ?? 0) - (d.hopG ?? 3400) * frameDt;
       d.hopZ = (d.hopZ ?? 0) + d.hopV * frameDt;
-      if (d.hopZ <= 0) { d.hopZ = 0; d.hopV = d.hopV < -280 ? -d.hopV * 0.3 : 0; }
+      if (d.hopZ <= 0) { d.hopZ = 0; d.hopG = undefined; d.hopV = d.hopV < -280 ? -d.hopV * 0.3 : 0; }
       hopping = true;
     }
     d.group.position.set(b.x - W / 2 + jx, (H / 2 - b.y + jy) / COS, model.inR * rad + b.z + (d.hopZ ?? 0) + (b.held ? 6 : 0));
@@ -1107,7 +1112,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     },
     screen(key) {
       const d = dice.get(key);
-      return d && d.vanish !== 'flying' ? { x: d.body.x, y: d.body.y - d.body.z * 0.4, size: d.spec.size * d.scale } : null;
+      return d && d.vanish !== 'flying' ? { x: d.body.x, y: d.body.y - (d.body.z + (d.hopZ ?? 0)) * 0.4, size: d.spec.size * d.scale } : null;
     },
     hit(x, y) {
       // The top-most of whatever is under the point; a die's whole footprint counts.
@@ -1213,6 +1218,19 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       hop(d, sp);
       if (boost) d.body.boost = boost;
       if (breaker) { d.body.breaker = { ...breaker }; brokeOnce.delete(key); }
+      wake();
+    },
+    leap(key, vx, vy, up, g, spin) {
+      const d = dice.get(key);
+      if (!d) return;
+      if (d.tether) { for (const t of d.tether) t.b.held = false; d.tether = null; }
+      d.jitter = 0;
+      const th = Math.random() * Math.PI * 2, u = Math.random() * 2 - 1, s0 = Math.sqrt(1 - u * u);
+      launch(d.body, vx, vy, 0, [s0 * Math.cos(th) * spin, s0 * Math.sin(th) * spin, u * spin]);
+      d.body.air = (2 * up) / g;
+      d.hopZ = d.hopZ ?? 0;
+      d.hopV = up;
+      d.hopG = g;
       wake();
     },
     empower(key, mult, boost, breaker) {

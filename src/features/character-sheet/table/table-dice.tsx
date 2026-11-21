@@ -2020,16 +2020,25 @@ export const TableDice = forwardRef<TableDiceHandle, {
       const groups = groupsOf(keys);
       const all = [...new Set([...groups.values()].flat())];
       if (!all.length) return Promise.resolve([]);
-      // Held before letting go (owner, v0.47.11): the harder the charge, the harder they fly; burning, they break things.
-      const pw = Math.max(0, Math.min(1, power ?? 0));
-      // Dice rolled together never break each other, however hard (owner, v0.47.25): the roll stays whole.
-      const spare = new Set(all);
+      // The Roll button (owner, v0.47.31): the dice leap straight up where they lie, spinning hard, and barely move
+      // across the table. Pressed once, a great leap; held, higher, longer and faster still; held to the full, they
+      // catch light fire and hang in the air, falling slowly, spinning wildly until they land.
+      const pw = burning ? 1 : Math.max(0, Math.min(1, power ?? 0));
+      let hang = 0;
       for (const k of all) {
-        const ang = Math.random() * Math.PI * 2;
-        const sp = burning ? 7000 + Math.random() * 2600 : (380 + Math.random() * 320) * (1 + pw * 7);
-        engine.toss(k, Math.cos(ang) * sp, Math.sin(ang) * sp, pw > 0.2 || burning ? { gen: 4, power: burning ? 5 : 1 + 2 * pw } : undefined, burning ? { left: 99, fire: true, spare } : pw > 0.3 ? { left: 2, fire: false, spare } : undefined);
+        const up = (760 + 640 * pw) * (0.9 + Math.random() * 0.2);
+        const g = burning ? 620 : 3200 - 1700 * pw;
+        // However long it hangs, it lands only a little way from where it rose.
+        const ang = Math.random() * Math.PI * 2, drift = (40 + Math.random() * 60) / Math.max(0.5, (2 * up) / g);
+        const spin = (34 + 46 * pw + (burning ? 40 : 0)) * (0.85 + Math.random() * 0.3);
+        engine.leap(k, Math.cos(ang) * drift, Math.sin(ang) * drift, up, g, spin);
+        hang = Math.max(hang, (2 * up) / g);
       }
-      if (burning) { setBurning((b) => [...new Set([...b, ...all])]); live.current.onHardHit(6000); }
+      if (burning) {
+        for (const k of all) fireRef.current?.set(k, 0.24);
+        // Out as they land.
+        setTimeout(() => { for (const k of all) if (!lit.current.has(k)) fireRef.current?.set(k, 0); }, hang * 1000 + 150);
+      }
       cue(burning ? 'throw:fire' : 'roll:throw', burning ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.35 + pw * 0.3, cents: burning ? 900 : Math.round(pw * 500) });
       return waitFor(all, () => readGroups(engine, groups)).then(celebrate);
     },
