@@ -2334,7 +2334,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           <CornerButton glyph="play" label={playground ? 'Leave the playground' : 'Playground'} active={playground} onPress={togglePlayground} />
           {playground ? null : <CornerButton glyph="settings" label="Table settings" active={settings} onPress={() => { cue('ui:toggle', settings ? 'panelClose' : 'panelOpen'); setSettings((s) => !s); }} />}
           {/* Testing only for now (owner, v0.47.11): draw any card of the Deck of Many Things, stock or not. */}
-          {playground ? null : <CornerButton glyph="roll" label="Testing: draw any Many Things card" active={picking} onPress={() => { cue('ui:toggle', picking ? 'floatMenuClose' : 'floatMenuOpen'); setPicking((v) => !v); }} />}
+          {/* Testing only: hidden on the live site (owner, v0.47.30). */}
+          {playground || !__DEV__ ? null : <CornerButton glyph="roll" label="Testing: draw any Many Things card" active={picking} onPress={() => { cue('ui:toggle', picking ? 'floatMenuClose' : 'floatMenuOpen'); setPicking((v) => !v); }} />}
           </>}
         </div>
         {/* What the Deck of Many Things has in play, and how long each has left. */}

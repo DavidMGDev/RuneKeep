@@ -59,7 +59,7 @@ const PACK = {
   'throw:charged': { max: 1.4, files: ['punch-projectile', 'punch-heavy', 'shoot1', 'shoot2', 'altrevolvershoot1d', 'altrevolvershoot2d'], vol: 0.55 },
   'throw:fire': { max: 1.8, files: ['railcannonfire4', 'railcannonfire5', 'plasmafire', 'steampunk-weapons-shotgun-2-shot-03', 'steampunk-weapons-shotgun-2-shot-05'], vol: 0.7 },
   'roll:throw': { max: 1.4, files: ['shoot1c3', 'shoot1c4', 'shoot2b3', 'future-weapons-2-energy-gun-shot-single-2'], vol: 0.5 },
-  'roll:critical': { max: 1.8, files: ['railcannonfull', 'batterycharged', 'harpooncharged'], vol: 0.6 },
+  'roll:critical': { max: 1.8, files: ['batterycharged', 'harpooncharged'], vol: 0.6 },
   // Always the short one (owner, v0.47.18), and so for Fear.
   'roll:hope': { files: ['hpget'], vol: 0.55 },
   'roll:fear': { max: 2, files: ['dronespot'], vol: 0.4 },
@@ -170,7 +170,8 @@ const capOf = (c: Cue): number => {
  */
 let soundLog: HTMLDivElement | null = null;
 function logSound(file: string, what: string): void {
-  if (typeof document === 'undefined') return;
+  // Hidden on the live site (owner, v0.47.30); still there in development.
+  if (!__DEV__ || typeof document === 'undefined') return;
   if (!soundLog || !soundLog.isConnected) {
     soundLog = document.createElement('div');
     soundLog.setAttribute('aria-hidden', 'true');

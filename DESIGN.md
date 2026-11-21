@@ -353,3 +353,5 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   the app at the owner's call: the process and window-close interface blips, crowdaww, the creaking door, mp-thyend2,
   ui-startup, the autobots shutdown (Playground off now powers down with dark-ui-power-on-off-dark-02), the metallic
   double alert, gab-taunt6, chainsawthrown, dronehurt and door-2-open.
+- v0.47.30: railcannonfull taken out (the critical's voice keeps batterycharged and harpooncharged). The sound log
+  and the testing button (draw any Many Things card, Roll a crit) show only in development.
