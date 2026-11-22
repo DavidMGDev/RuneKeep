@@ -35,7 +35,8 @@ export const editCounter = (list: AdversaryCounter[], id: string, next: (c: Adve
 export function freeSpot(spots: Record<string, CounterSpot>): CounterSpot {
   const taken = Object.values(spots);
   for (let row = 0; row < 4; row++) {
-    for (const x of [0.5, 0.3, 0.7, 0.12]) {
+    // The middle last: a new sticky note lands there.
+    for (const x of [0.3, 0.7, 0.12, 0.5]) {
       const y = 0.45 + row * 0.15;
       if (!taken.some((s) => Math.abs(s.x - x) < 0.15 && Math.abs(s.y - y) < 0.12)) return { x, y, k: 1 };
     }
