@@ -19,7 +19,7 @@ export const DEFAULT_W = 170;
 /** The biggest a card may grow: most of the felt's height, and never past 460 px wide. */
 export const maxW = (feltH: number) => Math.max(MIN_W, Math.min(460, (feltH * 0.94 * FORGED_W) / FORGED_H));
 
-export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, overTray, onMenu, onLift, onCarry, onSettle, onDragTo, hidden, live }: {
+export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, onTap, overTray, onMenu, onLift, onCarry, onSettle, onDragTo, hidden, live }: {
   cards: BoardCard[];
   lookup: (id: string) => TableCard | undefined;
   feltW: number;
@@ -42,6 +42,8 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
   onDragTo: (uid: string, x: number, y: number, rot: number, end?: boolean) => void;
   /** Cards not drawn (breaking into shards right now). */
   hidden?: Set<string>;
+  /** Pressed and let go without moving, when it has no pages to turn and was not caught in flight (a note opens). */
+  onTap?: (uid: string) => void;
   /** Where physical cards really are while physics moves them (px, degrees): drawn from here until they stop. */
   live?: Map<string, { x: number; y: number; rot: number }>;
 }) {
@@ -73,7 +75,9 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
             onResize={(w) => onChange(c.uid, () => ({ w }))}
             onRotate={(rot) => onChange(c.uid, () => ({ rot }))}
             onTurn={() => onChange(c.uid, (x) => ({ face: ((x.face ?? 0) + 1) % (card.faces?.length || 1) }))}
-            overTray={overTray}
+            // A note has no hand to go back to.
+            overTray={card.h ? NEVER : overTray}
+            onTap={() => onTap?.(c.uid)}
             onMenu={(x, y) => onMenu(c.uid, x, y)}
           />
         );
@@ -82,10 +86,12 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, ov
   );
 }
 
-const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live, onGrab, onLift, onCarry, onSettle, onDragTo, onMove, onDrop, onResize, onRotate, onTurn, overTray, onMenu }: {
+const NEVER = () => false;
+
+const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live, onGrab, onLift, onCarry, onSettle, onDragTo, onMove, onDrop, onResize, onRotate, onTurn, onTap, overTray, onMenu }: {
   entry: BoardCard; card: TableCard; feltW: number; feltH: number; returning: boolean; live?: Map<string, { x: number; y: number; rot: number }>;
   onGrab: () => void; onLift: () => void; onCarry: (dx: number, dy: number) => void; onSettle: () => void; onDragTo: (x: number, y: number, rot: number, end?: boolean) => void; onMove: (fx: number, fy: number, overTray: boolean) => void; onDrop: (overTray: boolean) => void;
-  onResize: (w: number) => void; onRotate: (deg: number) => void; onTurn: () => void; overTray: (x: number, y: number) => boolean; onMenu: (x: number, y: number) => void;
+  onResize: (w: number) => void; onRotate: (deg: number) => void; onTurn: () => void; onTap: () => void; overTray: (x: number, y: number) => boolean; onMenu: (x: number, y: number) => void;
 }) {
   const [hover, setHover] = useState(false);
   const [drag, setDrag] = useState<'move' | 'size' | 'turn' | null>(null);
@@ -99,7 +105,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
   const [born, setBorn] = useState(false);
   useEffect(() => { const id = requestAnimationFrame(() => setBorn(true)); return () => cancelAnimationFrame(id); }, []);
   const w = Math.min(maxW(feltH), Math.max(MIN_W, entry.w));
-  const h = (w * FORGED_H) / FORGED_W;
+  const h = (w * (card.h ?? FORGED_H)) / FORGED_W;
   const cx = lp ? lp.x : entry.fx * feltW;
   const cy = lp ? lp.y : entry.fy * feltH;
   const ref = useRef<HTMLDivElement>(null);
@@ -151,6 +157,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
     e.preventDefault();
     onGrab();
     const { cx, cy, rot } = poseNow();
+    const caught = !!live?.get(entry.uid);
     const el = ref.current?.parentElement;
     if (!el) return;
     const felt = el.getBoundingClientRect();
@@ -191,7 +198,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
       if (mode === 'move') {
         if (moved) onSettle();
         onDragTo(last.fx * feltW, last.fy * feltH, rot, true);
-        if (!moved) { if (pages > 1) { cue('card:turn', 'gearScroll2', { volume: 0.5 }); onTurn(); } return; }
+        if (!moved) { if (pages > 1) { cue('card:turn', 'gearScroll2', { volume: 0.5 }); onTurn(); } else if (!caught) onTap(); return; }
         const over = overTray(u.clientX, u.clientY);
         cue('card:place', over ? 'tokenRemove' : 'cardDragEnd', { volume: 0.7 });
         // A card let go half off the felt (and not over the tray) slides back on.
@@ -224,7 +231,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
         zIndex: drag ? 5 : undefined,
       }}>
       {/* The picture is drawn at the card's own size and scaled, so it is sharp at any width. */}
-      <div style={{ width: FORGED_W, height: FORGED_H, transform: `scale(${w / FORGED_W})`, transformOrigin: '0 0', pointerEvents: 'none', position: 'relative' }}>
+      <div style={{ width: FORGED_W, height: card.h ?? FORGED_H, transform: `scale(${w / FORGED_W})`, transformOrigin: '0 0', pointerEvents: 'none', position: 'relative' }}>
         <CardFace card={card} hiRes={w > 150 || hover} face={entry.face ?? 0} />
         {card.overlay ? <div style={{ position: 'absolute', inset: 0 }}>{card.overlay}</div> : null}
       </div>

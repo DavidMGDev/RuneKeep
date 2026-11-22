@@ -28,6 +28,7 @@ import { type DmIdentity } from '@/lib/dm-identity';
 import { newSession, type Session } from '@/lib/session';
 import { newParty, type Party } from '@/lib/party';
 import { shouldShow } from '@/lib/onboarding-store';
+import { forgetDmTable } from '@/lib/dm-table-store';
 import { deleteParty, listParties, saveParty } from '@/lib/party-store';
 import { deleteEncounter, deleteSession, listEncounters, listSessions, saveSession } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
@@ -205,6 +206,7 @@ export function CampaignsScreen() {
       await deleteSession(s.id);
     }
     await deleteParty(p.id);
+    forgetDmTable(p.id);
     if (selectedId === p.id) setSelectedId(null);
     showToast(`${p.name} deleted`, 'success');
     reload();

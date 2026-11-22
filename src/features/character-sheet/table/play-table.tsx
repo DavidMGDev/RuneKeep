@@ -29,7 +29,6 @@ import type { FunctionVar } from '@/lib/function-vars';
 import { FAVORITES_CATEGORY } from '@/lib/favorites';
 import { shouldShow } from '@/lib/onboarding-store';
 import type { CardCategory, CardItem } from '../card-data';
-import { useCarousel } from '../carousel-context';
 import { BakedTokenLayer, type PlacedToken } from '../components/card-tokens';
 import { ALL_TOKEN_KINDS, DIE_TYPES, type DieType, kindScale, nextDieType, placedKindScale, TOKEN_COLORS, TOKEN_FRAC, TOKEN_LABEL, tokenFill } from '../components/card-tokens-data';
 import type { DieSpec } from './dice-engine';
@@ -45,11 +44,14 @@ import type { Bounds, Impact } from './dice-physics';
 import { type DomatCard, DOMAT, DOMAT_MAX, DOMAT_START, type DomatStock, domatStock, drawDomat, type Element, ELEMENTS, elementWinner, takeDomat } from './domat';
 import { LookPanel } from './look-panel';
 import { RollPopup, type RollResult, rollSound } from './roll-dock';
-import { type CardPose, type CardTok, DOMAT_KEY, type LoosePiece, type PlaceGroup, type Places, type SupplyPiece, SUPPLY_HALF, type TableAction, type CritStage, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
+import { type CardPose, type CardTok, DOMAT_KEY, type LoosePiece, type PlaceGroup, type Places, type SupplyPiece, SUPPLY_HALF, type TableAction, type CritStage, ctlGap, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
 import { breakPieces, CardBreak, type CardBreakMode, CardScrap, clipHalf, shardPolys, DomatCardView, type Fx, FX_CSS, FxLayer, localDir, type Pt, scrapShape, shake } from './table-fx';
 import { type BoardCard, loadBoard, loadLook, loadSpread, saveBoard, saveLook, saveSpread, type SavedPiece, type SpreadPlace } from './table-store';
 import { Chamfer, DIE_GLYPHS, Glyph, T, TButton } from './table-ui';
 import { cue } from './table-sound';
+import { naturalH, noteCard, NoteEditor, useTableNotes } from './sticky-note';
+import { type TableRow, useTableHost } from './table-host';
+import { editNote, isNoteId, mendNotes, newNote, NOTE_MAX, tearNote, type TableNote } from '@/lib/table-notes';
 
 /** The sheet's dice state and its handle to the table (the traits and the presets roll through it). */
 export type DeskDice = { up: boolean; onToggle: () => void; handleRef: { current: DiceTrayHandle | null }; presets: Omit<Parameters<typeof DicePresetSlots>[0], 'belt'> & { /** What a modifier comes to for this character now (v0.47.17). */ resolve?: (mod?: PresetModifier) => number } };
@@ -86,6 +88,8 @@ function cornerTone(ref: string, states: { permanent: Set<string>; modsOff: Set<
 const inside = (r: Bounds, x: number, y: number) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 const uidOf = () => `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const baseOf = (key: string) => key.replace(/:(h|f|t|u)$/, '');
+/** A token piece's key, taken apart: the card's uid may have a colon of its own (`s:`, `pg:`), the token's never does. */
+const tokParts = (key: string) => { const at = key.lastIndexOf(':'); return { uid: key.slice(4, at), id: key.slice(at + 1) }; };
 let poolSeq = 0;
 const poolId = () => `tp-${++poolSeq}`;
 
@@ -114,12 +118,12 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
 }) {
   const desktop = useDesktop();
   const { width: winW, height: winH } = useWindowDimensions();
-  const ctx = useCarousel();
-  const { decks, category } = ctx;
+  const ctx = useTableHost();
+  const { decks, category, dm } = ctx;
   const deck = decks[category] ?? NO_CARDS;
 
   // ---------------------------------------------------------------- settings and layout
-  const [look, setLookState] = useState<DeckLook>(() => loadLook(characterId));
+  const [look, setLookState] = useState<DeckLook>(() => loadLook(characterId, dm?.start));
   const lookRef = useRef(look);
   lookRef.current = look;
   const lookSave = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -134,8 +138,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     if (lookFor.current === characterId) return;
     if (lookSave.current) { clearTimeout(lookSave.current); saveLook(lookRef.current, lookFor.current); }
     lookFor.current = characterId;
-    setLookState(loadLook(characterId));
-  }, [characterId]);
+    setLookState(loadLook(characterId, dm?.start));
+  }, [characterId]); // eslint-disable-line react-hooks/exhaustive-deps -- the starting table never changes
   const port = desktop?.port;
   const tableW = Math.max(200, winW - (port ? port.left + port.width : 0));
   const tableH = Math.max(200, winH);
@@ -151,6 +155,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const hand: Bounds = { left: pad, top: handTop, right: tableW - pad, bottom: handTop + handH };
   const play: Bounds = { left: pad, top: pad, right: tableW - pad, bottom: tableH - pad };
   const ownArea = look.areaMode === 'tray' && !spread;
+  const ctlN = dm?.controls.length ?? 3;
   const openTop = ownArea && handPos === 'top' ? hand.bottom : pad;
   const openBottom = ownArea && handPos === 'bottom' ? hand.top : tableH - pad;
 
@@ -165,19 +170,25 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       }
       return { x: Math.min(tableW - pad - halfX, Math.max(pad + halfX, x)), y: Math.min(tableH - pad - halfY, Math.max(pad + halfY, yy)) };
     };
-    const along = (n: number, gap: number) => ((n - 1) * gap) / 2 + 40;
-    const ctl = look.ctlDir === 'row' ? keepOut(look.ctlX * tableW, look.ctlY * tableH, along(3, 94), 44) : keepOut(look.ctlX * tableW, look.ctlY * tableH, 44, along(3, 104));
+    const along = (n: number, gap: number) => ((n - 1) * gap * (n > 3 ? Math.max(1, look.ctlSize) : 1)) / 2 + 40;
+    let ctl = look.ctlDir === 'row' ? keepOut(look.ctlX * tableW, look.ctlY * tableH, along(ctlN, ctlGap(ctlN, 'row')), 44) : keepOut(look.ctlX * tableW, look.ctlY * tableH, 44, along(ctlN, ctlGap(ctlN, 'column')));
     const sup = look.supDir === 'row' ? keepOut(look.supX * tableW, look.supY * tableH, SUPPLY_HALF.row, 40) : keepOut(look.supX * tableW, look.supY * tableH, 64, SUPPLY_HALF.column);
+    // The DM's seven dice are most of a narrow table's width: on any table they would lie on the supply, so they take
+    // the line beside it.
+    if (ctlN > 3 && look.tokenTray && look.ctlDir === 'row' && look.supDir === 'row' && Math.abs(ctl.y - sup.y) < 96
+      && Math.abs(ctl.x - sup.x) < along(ctlN, ctlGap(ctlN, 'row')) + SUPPLY_HALF.row + (look.diceChest ? 120 : 0)) {
+      ctl = { x: ctl.x, y: sup.y + (sup.y < tableH / 2 ? 116 : -116) };
+    }
     const cat = keepOut(look.catX * tableW, look.catY * tableH, 56, 56);
     // Pieces split off their rows sit where they were put, kept on the table and out of the hand's own area.
     const apart: Record<string, { x: number; y: number }> = {};
     for (const [k, [fx, fy]] of Object.entries(look.apart)) apart[k] = keepOut(fx * tableW, fy * tableH, 40, 40);
     return { ctl: { ...ctl, dir: look.ctlDir, k: look.ctlSize }, sup: { ...sup, dir: look.supDir }, cat, apart };
-  }, [look.ctlX, look.ctlY, look.ctlDir, look.ctlSize, look.supX, look.supY, look.supDir, look.catX, look.catY, look.apart, tableW, tableH, ownArea, hand.top, hand.bottom, pad]);  
+  }, [look.ctlX, look.ctlY, look.ctlDir, look.ctlSize, look.supX, look.supY, look.supDir, look.catX, look.catY, look.apart, look.tokenTray, look.diceChest, ctlN, tableW, tableH, ownArea, hand.top, hand.bottom, pad]);  
 
 
   // ---------------------------------------------------------------- the hand
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number; board?: string } | null>(null);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number; board?: string; /** A note's Delete, asking. */ sure?: boolean } | null>(null);
   const [tableMenu, setTableMenu] = useState<{ x: number; y: number; piece?: { key: string; label: string; own?: boolean } } | null>(null);
   /** A token or die on a card right clicked (v0.47.18): its menu, then perhaps its modifiers. */
   const [tokMenu, setTokMenu] = useState<{ ref: string; id: string; x: number; y: number; mods?: boolean } | null>(null);
@@ -195,8 +206,10 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     // One column down the left, clear of the corner buttons: the supply, then the deck die, then the control dice.
     const x = pad + 112;
     const top = Math.max(pad + 40, (openTop + openBottom) / 2 - 380);
-    return { ...places, apart: undefined, sup: { x, y: top + 135, dir: 'column' }, cat: { x, y: top + 400 }, ctl: { x, y: top + 620, dir: 'column', k: places.ctl.k } };
-  }, [places, openTop, openBottom, pad]);
+    // Seven dice do not fit under the other two in one column: they lie along the open table's foot.
+    const ctl: Places['ctl'] = ctlN > 3 ? { x: tableW / 2, y: openBottom - 70, dir: 'row', k: places.ctl.k } : { x, y: top + 620, dir: 'column', k: places.ctl.k };
+    return { ...places, apart: undefined, sup: { x, y: top + 135, dir: 'column' }, cat: { x, y: top + 400 }, ctl };
+  }, [places, openTop, openBottom, pad, ctlN, tableW]);
   const overlay = overlayProp || sorting;
   useEffect(() => { onSortOpen?.(sorting); }, [sorting, onSortOpen]);
   useEffect(() => { setMenu(null); }, [category]);
@@ -228,8 +241,14 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     for (const list of Object.values(decks)) for (const c of list ?? []) if (!m.has(c.id)) m.set(c.id, c);
     return m;
   }, [decks]);
-  // On the table a card's tokens stand up as pieces, so its picture is drawn without them (but with the rest).
-  const lookup = useCallback((id: string) => { const c = allById.get(id); return c ? toCard(c, false) : undefined; }, [allById, toCard]);
+  const notes = useTableNotes(characterId);
+  const noteList = notes.list, noteNow = notes.now, setNotes = notes.set;
+  const noteFaces = useMemo(() => new Map(noteList.map((n) => [n.id, noteCard(n)])), [noteList]);
+  /** The note being written on. */
+  const [writing, setWriting] = useState<string | null>(null);
+  // On the table a card's tokens stand up as pieces, so its picture is drawn without them (but with the rest). A note
+  // is looked up torn or not: its scraps are drawn from it.
+  const lookup = useCallback((id: string) => { if (isNoteId(id)) return noteFaces.get(id); const c = allById.get(id); return c ? toCard(c, false) : undefined; }, [allById, toCard, noteFaces]);
   const refOf = useCallback((id: string) => { const c = allById.get(id); return c ? c.ref ?? c.id : id; }, [allById]);
 
   const carRef = useRef<DeskCarouselHandle>(null);
@@ -279,18 +298,48 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const playRef = useRef(playground);
   playRef.current = playground;
   const [pgCards, setPgCards] = useState<BoardCard[]>([]);
-  const board = useMemo(() => (spread ? spreadCards : playground ? [...copies, ...pgCards] : copies), [spread, spreadCards, playground, copies, pgCards]);
+  const noteBoard = useMemo<BoardCard[]>(() => noteList.filter((n) => !n.torn).map((n) => ({ uid: n.id, id: n.id, fx: n.fx, fy: n.fy, w: n.w, rot: n.rot, phys: n.phys })), [noteList]);
+  const board = useMemo(() => {
+    // A copy whose card is not in any deck just now (another encounter's adversary, a deleted card) is kept but not
+    // drawn, and never left on the felt as a body with no picture.
+    const out = copies.filter((c) => allById.has(c.id));
+    return [...(spread ? spreadCards : playground ? [...out, ...pgCards] : out), ...noteBoard];
+  }, [spread, spreadCards, playground, copies, pgCards, noteBoard, allById]);
+  const byIdRef = useRef(allById);
+  byIdRef.current = allById;
   const setBoard = useCallback((next: BoardCard[]) => {
     boardRef.current = next;
+    // Notes are kept with the notes, whatever the hand is doing.
+    const placed = new Map(next.filter((b) => isNoteId(b.id)).map((b) => [b.id, b]));
+    if (placed.size) {
+      let moved = false;
+      const list = noteNow.current.map((n): TableNote => {
+        const b = placed.get(n.id);
+        if (!b || n.torn || (b.fx === n.fx && b.fy === n.fy && b.w === n.w && (b.rot ?? 0) === n.rot && !!b.phys === n.phys)) return n;
+        moved = true;
+        return { ...n, fx: b.fx, fy: b.fy, w: b.w, rot: b.rot ?? 0, phys: !!b.phys };
+      });
+      if (moved) setNotes(list);
+    }
+    const cards = next.filter((b) => !isNoteId(b.id));
     if (!lookRef.current || lookRef.current.handMode !== 'spread') {
-      if (playRef.current) setPgCards(next.filter((b) => b.uid.startsWith('pg:')));
-      setCopies(next.filter((b) => !b.uid.startsWith('pg:')));
+      if (playRef.current) setPgCards(cards.filter((b) => b.uid.startsWith('pg:')));
+      const nextCopies = [...cards.filter((b) => !b.uid.startsWith('pg:')), ...copiesRef.current.filter((c) => !byIdRef.current.has(c.id))];
+      const was = copiesRef.current;
+      // A note dragged over the felt does not write the cards out again with every step.
+      if (nextCopies.length !== was.length || nextCopies.some((c, i) => c !== was[i])) setCopies(nextCopies);
       return;
     }
     const out = { ...spreadAtRef.current };
-    for (const b of next) out[b.id] = { fx: b.fx, fy: b.fy, w: b.w, rot: b.rot, phys: b.phys, face: b.face };
-    setSpread(out);
-  }, [setCopies, setSpread]);
+    let changed = false;
+    for (const b of cards) {
+      const p = out[b.id];
+      if (p && p.fx === b.fx && p.fy === b.fy && p.w === b.w && p.rot === b.rot && p.phys === b.phys && p.face === b.face) continue;
+      out[b.id] = { fx: b.fx, fy: b.fy, w: b.w, rot: b.rot, phys: b.phys, face: b.face };
+      changed = true;
+    }
+    if (changed) setSpread(out);
+  }, [setCopies, setSpread, noteNow, setNotes]);
   const spreadAtRef = useRef(spreadAt);
   spreadAtRef.current = spreadAt;
   const boardRef = useRef(board);
@@ -396,21 +445,21 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   // ---------------------------------------------------------------- cards and their tokens, as the engine sees them
   const sizeOf = (b: BoardCard) => {
     const w = Math.min(maxW(tableH), Math.max(MIN_W, b.w));
-    return { w, h: (w * FORGED_H) / FORGED_W };
+    return { w, h: (w * naturalH(b.id)) / FORGED_W };
   };
   const cardPoses = useMemo<CardPose[]>(() => [...board.map((b) => {
     const { w, h } = sizeOf(b);
     return { key: `card:${b.uid}`, x: b.fx * tableW, y: b.fy * tableH, w, h, rot: b.rot ?? 0, phys: !!b.phys };
   }), ...scraps.filter((c) => !c.fading).map((c) => {
-    const sh = scrapShape(c.poly), h = (c.w * FORGED_H) / FORGED_W;
+    const sh = scrapShape(c.poly), h = (c.w * naturalH(c.id)) / FORGED_W;
     return { key: `card:${c.uid}`, x: c.x, y: c.y, w: ((sh.x1 - sh.x0) / 100) * c.w, h: ((sh.y1 - sh.y0) / 100) * h, rot: c.rot, phys: true };
   })], [board, scraps, tableW, tableH]); // eslint-disable-line react-hooks/exhaustive-deps
   const pieces = useMemo<TokenPiece[]>(() => {
     const out: TokenPiece[] = [];
     for (const b of board) {
       const item = allById.get(b.id);
-      if (!item) continue;
-      const toks = ctx.cardTokens[item.ref ?? item.id] ?? ctx.cardTokens[b.id] ?? [];
+      if (!item && !isNoteId(b.id)) continue;
+      const toks = ctx.cardTokens[item?.ref ?? b.id] ?? ctx.cardTokens[b.id] ?? [];
       const { w, h } = sizeOf(b);
       for (const t of toks) {
         out.push({
@@ -422,7 +471,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     return out;
   }, [board, allById, ctx.cardTokens, tableH]); // eslint-disable-line react-hooks/exhaustive-deps
   const tokenOf = (key: string) => {
-    const [, uid, id] = key.split(':');
+    const { uid, id } = tokParts(baseOf(key));
     const b = boardRef.current.find((x) => x.uid === uid);
     return b ? { ref: refOf(b.id), id } : null;
   };
@@ -503,7 +552,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       const d = rolledDice.current.get(base.slice(5));
       if (d) info = d.side ? { kind: 'die', dieType: 'duality', dieValue: d.value ?? 1, dieValue2: 1 } : { kind: 'die', dieType: d.type, dieValue: d.value ?? 1 };
     } else if (base.startsWith('tok:')) {
-      const [, uid, id] = base.split(':');
+      const { uid, id } = tokParts(base);
       const b = boardRef.current.find((x) => x.uid === uid);
       if (!b) return false;
       const ref = refOf(b.id);
@@ -770,16 +819,18 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     livePoses.delete(b.uid);
     const cx = p?.x ?? b.fx * tableW, cy = p?.y ?? b.fy * tableH, rot = p?.rot ?? b.rot ?? 0;
     // Torn or cut, a copy leaves its halves on the table as scraps; the hand's own laid-out card stays whole.
-    const torn = (mode === 'tear' || mode === 'split' || mode === 'shards' || mode === 'frost') && lookRef.current.handMode !== 'spread';
+    const note = isNoteId(b.id);
+    const torn = (mode === 'tear' || mode === 'split' || mode === 'shards' || mode === 'frost') && (note || lookRef.current.handMode !== 'spread');
     setShattering((s) => [...s, { uid: b.uid, card, cx, cy, w, rot, mode, dir, fxOnly: torn }]);
     if (torn) addScraps(b.id, w, cx, cy, rot, breakPieces(mode, localDir(dir, rot), w, h).map((q) => q.poly), dir);
-    if (b.uid.startsWith('pg:')) setPgCards((l) => l.filter((c) => c.uid !== b.uid));
+    if (note) setNotes(tearNote(noteNow.current, b.id));
+    else if (b.uid.startsWith('pg:')) setPgCards((l) => l.filter((c) => c.uid !== b.uid));
     else if (lookRef.current.handMode !== 'spread') setCopies(copiesRef.current.filter((c) => c.uid !== b.uid));
     else setBoard(boardRef.current.map((c) => (c.uid === b.uid ? { ...c, phys: false, rot: 0, ...(p ? { fx: p.x / tableW, fy: p.y / tableH } : {}) } : c)));
-  }, [lookup, tableW, tableH, setCopies]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lookup, tableW, tableH, setCopies, noteNow, setNotes]); // eslint-disable-line react-hooks/exhaustive-deps
   /** New scraps of a card (centred at cx, cy, turned rot), flying apart from its middle and on the way it was hit. */
   const addScraps = (id: string, w: number, cx: number, cy: number, rot: number, polys: Pt[][], dir?: { x: number; y: number }) => {
-    const h = (w * FORGED_H) / FORGED_W, a = (rot * Math.PI) / 180;
+    const h = (w * naturalH(id)) / FORGED_W, a = (rot * Math.PI) / 180;
     const dl = Math.hypot(dir?.x ?? 0, dir?.y ?? 0) || 1;
     const made = polys.flatMap((poly) => {
       const sh = scrapShape(poly);
@@ -811,7 +862,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     livePoses.delete(uid);
     const x = p?.x ?? sc.x, y = p?.y ?? sc.y, rot = p?.rot ?? sc.rot;
     const sh = scrapShape(sc.poly);
-    const h = (sc.w * FORGED_H) / FORGED_W, a = (rot * Math.PI) / 180;
+    const h = (sc.w * naturalH(sc.id)) / FORGED_W, a = (rot * Math.PI) / 180;
     const lx = ((sh.x0 + sh.x1) / 200 - 0.5) * sc.w, ly = ((sh.y0 + sh.y1) / 200 - 0.5) * h;
     // Where the whole card's middle would be, so it is burnt or cut as a part of the card it was.
     const cx = x - (lx * Math.cos(a) - ly * Math.sin(a)), cy = y - (lx * Math.sin(a) + ly * Math.cos(a));
@@ -951,6 +1002,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       }
     }, 60);
   };
+  const ctlRef = useRef<string[]>([]);
+  ctlRef.current = dm?.controls.map((c) => c.key) ?? ['cards', 'state', 'sort'];
   /** What the Rogue has pocketed, by thief. */
   const pockets = useRef(new Map<string, LoosePiece[]>());
   /** The Void's mimics: where each sits and what it swallowed. Kept, so a reload never loses what is inside. */
@@ -1391,7 +1444,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         const whirl = (only: string[]) => eng.aura('vizier', { kind: 'vortex', x: (play.left + play.right) / 2, y: (play.top + play.bottom) / 2, r: diag, k: 2400, only: new Set(only) });
         whirl(eng.keys().filter((k) => k.startsWith('roll:') || k.startsWith('free:')));
         // The control dice and the deck stand fast through it, and for the last roll to land.
-        eng.pin(['cat', 'cards', 'state', 'sort', DOMAT_KEY].filter((k) => eng.has(k)), 7000);
+        eng.pin(['cat', ...ctlRef.current, DOMAT_KEY].filter((k) => eng.has(k)), 7000);
         let n = 0;
         const storm = setInterval(() => {
           const loose = eng.keys().filter((k) => k.startsWith('roll:') || k.startsWith('free:'));
@@ -1435,11 +1488,36 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   // ---------------------------------------------------------------- dice and controls
   const canReorder = !!ctx.onReorderCards && category !== FAVORITES_CATEGORY && deck.length > 1 && !spread;
   const openSort = useCallback(() => { cue('ui:open', 'floatMenuOpen'); setSorting(true); }, []);
-  const actions = useMemo<TableAction[]>(() => [
-    { key: 'cards', label: 'Cards', onPress: () => { cue('ui:open', 'panelOpen'); onOpen('cards'); } },
-    { key: 'state', label: 'State', onPress: () => { cue('ui:open', 'panelOpen'); onOpen('modifiers'); } },
-    { key: 'sort', label: 'Sort deck', onPress: openSort, disabled: !canReorder },
-  ], [onOpen, canReorder, openSort]);
+  const actions = useMemo<TableAction[]>(() => dm?.controls ?? [
+    { key: 'cards', label: 'Cards', glyph: 'cards', verb: 'Open cards menu', onPress: () => { cue('ui:open', 'panelOpen'); onOpen('cards'); } },
+    { key: 'state', label: 'State', glyph: 'state', verb: 'Open state menu', onPress: () => { cue('ui:open', 'panelOpen'); onOpen('modifiers'); } },
+    { key: 'sort', label: 'Sort deck', glyph: 'sort', verb: 'Sort the deck', onPress: openSort, disabled: !canReorder },
+  ], [dm?.controls, onOpen, canReorder, openSort]);
+  /** A new sticky note, open to be written on (owner, v0.49.0). */
+  const addNote = (at?: { x: number; y: number }) => {
+    if (noteNow.current.length >= NOTE_MAX) { cue('domat:empty', 'cardDisable', { volume: 0.5 }); return; }
+    const n = noteNow.current.length;
+    const x = at?.x ?? tableW * 0.5 + ((n % 5) - 2) * 54, y = at?.y ?? (openTop + openBottom) * 0.5 + ((n % 3) - 1) * 40;
+    const note = newNote(uidOf(), Math.min(tableW - pad - 84, Math.max(pad + 84, x)) / tableW, Math.min(tableH - pad - 84, Math.max(pad + 84, y)) / tableH, n);
+    setNotes([...noteNow.current, note]);
+    cue('card:place', 'cardDragEnd');
+    setWriting(note.id);
+  };
+  const deleteNote = (id: string) => {
+    for (const t of ctx.cardTokens[id] ?? []) ctx.removeToken(id, t.id);
+    livePoses.delete(id);
+    setNotes(noteNow.current.filter((n) => n.id !== id));
+    cue('ui:delete', 'tokenRemove', { volume: 0.6 });
+  };
+  const tornNotes = noteList.filter((n) => n.torn).length;
+  /** Torn notes whole again: their scraps go, the writing is where it was. */
+  const mendTorn = () => {
+    if (!noteNow.current.some((n) => n.torn)) return;
+    const back = new Set(noteNow.current.filter((n) => n.torn).map((n) => n.id));
+    for (const id of back) livePoses.delete(id);
+    setScraps(scrapsRef.current.filter((c) => !back.has(c.id)));
+    setNotes(mendNotes(noteNow.current));
+  };
   const tableDecks = useMemo<TableDeck[]>(() => {
     const keys: CardCategory[] = [...ctx.ring.filter((c) => c !== FAVORITES_CATEGORY), FAVORITES_CATEGORY];
     return keys.map((k) => ({ key: k, label: ctx.categoryMeta[k]?.label ?? k, count: ctx.decks[k]?.length ?? 0, meta: ctx.categoryMeta[k] }));
@@ -1790,6 +1868,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   escRef.current = () => {
     // What is on top goes first: the card read large, then a menu, then the roll's result (v0.47.18).
     if (viewing) { if (!viewing.closing) closeView(); return true; }
+    if (writing) { setWriting(null); return true; }
     if (tokMenu) { cue('ui:close', 'floatMenuClose'); setTokMenu(null); return true; }
     if (menu) { cue('ui:close', 'floatMenuClose'); setMenu(null); return true; }
     if (tableMenu) { cue('ui:close', 'floatMenuClose'); setTableMenu(null); return true; }
@@ -1811,6 +1890,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   };
   const putBackRef = useRef(putBack);
   putBackRef.current = putBack;
+  const addNoteRef = useRef(addNote);
+  addNoteRef.current = addNote;
   const keyRef = useRef({ deck, overlay, ring: ctx.ring, ctx, canReorder, category, selection });
   keyRef.current = { deck, overlay, ring: ctx.ring, ctx, canReorder, category, selection };
   useEffect(() => {
@@ -1863,6 +1944,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         carRef.current?.scrollTo(to);
         return;
       }
+      if (key === 'n' && !e.repeat) { e.preventDefault(); addNoteRef.current(); return; }
       if (key === 'q' || key === 'e') { k.ctx.cycleCategory(key === 'q' ? -1 : 1); return; }
       if (/^[1-9]$/.test(key)) { const c = k.ring[+key - 1]; if (c) k.ctx.setCategory(c); return; }
       if (key === ' ') {
@@ -1917,7 +1999,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   if (!desktop || !port) return null;
   const middle = Math.floor((deck.length - 1) / 2);
   // The first-time hint, only while the sheet's tips are still being shown (owner: not whenever the table is empty).
-  const showHint = shouldShow('sheet') && board.length === 0 && !copy && !spread;
+  const showHint = !dm && shouldShow('sheet') && board.length === 0 && !copy && !spread;
   const presets = dice.presets.presets;
   /**
    * Reset (owner, v0.47.12: one button instead of three): every loose piece and rolled die back into the supply, the
@@ -1936,6 +2018,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     pockets.current.clear();
     setMimics(() => []);
     setScraps([]);
+    setNotes(mendNotes(noteNow.current));
     diceRef.current?.tidy();
     setGone(new Set());
     // Cards drawn and not yet used fly back into the deck, and its stock counts them again (owner, v0.47.22).
@@ -2054,7 +2137,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     setPlayground(true);
     glide(slots, 0.7);
   };
-  const looseCount = loose.length + drawn.length + (spread ? 0 : copies.length);
+  const looseCount = loose.length + drawn.length + tornNotes + (spread ? 0 : copies.length);
   /** The loose dice and tokens as a preset keeps them (owner, v0.47.16): where each lies now, as shares of the felt. */
   const presetPieces = {
     take: (): SavedPiece[] => {
@@ -2101,7 +2184,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
                 const p = livePoses.get(b.uid);
                 return { ...b, ...(p ? { rot: Math.round(p.rot * 10) / 10 } : {}), ...patch(b) };
               }))}
-              onReturn={(uid) => { if (uid.startsWith('pg:')) setPgCards((l) => l.filter((b) => b.uid !== uid)); else if (!spread) setCopies(copiesRef.current.filter((b) => b.uid !== uid)); }}
+              onTap={(uid) => { if (isNoteId(uid)) { cue('ui:open', 'panelOpen', { volume: 0.5 }); setWriting(uid); } }}
+              onReturn={(uid) => { if (isNoteId(uid)) return; if (uid.startsWith('pg:')) setPgCards((l) => l.filter((b) => b.uid !== uid)); else if (!spread) setCopies(copiesRef.current.filter((b) => b.uid !== uid)); }}
               onLift={(b) => {
                 const { w, h } = sizeOf(b);
                 const p = livePoses.get(b.uid);
@@ -2157,7 +2241,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         {spread || playground ? null : (
           <div ref={handRef} data-felt="" style={{ position: 'absolute', left: hand.left, top: hand.top, width: hand.right - hand.left, height: handH, zIndex: 10 }}>
             {deck.length === 0 ? (
-              <div style={{ position: 'absolute', left: 0, right: 0, top: '45%', textAlign: 'center', color: T.muted, fontFamily: T.medium, fontSize: 14 }}>Nothing in this deck yet. Add a card from the sheet.</div>
+              <div style={{ position: 'absolute', left: 0, right: 0, top: '45%', textAlign: 'center', color: T.muted, fontFamily: T.medium, fontSize: 14 }}>{dm?.emptyDeck ?? 'Nothing in this deck yet. Add a card from the sheet.'}</div>
             ) : (
               <DeskCarousel key={category} ref={carRef} cards={cards} look={look} initialIndex={middle} onCentre={onCentre} onCentreClick={onCentreClick} takenId={copy?.card.id} />
             )}
@@ -2194,6 +2278,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           current={category}
           onPickDeck={pickDeck}
           actions={actions}
+          placesScope={dm ? `.${characterId}` : undefined}
           controls={playground || peeking ? 'dice' : look.controls}
           toys={playground}
           autoReturn={look.autoReturn}
@@ -2277,7 +2362,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           }}
           onJoinGroup={(g) => {
             const apart = { ...lookRef.current.apart };
-            for (const k of g === 'ctl' ? ['cards', 'state', 'sort'] : ['src:mat', 'src:color', 'src:die', 'src:domat']) delete apart[k];
+            for (const k of g === 'ctl' ? ctlRef.current : ['src:mat', 'src:color', 'src:die', 'src:domat']) delete apart[k];
             setLook({ ...lookRef.current, apart });
           }}
           hidden={playground ? undefined : look.hidden}
@@ -2285,8 +2370,9 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           onLock={(keys) => { const h = lookRef.current.locked; setLook({ ...lookRef.current, locked: keys.every((k) => h.includes(k)) ? h.filter((k) => !keys.includes(k)) : [...new Set([...h, ...keys])] }); }}
           onHide={(keys) => { const h = lookRef.current.hidden; setLook({ ...lookRef.current, hidden: keys.every((k) => h.includes(k)) ? h.filter((k) => !keys.includes(k)) : [...new Set([...h, ...keys])] }); }}
           onMovePiece={(k, x, y) => setLook({ ...lookRef.current, apart: { ...lookRef.current.apart, [k]: [Math.min(1, Math.max(0, x / tableW)), Math.min(1, Math.max(0, y / tableH))] } })}
-          inert={overlay || settings}
+          inert={overlay || settings || !!writing}
         />
+        {dm?.layer?.(tableW, tableH)}
         <FxLayer fx={fx} />
 
         {/* What can be done with the pieces selected. */}
@@ -2332,6 +2418,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           {look.controls === 'hidden' && !playground ? <CornerButton glyph="roll" label={peeking ? 'Hide the control dice' : 'Show the control dice'} active={peeking} onPress={() => { cue('ui:toggle', peeking ? 'panelClose' : 'panelOpen'); setPeek((v) => !v); }} /> : null}
           {playground ? null : <CornerButton glyph="reset" label="Reset the table" count={looseCount} onPress={() => { cue('table:reset', 'gearScroll2', { volume: 0.5 }); resetAll(); }} />}
           <CornerButton glyph="play" label={playground ? 'Leave the playground' : 'Playground'} active={playground} onPress={togglePlayground} />
+          <CornerButton glyph="note" label="New sticky note (N)" onPress={() => addNote()} />
           {playground ? null : <CornerButton glyph="settings" label="Table settings" active={settings} onPress={() => { cue('ui:toggle', settings ? 'panelClose' : 'panelOpen'); setSettings((s) => !s); }} />}
           {/* Testing only for now (owner, v0.47.11): draw any card of the Deck of Many Things, stock or not. */}
           {/* Testing only: hidden on the live site (owner, v0.47.30). */}
@@ -2395,10 +2482,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
                 const k = tableMenu.piece!.key;
                 if (!tableMenu.piece!.own) { diceRef.current?.rollPiece(k); return; }
                 if (k === 'cat') { diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }); return; }
-                const a = actions.find((x) => x.key === k);
-                if (a && !a.disabled) a.onPress();
+                diceRef.current?.useControl(k, { x: tableMenu.x, y: tableMenu.y });
               } }] : []),
-              { label: 'Choose a deck', gap: !!tableMenu.piece, hidden: playground || tableMenu.piece?.key === 'cat', onPress: () => diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }) },
+              // The DM's dice by name, for a table that hides them.
+              ...(dm && !playground && !tableMenu.piece && look.controls !== 'dice' ? dm.controls.map((c) => ({ label: c.verb, onPress: () => diceRef.current?.useControl(c.key, { x: tableMenu.x, y: tableMenu.y }) })) : []),
+              { label: 'New sticky note', gap: !!tableMenu.piece, onPress: () => addNote({ x: tableMenu.x, y: tableMenu.y }) },
+              { label: 'Bring back torn notes', hidden: !tornNotes, onPress: mendTorn },
+              { label: 'Choose a deck', hidden: playground || tableMenu.piece?.key === 'cat', onPress: () => diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }) },
               { label: 'Reset the table', onPress: resetAll, gap: true },
               { label: 'Clear the whole table', onPress: clearAll, danger: true },
               { label: 'Table settings', onPress: () => setSettings(true), gap: true, hidden: playground },
@@ -2442,7 +2532,34 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           );
         })() : null}
         {viewing ? <CardViewer key={viewing.id} card={lookup(viewing.id)} live={allById.get(viewing.id)?.interactive ? allById.get(viewing.id)?.live : undefined} from={viewing.from} closing={viewing.closing} onClose={closeView} onGone={() => setViewing(null)} /> : null}
-        {menu && !overlay ? (
+        {writing && noteList.some((n) => n.id === writing) ? (
+          <NoteEditor key={writing} note={noteList.find((n) => n.id === writing)!}
+            onEdit={(patch) => { if (patch.phys === false) livePoses.delete(writing); setNotes(editNote(noteNow.current, writing, patch)); }}
+            onClose={() => { cue('ui:close', 'panelClose', { volume: 0.5 }); setWriting(null); }} />
+        ) : null}
+        {menu && !overlay && isNoteId(menu.id) ? (() => {
+          const note = noteList.find((n) => n.id === menu.id);
+          if (!note) return null;
+          const at = { x: menu.x, y: menu.y };
+          return (
+            <MenuShell key={menu.sure ? 'sure' : 'note'} x={at.x} y={at.y} tableW={tableW} tableH={tableH} onClose={() => setMenu(null)}
+              rows={menu.sure ? [
+                { label: 'Keep it', onPress: () => undefined },
+                { label: 'Delete it and what it says', danger: true, onPress: () => deleteNote(note.id) },
+              ] : [
+                { label: 'Write on it', onPress: () => setWriting(note.id) },
+                { label: note.phys ? 'Pin it down' : 'Unpin', onPress: () => {
+                  const p = livePoses.get(note.id);
+                  livePoses.delete(note.id);
+                  setNotes(editNote(noteNow.current, note.id, note.phys ? { phys: false, rot: 0, ...(p ? { fx: p.x / tableW, fy: p.y / tableH } : {}) } : { phys: true }));
+                  cue('card:physical', 'cardSelect', { volume: 0.6 });
+                } },
+                { label: 'Normal size', hidden: note.w === 160, onPress: () => setNotes(editNote(noteNow.current, note.id, { w: 160 })) },
+                { label: 'Delete', danger: true, gap: true, onPress: () => setMenu({ ...menu, sure: true }) },
+              ].filter((r) => !('hidden' in r && r.hidden))} />
+          );
+        })() : null}
+        {menu && !overlay && !isNoteId(menu.id) ? (
           <CardMenu id={menu.id} x={menu.x} y={menu.y} tableW={tableW} tableH={tableH} onClose={() => setMenu(null)}
             spread={spread}
             view={() => {
@@ -2510,7 +2627,7 @@ function HandGrip({ hand, onMove }: { hand: Bounds; onMove: (centreY: number) =>
 }
 
 /** A corner button: its name slides out beside it on hover (owner, v0.47.4: the icons alone were unclear). */
-function CornerButton({ glyph, label, onPress, active, disabled, count }: { glyph: 'settings' | 'reset' | 'tidy' | 'roll' | 'play'; label: string; onPress: () => void; active?: boolean; disabled?: boolean; count?: number }) {
+function CornerButton({ glyph, label, onPress, active, disabled, count }: { glyph: 'settings' | 'reset' | 'tidy' | 'roll' | 'play' | 'note'; label: string; onPress: () => void; active?: boolean; disabled?: boolean; count?: number }) {
   const [hover, setHover] = useState(false);
   const lit = hover && !disabled;
   return (
@@ -2616,8 +2733,9 @@ function ModifierPanel({ mod, onMod, total, resolve, cardVars }: { mod: PresetMo
         </div>
         <div style={{ height: 1, background: 'rgba(218,162,73,0.22)' }} />
         <div className="rk-scroll" style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 320, overflowY: 'auto', paddingRight: 4 }}>
-          {label('From your sheet')}
-          {[...SHEET_GROUPS, { name: 'Other', keys: PRESET_VARS.map((v) => v.key).filter((k) => !SHEET_GROUPS.some((g) => g.keys.includes(k))) }].filter((g) => g.keys.length).map((g) => (
+          {/* The DM has no sheet to add from: the flat bonus is theirs. */}
+          {resolve ? label('From your sheet') : null}
+          {!resolve ? null : [...SHEET_GROUPS, { name: 'Other', keys: PRESET_VARS.map((v) => v.key).filter((k) => !SHEET_GROUPS.some((g) => g.keys.includes(k))) }].filter((g) => g.keys.length).map((g) => (
             <div key={g.name} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
               <div style={{ color: T.muted, fontFamily: T.bold, fontSize: 12 }}>{g.name}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 5 }}>
@@ -2805,7 +2923,7 @@ function summarise(types: DieType[]): string {
   return [...counts].map(([t, n]) => `${n > 1 ? `${n} ` : ''}${t === 'duality' ? 'Hope & Fear' : t}`).join(', ');
 }
 
-type Row = { label: string; onPress: () => void; danger?: boolean; gap?: boolean; hidden?: boolean };
+type Row = TableRow;
 
 function MenuShell({ x, y, tableW, tableH, rows, onClose, head, side }: { x: number; y: number; tableW: number; tableH: number; rows: Row[]; onClose: () => void; head?: React.ReactNode; side?: (at: { left: number; top: number; W: number }) => React.ReactNode }) {
   const W = 340, H = rows.length * 38 + rows.filter((r) => r.gap).length * 9 + 16 + (head ? 40 : 0);
@@ -2930,12 +3048,13 @@ function CardViewer({ card, live, from, closing, onClose, onGone }: { card: Tabl
 }
 
 function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, throwIt, spread, physical, onPhysical, view }: { id: string; x: number; y: number; tableW: number; tableH: number; onClose: () => void; board?: () => void; place?: () => void; throwIt?: () => void; /** Read it large, the table dimmed behind it (v0.47.17). */ view?: () => void; spread: boolean; physical?: boolean; onPhysical?: () => void }) {
-  const ctx = useCarousel();
+  const ctx = useTableHost();
   const item = Object.values(ctx.decks).flat().find((c) => c?.id === id);
   if (!item) return null;
   const phys: Row[] = onPhysical ? [{ label: physical ? 'Stop its physics' : 'Make it physical', onPress: onPhysical }] : [];
   const read: Row[] = view ? [{ label: 'View', onPress: view }] : [];
-  if (board) return <MenuShell x={x} y={y} tableW={tableW} tableH={tableH} onClose={onClose} rows={[...read, ...phys, { label: 'Take off the table', onPress: board }]} />;
+  const dmRows = ctx.dm?.cardRows(id) ?? [];
+  if (board) return <MenuShell x={x} y={y} tableW={tableW} tableH={tableH} onClose={onClose} rows={[...read, ...phys, ...dmRows.filter((r) => !r.hidden && !r.danger), { label: 'Take off the table', onPress: board, gap: dmRows.length > 0 }]} />;
   const ref = item.ref ?? item.id;
   const fav = ctx.isFavorited(id);
   const mirror = ctx.category === FAVORITES_CATEGORY;
@@ -2945,7 +3064,15 @@ function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, throwIt, sp
     ...(place ? [{ label: 'Take a copy', onPress: place }] : []),
     ...read,
     ...(spread ? phys : []),
-    ...(mirror
+    ...(ctx.dm
+      ? [
+          ...dmRows.filter((r) => !r.danger),
+          { label: ctx.enabledIds.has(ref) ? 'Unmark' : 'Mark', gap: true, onPress: () => ctx.toggleCard(id) },
+          { label: fav ? 'Remove from Favorites' : 'Add to Favorites', onPress: () => ctx.cardAction(fav ? 'unfavorite' : 'favorite', [id]) },
+          { label: 'Move to deck', hidden: mirror, onPress: () => ctx.cardAction('move', [id]) },
+          ...dmRows.filter((r) => r.danger).map((r, i) => ({ ...r, gap: i === 0 })),
+        ]
+      : mirror
       ? [{ label: 'Remove from Favorites', onPress: () => ctx.cardAction('unfavorite', [id]) }]
       : [
           { label: ctx.enabledIds.has(ref) ? 'Unequip' : 'Equip', onPress: () => ctx.toggleCard(id), hidden: ctx.cardStates.permanent.has(ref) },

@@ -43,6 +43,8 @@ const OWNED_KEYS = [
   'runekeep.onboarding',
   'runekeep.dmMode',
   'runekeep.uiMuted',
+  'runekeep.notes',
+  'runekeep.dmTables',
 ];
 
 const mem = new Map<string, string>();
@@ -154,11 +156,28 @@ export function webGet(key: string): string | null {
 export function webSet(key: string, value: string): void {
   mem.set(key, value);
   put(key, value);
+  changed(key);
 }
 
 export function webRemove(key: string): void {
   mem.delete(key);
   put(key, null);
+  changed(key);
+}
+
+const watchers = new Set<(key: string) => void>();
+
+/**
+ * Told of every write in this tab (v0.49.0). The DM screen's table reads the same records the screen in its port is
+ * writing, and follows them through this rather than sharing that screen's state.
+ */
+export function webWatch(fn: (key: string) => void): () => void {
+  watchers.add(fn);
+  return () => { watchers.delete(fn); };
+}
+
+function changed(key: string): void {
+  for (const fn of watchers) fn(key);
 }
 
 /** Which backend hydration settled on. For diagnostics and tests. */

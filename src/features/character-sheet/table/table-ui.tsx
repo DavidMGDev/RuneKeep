@@ -96,6 +96,25 @@ export const DIE_GLYPHS = {
   /** Put the loose pieces back: a token dropping into a tray. */
   tidy: '<path d="M3.5 13.5v5.2c0 .5.4.8.8.8h15.4c.4 0 .8-.3.8-.8v-5.2"/><path d="M3.5 13.5h4.6l1.4 2.2h5l1.4-2.2h4.6"/><circle cx="12" cy="4.6" r="2.4"/><path d="M12 8.2v4.6M9.6 10.6 12 13l2.4-2.4"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  // The DM screen's dice and what their menus offer (v0.49.0).
+  screen: '<path d="M3 5.5 8.5 4v14L3 19.5ZM8.5 4l7 1.5v14l-7-1.5M15.5 5.5 21 4v14l-5.5 1.5"/>',
+  fight: '<path d="M4 4l11 11M20 4 9 15M13 17l4-4M7 13l4 4M16 16l3.5 3.5M8 16l-3.5 3.5"/>',
+  party: '<circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.4-4.4 3-6.6 6.5-6.6s6.1 2.2 6.5 6.6"/><path d="M5.6 11.6a2.3 2.3 0 1 1 1.2-4.2M18.4 11.6a2.3 2.3 0 1 0-1.2-4.2M2.5 17.5c.2-2 1.2-3.3 2.6-3.8M21.5 17.5c-.2-2-1.2-3.3-2.6-3.8"/>',
+  foe: '<path d="M5.5 10 3.5 3.5 9 6.6h6l5.5-3.1-2 6.5v4.5L12 20.5l-6.5-6Z"/><path d="M8.5 11.5l2 1M15.5 11.5l-2 1"/>',
+  log: '<path d="M7 4h12v16H7a2.5 2.5 0 0 1 0-5h12M4.5 17.5v-11A2.5 2.5 0 0 1 7 4M10 8.5h6M10 11.5h4"/>',
+  note: '<path d="M4 4h16v11l-5 5H4Z"/><path d="M20 15h-5v5M8 9h8M8 12.5h5"/>',
+  fear: '<path d="M12 3 20 12l-8 9-8-9Z"/><path d="M12 7.5 16 12l-4 4.5L8 12Z"/>',
+  add: '<path d="M12 5v14M5 12h14"/>',
+  book: '<path d="M12 6.5C10 4.6 7.3 4.2 3.5 4.6v13.6c3.8-.4 6.5 0 8.5 1.9 2-1.9 4.7-2.3 8.5-1.9V4.6c-3.8-.4-6.5 0-8.5 1.9Z"/><path d="M12 6.5v13.6"/>',
+  start: '<path d="M7 4.5 19 12 7 19.5Z"/>',
+  finish: '<path d="M6 21V3.5M6 4.5h12l-2.6 4 2.6 4H6"/>',
+  edit: '<path d="M4 20v-4L15 5l4 4L8 20Z"/><path d="M13 7l4 4"/>',
+  copy: '<path d="M8.5 8.5h11v11h-11ZM15.5 8.5v-4h-11v11h4"/>',
+  move: '<path d="M4 12h15M13.5 6.5 19 12l-5.5 5.5"/>',
+  bin: '<path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13"/>',
+  mute: '<path d="M4 9.5h4l5-4v13l-5-4H4Z"/><path d="M16.5 9.5l5 5M21.5 9.5l-5 5"/>',
+  check: '<path d="M4.5 12.5l5 5 10-11"/>',
+  info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.5v.2"/>',
   /** The playground (v0.47.12): a spinning top, everything let loose to play with. */
   play: '<path d="M12 3v3"/><path d="M6.5 9.5h11L12 20.5Z"/><path d="M9 9.5 12 6l3 3.5"/>',
 } as const;

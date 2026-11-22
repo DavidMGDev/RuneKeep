@@ -27,11 +27,11 @@ function write(key: string, value: unknown): void {
  * brought over from the phone) starts at STARTING_LOOK, and so does one still at the untouched built-in table, which no
  * one chose (owner, v0.47.17). A table someone set up is never replaced.
  */
-export const loadLook = (characterId?: string): DeckLook => {
+export const loadLook = (characterId?: string, start: DeckLook = STARTING_LOOK): DeckLook => {
   const own = characterId ? read<unknown>(LOOK + '.' + characterId, null) : read<unknown>(LOOK, null);
-  if (!own) return STARTING_LOOK;
+  if (!own) return start;
   const l = cleanLook(own);
-  return encodeLook(l) === encodeLook(DEFAULT_LOOK) ? STARTING_LOOK : l;
+  return encodeLook(l) === encodeLook(DEFAULT_LOOK) ? start : l;
 };
 export const saveLook = (l: DeckLook, characterId?: string): void => {
   if (characterId) write(LOOK + '.' + characterId, l);
@@ -53,8 +53,9 @@ export const saveSavedLooks = (list: SavedLook[]): void => write(SAVED, list);
 
 /** Dice positions as shares of the felt, so a resized window keeps the layout. */
 export type DicePlaces = Record<string, { fx: number; fy: number }>;
-export const loadDicePlaces = (): DicePlaces => read<DicePlaces>(DICE, {});
-export const saveDicePlaces = (p: DicePlaces): void => write(DICE, p);
+// The DM screen's pieces lie differently from a sheet's, so each keeps its own (`scope`).
+export const loadDicePlaces = (scope = ''): DicePlaces => read<DicePlaces>(DICE + scope, {});
+export const saveDicePlaces = (p: DicePlaces, scope = ''): void => write(DICE + scope, p);
 
 /** A card laid on the felt: which card, where its centre is (shares of the felt) and how wide it is (px). */
 export interface BoardCard { uid: string; id: string; fx: number; fy: number; w: number; face?: number; /** Degrees, clockwise. */ rot?: number; /** Knocked about by dice like a piece (v0.47.3). */ phys?: boolean }

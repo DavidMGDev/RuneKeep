@@ -157,7 +157,8 @@ export interface DeckLook {
 }
 
 /** What can be split off a row: the control dice and the supply. */
-export const APART_KEYS = ['cards', 'state', 'sort', 'src:mat', 'src:color', 'src:die', 'src:domat'] as const;
+export const DM_DICE = ['dm-screen', 'dm-fight', 'dm-party', 'dm-foes', 'dm-log', 'dm-cards', 'dm-tools'] as const;
+export const APART_KEYS = ['cards', 'state', 'sort', 'src:mat', 'src:color', 'src:die', 'src:domat', ...DM_DICE] as const;
 
 export const DEFAULT_LOOK: DeckLook = {
   size: 210, centre: 1, side: 4, spacing: 0.04, pack: 0.35, arc: 0, tilt: 0, lift: 0, rowY: 0.5,
@@ -291,9 +292,9 @@ export const LOOK_PAGES: LookPage[] = [
       {
         title: 'Dice',
         controls: [
-          { kind: 'choice', key: 'controls', label: 'Controls', help: 'The deck die and the Cards, State and Sort deck dice, as dice to throw, as plain buttons, or hidden. Right click the table for them any time.', options: opts(['dice', 'Dice'], ['buttons', 'Buttons'], ['hidden', 'Hidden']) },
+          { kind: 'choice', key: 'controls', label: 'Controls', help: 'The deck die and the control dice, as dice to throw, as plain buttons, or hidden. Right click the table for them any time.', options: opts(['dice', 'Dice'], ['buttons', 'Buttons'], ['hidden', 'Hidden']) },
           { kind: 'choice', key: 'ctlMotion', label: 'Control dice move', help: 'Roll and tumble like real dice, or hop upright from place to place: thrown or knocked they jump, always showing their icon, and the deck die only turns when you change deck.', options: opts(['roll', 'Roll'], ['hop', 'Hop']) },
-          { kind: 'range', key: 'ctlSize', label: 'Control dice size', help: 'How big the Cards, State and Sort deck dice are.', min: 0.6, max: 1.8, step: 0.05, unit: 'x' },
+          { kind: 'range', key: 'ctlSize', label: 'Control dice size', help: 'How big the control dice are.', min: 0.6, max: 1.8, step: 0.05, unit: 'x' },
           { kind: 'range', key: 'catSize', label: 'Deck die size', help: 'How big the die that picks your deck is.', min: 0.6, max: 1.8, step: 0.05, unit: 'x' },
           { kind: 'choice', key: 'controlDice', label: 'Control dice', help: 'How the control dice are made.', options: opts(['obsidian', 'Obsidian'], ['gilded', 'Gilded'], ['ivory', 'Ivory']) },
           { kind: 'choice', key: 'numberDice', label: 'Rolling dice', help: 'How the dice you roll are made.', options: opts(['resin', 'Resin'], ['stone', 'Stone'], ['metal', 'Metal']) },
@@ -582,6 +583,12 @@ export const STARTING_LOOK: DeckLook = cleanLook({
   areaMode: 'free', areaPos: 'middle', areaSize: 52, divider: 'none', walls: 'brass', controlDice: 'gilded', ctlMotion: 'hop',
   ctlX: 0.897, ctlY: 0.073, ctlDir: 'row', supX: 0.13, supY: 0.081, supDir: 'row', catX: 0.935, catY: 0.568, areaY: 0.75,
 });
+
+/**
+ * The DM screen's first table (v0.49.0): the starting table with room for its seven control dice, a row of their own
+ * under the supply.
+ */
+export const DM_STARTING_LOOK: DeckLook = cleanLook({ ...STARTING_LOOK, supX: 0.2, supY: 0.085, ctlX: 0.5, ctlY: 0.22, catX: 0.93, catY: 0.42 });
 
 const CODE_PREFIX = 'RK1:';
 

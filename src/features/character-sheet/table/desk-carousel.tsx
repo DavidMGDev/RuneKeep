@@ -18,6 +18,8 @@ import { cardOffset, type DeckLook, fitSize, lookScale, lookX, pastSpot, visible
 
 export interface TableCard {
   id: string;
+  /** Its height at the 230 width everything is drawn at, when it is not a card's (a sticky note is square). */
+  h?: number;
   thumb?: number | { uri: string };
   source?: number | { uri: string };
   custom?: ReactNode;

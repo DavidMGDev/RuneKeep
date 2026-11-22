@@ -11,6 +11,7 @@ import { type CharacterFile, parseCharacterFile, serializeCharacterFile } from '
 import { embedCharacterImages } from './image-embed';
 import { canShareFiles, webShareFile } from './library-store';
 import { parseRkp, RUNE_EXT, serializeRkp } from './rkp';
+import { forgetNotes } from './table-notes-store';
 import { webGet, webSet } from './web-store';
 
 const WEB_KEY = 'runekeep.characters';
@@ -181,6 +182,7 @@ export async function deleteCharacter(id: string): Promise<void> {
   pending.delete(id); // a queued write must never resurrect a deleted character
   if (Platform.OS === 'web') {
     webWrite(webList().filter((c) => c.id !== id));
+    forgetNotes(id);
     return;
   }
   const f = new (fs().File)(charactersDir(), `${id}.json`);
