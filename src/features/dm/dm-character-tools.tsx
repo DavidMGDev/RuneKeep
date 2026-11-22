@@ -65,7 +65,7 @@ export function useDmCharacterTools(files: Record<string, CharacterFile>, onFile
         <DmSide onClose={() => setCards(null)}><DmCategoryPrompt file={cardFile} onPick={(key) => setCards({ id: cards.id, category: key })} onCancel={() => setCards(null)} /></DmSide>
       ) : null}
       {cardFile && cards?.category ? (
-        <DmSide><DmCardsPanel file={cardFile} category={cards.category} onFile={write} onClose={() => setCards(null)} /></DmSide>
+        <DmCardsPanel file={cardFile} category={cards.category} onFile={write} onClose={() => setCards(null)} />
       ) : null}
     </>
   );

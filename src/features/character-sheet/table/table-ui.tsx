@@ -104,6 +104,7 @@ export const DIE_GLYPHS = {
   log: '<path d="M7 4h12v16H7a2.5 2.5 0 0 1 0-5h12M4.5 17.5v-11A2.5 2.5 0 0 1 7 4M10 8.5h6M10 11.5h4"/>',
   note: '<path d="M4 4h16v11l-5 5H4Z"/><path d="M20 15h-5v5M8 9h8M8 12.5h5"/>',
   fear: '<path d="M12 3 20 12l-8 9-8-9Z"/><path d="M12 7.5 16 12l-4 4.5L8 12Z"/>',
+  counter: '<path d="M8 3.5h8L20.5 8v8L16 20.5H8L3.5 16V8Z"/><path d="M8 12h8M12 8v8"/>',
   add: '<path d="M12 5v14M5 12h14"/>',
   book: '<path d="M12 6.5C10 4.6 7.3 4.2 3.5 4.6v13.6c3.8-.4 6.5 0 8.5 1.9 2-1.9 4.7-2.3 8.5-1.9V4.6c-3.8-.4-6.5 0-8.5 1.9Z"/><path d="M12 6.5v13.6"/>',
   start: '<path d="M7 4.5 19 12 7 19.5Z"/>',

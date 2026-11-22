@@ -1,6 +1,6 @@
 import { DesktopPortal } from '@/components/desktop-portal';
-import { useDesktop } from '@/hooks/use-desktop';
-import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { useDesktop, useDesktopPage } from '@/hooks/use-desktop';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -75,6 +75,32 @@ export function NumberKeypad({ title, subtitle, extra, min = 1, max = 9, initial
   // Clear after a successful OK (#264 item 1): the keypad instance is reused across consecutive rest
   // prompts (HP then stress), so without this the prior value lingers ("2" → typing 2 makes "22").
   const submit = useCallback(() => { if (ok) { onSubmit(val); setTyped(''); } }, [ok, onSubmit, val]);
+  // Desktop (v0.50.0): the keyboard types into it. The first digit replaces the number it opened on.
+  const onPage = useDesktopPage();
+  const typing = beside || onPage;
+  const body = useRef<View>(null);
+  const fresh = useRef(true);
+  useEffect(() => {
+    if (!typing) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = body.current as unknown as HTMLElement | null;
+      if (!el || el.closest('[inert]') || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+      if (/^(INPUT|TEXTAREA)$/.test((e.target as HTMLElement)?.tagName ?? '')) return;
+      if (/^\d$/.test(e.key)) {
+        if (fresh.current) setTyped('');
+        press(e.key);
+      } else if (e.key === 'Backspace') {
+        playSfx('numpadPress');
+        setTyped((t) => t.slice(0, -1));
+      } else if (e.key === 'Enter') submit();
+      else return;
+      fresh.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [typing, press, submit]);
 
   const panelStyle = useAnimatedStyle(() => ({ opacity: vis.value, transform: [{ translateY: (1 - vis.value) * 26 }, { scale: 0.96 + vis.value * 0.04 }] }));
 
@@ -83,7 +109,7 @@ export function NumberKeypad({ title, subtitle, extra, min = 1, max = 9, initial
   // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
   return (
     <DesktopPortal to="side" priority="dialog" onDismiss={onClose}>
-    <View style={[StyleSheet.absoluteFill, { zIndex: 10001, alignItems: 'center', justifyContent: 'center' }]}>
+    <View ref={body} style={[StyleSheet.absoluteFill, { zIndex: 10001, alignItems: 'center', justifyContent: 'center' }]}>
       {/* #258r3: occluding bg so GH's hit-test can't reach the sheet's stat tracks underneath.
           v0.36.3 (owner): in DM MODE it is a real scrim. The sheet has its own `SheetDim` behind this,
           which is why the tap-catcher was left all but transparent; the DM screens have nothing, so
@@ -117,7 +143,7 @@ export function NumberKeypad({ title, subtitle, extra, min = 1, max = 9, initial
             <Key label="0" onPress={() => press('0')} dm={dm} />
             <Key label="OK" onPress={submit} disabled={!ok} dm={dm} />
           </View>
-          <Text style={{ color: Rune.muted, fontSize: 8.5, fontFamily: Body.medium, textAlign: 'center', letterSpacing: 0.4 }}>{`Enter ${min}–${max} · tap outside to cancel`}</Text>
+          <Text style={{ color: Rune.muted, fontSize: 8.5, fontFamily: Body.medium, textAlign: 'center', letterSpacing: 0.4 }}>{typing ? `Type ${min} to ${max}, then Enter. Escape cancels` : `Enter ${min}–${max} · tap outside to cancel`}</Text>
         </ChamferBox>
       </Animated.View>
       </View>

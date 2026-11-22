@@ -51,7 +51,7 @@ import { Chamfer, DIE_GLYPHS, Glyph, T, TButton } from './table-ui';
 import { cue } from './table-sound';
 import { naturalH, noteCard, NoteEditor, useTableNotes } from './sticky-note';
 import { type TableRow, useTableHost } from './table-host';
-import { editNote, isNoteId, mendNotes, newNote, NOTE_MAX, tearNote, type TableNote } from '@/lib/table-notes';
+import { editNote, isNoteId, mendNotes, newNote, NOTE_MAX, NOTE_W, tearNote, type TableNote } from '@/lib/table-notes';
 
 /** The sheet's dice state and its handle to the table (the traits and the presets roll through it). */
 export type DeskDice = { up: boolean; onToggle: () => void; handleRef: { current: DiceTrayHandle | null }; presets: Omit<Parameters<typeof DicePresetSlots>[0], 'belt'> & { /** What a modifier comes to for this character now (v0.47.17). */ resolve?: (mod?: PresetModifier) => number } };
@@ -810,6 +810,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
    * hand card comes back a moment later as an ordinary card where it was.
    */
   const breakCard = useCallback((b: BoardCard, mode: CardBreakMode, dir?: { x: number; y: number }) => {
+    // Pinned is pinned: whatever reaches it (a comet's blast took anything near), it stays whole.
+    if (isNoteId(b.id) && !b.phys) return;
     const card = lookup(b.id);
     if (!card) return;
     const { w, h } = sizeOf(b);
@@ -1496,7 +1498,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     if (noteNow.current.length >= NOTE_MAX) { cue('domat:empty', 'cardDisable', { volume: 0.5 }); return; }
     const n = noteNow.current.length;
     const x = at?.x ?? tableW * 0.5 + ((n % 5) - 2) * 54, y = at?.y ?? (openTop + openBottom) * 0.5 + ((n % 3) - 1) * 40;
-    const note = newNote(uidOf(), Math.min(tableW - pad - 84, Math.max(pad + 84, x)) / tableW, Math.min(tableH - pad - 84, Math.max(pad + 84, y)) / tableH, n);
+    const note = newNote(uidOf(), Math.min(tableW - pad - 62, Math.max(pad + 62, x)) / tableW, Math.min(tableH - pad - 62, Math.max(pad + 62, y)) / tableH, n);
     setNotes([...noteNow.current, note]);
     cue('card:place', 'cardDragEnd');
     setWriting(note.id);
@@ -1506,6 +1508,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     livePoses.delete(id);
     setNotes(noteNow.current.filter((n) => n.id !== id));
     cue('ui:delete', 'tokenRemove', { volume: 0.6 });
+  };
+  /** Pinned, it lies upright where it is and nothing breaks it; unpinned, it is knocked about again. */
+  const pinNote = (id: string, pinned: boolean) => {
+    const p = livePoses.get(id);
+    livePoses.delete(id);
+    setNotes(editNote(noteNow.current, id, pinned ? { phys: false, rot: 0, ...(p ? { fx: p.x / tableW, fy: p.y / tableH } : {}) } : { phys: true }));
+    cue('card:physical', 'cardSelect', { volume: 0.6 });
   };
   const tornNotes = noteList.filter((n) => n.torn).length;
   /** Torn notes whole again: their scraps go, the writing is where it was. */
@@ -2182,6 +2191,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
                 const p = livePoses.get(b.uid);
                 return { ...b, ...(p ? { rot: Math.round(p.rot * 10) / 10 } : {}), ...patch(b) };
               }))}
+              onUnpin={(uid) => pinNote(uid, false)}
               onTap={(uid) => { if (isNoteId(uid)) { cue('ui:open', 'panelOpen', { volume: 0.5 }); setWriting(uid); } }}
               onReturn={(uid) => { if (isNoteId(uid)) return; if (uid.startsWith('pg:')) setPgCards((l) => l.filter((b) => b.uid !== uid)); else if (!spread) setCopies(copiesRef.current.filter((b) => b.uid !== uid)); }}
               onLift={(b) => {
@@ -2237,7 +2247,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
 
         {/* The hand. */}
         {spread || playground ? null : (
-          <div ref={handRef} data-felt="" style={{ position: 'absolute', left: hand.left, top: hand.top, width: hand.right - hand.left, height: handH, zIndex: 10 }}>
+          // Only its cards take the pointer: what lies on the felt under the rest of the band (a note, a card) stays in reach.
+          <div ref={handRef} data-felt="" style={{ position: 'absolute', left: hand.left, top: hand.top, width: hand.right - hand.left, height: handH, zIndex: 10, pointerEvents: 'none' }}>
             {deck.length === 0 ? (
               <div style={{ position: 'absolute', left: 0, right: 0, top: '45%', textAlign: 'center', color: T.muted, fontFamily: T.medium, fontSize: 14 }}>{dm?.emptyDeck ?? 'Nothing in this deck yet. Add a card from the sheet.'}</div>
             ) : (
@@ -2297,7 +2308,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           cards={cardPoses}
           onCardsMoved={onCardsMoved}
           supply={supply}
-          domat={look.tokenTray || peeking || playground ? { stock: stockNow.stock, wait: domatWait } : null}
+          domat={look.domat && (look.tokenTray || peeking || playground) ? { stock: stockNow.stock, wait: domatWait } : null}
           onDomatDraw={(from, held) => drawCard(from, held ? { held } : undefined)}
           loose={loose}
           onSpawn={(key, token, x, y) => setLoose([...looseRef.current, { key, token, x, y }])}
@@ -2417,6 +2428,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           {playground ? null : <CornerButton glyph="reset" label="Reset the table" count={looseCount} onPress={() => { cue('table:reset', 'gearScroll2', { volume: 0.5 }); resetAll(); }} />}
           <CornerButton glyph="play" label={playground ? 'Leave the playground' : 'Playground'} active={playground} onPress={togglePlayground} />
           <CornerButton glyph="note" label="New sticky note (N)" onPress={() => addNote()} />
+          {dm ? <CornerButton glyph="counter" label="Counters" onPress={() => { cue('ui:open', 'panelOpen'); dm.counters.open(); }} /> : null}
           {playground ? null : <CornerButton glyph="settings" label="Table settings" active={settings} onPress={() => { cue('ui:toggle', settings ? 'panelClose' : 'panelOpen'); setSettings((s) => !s); }} />}
           {/* Testing only for now (owner, v0.47.11): draw any card of the Deck of Many Things, stock or not. */}
           {/* Testing only: hidden on the live site (owner, v0.47.30). */}
@@ -2485,6 +2497,10 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               // The DM's dice by name, for a table that hides them.
               ...(dm && !playground && !tableMenu.piece && look.controls !== 'dice' ? dm.controls.map((c) => ({ label: c.verb, onPress: () => diceRef.current?.useControl(c.key, { x: tableMenu.x, y: tableMenu.y }) })) : []),
               { label: 'New sticky note', gap: !!tableMenu.piece, onPress: () => addNote({ x: tableMenu.x, y: tableMenu.y }) },
+              ...(dm ? [
+                { label: 'New counter', onPress: () => dm.counters.add({ x: tableMenu.x / tableW, y: tableMenu.y / tableH }) },
+                { label: 'Counters', onPress: () => dm.counters.open() },
+              ] : []),
               { label: 'Bring back torn notes', hidden: !tornNotes, onPress: mendTorn },
               { label: 'Choose a deck', hidden: playground || tableMenu.piece?.key === 'cat', onPress: () => diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }) },
               { label: 'Reset the table', onPress: resetAll, gap: true },
@@ -2546,13 +2562,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
                 { label: 'Delete it and what it says', danger: true, onPress: () => deleteNote(note.id) },
               ] : [
                 { label: 'Write on it', onPress: () => setWriting(note.id) },
-                { label: note.phys ? 'Pin it down' : 'Unpin', onPress: () => {
-                  const p = livePoses.get(note.id);
-                  livePoses.delete(note.id);
-                  setNotes(editNote(noteNow.current, note.id, note.phys ? { phys: false, rot: 0, ...(p ? { fx: p.x / tableW, fy: p.y / tableH } : {}) } : { phys: true }));
-                  cue('card:physical', 'cardSelect', { volume: 0.6 });
-                } },
-                { label: 'Normal size', hidden: note.w === 160, onPress: () => setNotes(editNote(noteNow.current, note.id, { w: 160 })) },
+                { label: note.phys ? 'Pin' : 'Unpin', onPress: () => pinNote(note.id, note.phys) },
+                { label: 'Normal size', hidden: note.w === NOTE_W, onPress: () => setNotes(editNote(noteNow.current, note.id, { w: NOTE_W })) },
                 { label: 'Delete', danger: true, gap: true, onPress: () => setMenu({ ...menu, sure: true }) },
               ].filter((r) => !('hidden' in r && r.hidden))} />
           );
@@ -2625,7 +2636,7 @@ function HandGrip({ hand, onMove }: { hand: Bounds; onMove: (centreY: number) =>
 }
 
 /** A corner button: its name slides out beside it on hover (owner, v0.47.4: the icons alone were unclear). */
-function CornerButton({ glyph, label, onPress, active, disabled, count }: { glyph: 'settings' | 'reset' | 'tidy' | 'roll' | 'play' | 'note'; label: string; onPress: () => void; active?: boolean; disabled?: boolean; count?: number }) {
+function CornerButton({ glyph, label, onPress, active, disabled, count }: { glyph: 'settings' | 'reset' | 'tidy' | 'roll' | 'play' | 'note' | 'counter'; label: string; onPress: () => void; active?: boolean; disabled?: boolean; count?: number }) {
   const [hover, setHover] = useState(false);
   const lit = hover && !disabled;
   return (

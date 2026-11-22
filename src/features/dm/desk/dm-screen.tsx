@@ -31,7 +31,8 @@ import { dmTableOwner, loadDmTable, saveDmTable } from '@/lib/dm-table-store';
 import { applyOrder } from '@/lib/encounter-order';
 import { FAVORITES_CATEGORY } from '@/lib/favorites';
 import type { Party } from '@/lib/party';
-import { type Session, sortedEncounters } from '@/lib/session';
+import { changeCombatant, type Combatant, type Session, sortedEncounters } from '@/lib/session';
+import { getEncounter, saveEncounter } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
 import { isUiMuted, setUiMuted } from '@/lib/sfx-prefs';
 
@@ -47,6 +48,7 @@ import { combatantCard, combatantCardId, encounterCard, encounterCardId, memberC
 import { cardRows, controlDice, type ControlsEnv, type SortBy } from './dm-controls';
 import { type DeskApis, type DmDesk, DmDeskContext, DmSide, type DmView } from './dm-desk';
 import { FearTrack } from './fear-track';
+import { useDeskCounters } from './use-counters';
 import { type DmRecords, useDmRecords } from './use-dm-records';
 
 const EMPTY_DECK: Record<DmDeckKey, string> = {
@@ -129,6 +131,22 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
     pending.current = { kind, id, run } as Pending;
   }, [desk]);
 
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const writes = useRef<Promise<unknown>>(Promise.resolve());
+  /**
+   * A counter moved on the table. With the encounter in the port it goes through that screen, which holds the record.
+   * With any other screen there nothing holds one, so it is written straight, one write after the other, and the
+   * port is left where the DM had it.
+   */
+  const changeOne = useCallback((id: string, cid: string, fn: (c: Combatant) => Combatant) => {
+    if (viewRef.current === 'encounter') { within('encounter', id, (a) => a.change(cid, fn)); return; }
+    writes.current = writes.current.then(async () => {
+      const now = await getEncounter(id);
+      if (now) await saveEncounter(changeCombatant(now, cid, fn));
+    }).catch(() => showToast('That change could not be saved. Try it again'));
+  }, [within]);
+
   // The encounter in the port is in the address, so a reload comes back to it.
   useEffect(() => {
     if (!focused) return;
@@ -191,8 +209,9 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
     update((t) => ({ ...t, order: { ...t.order, [category]: ids } }));
   }, [category, decks, saved, party, files, encounters, update]);
 
+  const counters = useDeskCounters(table, update, enc, changeOne);
   const env = useMemo<ControlsEnv>(() => ({
-    records, table, view, enc, category, muted, sort,
+    records, table, view, enc, category, muted, sort, counters,
     open: desk.open,
     inEncounter: (run) => within('encounter', enc?.id, run),
     inSession: (run) => within('session', session.id, run),
@@ -214,7 +233,7 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
     },
     dice: () => setTray(true),
     guide: () => setGuide(true),
-  }), [records, table, view, enc, category, muted, sort, desk, within, session.id, party.id, router, update]);
+  }), [records, table, view, enc, category, muted, sort, counters, desk, within, session.id, party.id, router, update]);
 
   const host = useMemo<TableHost>(() => {
     const custom = table.decks.map((d) => d.key);
@@ -268,12 +287,16 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
         controls: controlDice(env),
         cardRows: (id) => cardRows(env, id),
         emptyDeck: !enc && (category === 'dm-foes' || category === 'dm-npcs') ? 'No encounter yet. Click the Encounter die to make one.' : EMPTY_DECK[category as DmDeckKey] ?? (category === FAVORITES_CATEGORY ? 'No favorites yet. Right click a card to add it.' : 'Nothing in this category yet. Right click a card and move it here.'),
-        layer: table.fear.on
-          ? (w, h) => <FearTrack fear={table.fear} width={w} height={h} onChange={(patch) => update((t) => ({ ...t, fear: { ...t.fear, ...patch } }))} />
-          : undefined,
+        counters: { open: () => counters.open(), add: counters.add },
+        layer: (w, h) => (
+          <>
+            {table.fear.on ? <FearTrack fear={table.fear} width={w} height={h} onChange={(patch) => update((t) => ({ ...t, fear: { ...t.fear, ...patch } }))} /> : null}
+            {counters.layer(w, h)}
+          </>
+        ),
       },
     };
-  }, [decks, category, table, env, enc, update]);
+  }, [decks, category, table, env, enc, counters, update]);
 
   // ---------------------------------------------------------------- dice, layers, keys
   const trayRef = useRef<DiceTrayHandle | null>(null);
@@ -338,6 +361,7 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
           </TableHostContext.Provider>
         ) : null}
 
+        {counters.dialog}
         {tray ? <DmSide onClose={() => setTray(false)}><DmDicePanel onClose={() => setTray(false)} /></DmSide> : null}
         {guide ? <DmSide onClose={() => setGuide(false)}><AdversaryInfoPanel onClose={() => setGuide(false)} /></DmSide> : null}
         {dialog?.kind === 'newDeck' ? (

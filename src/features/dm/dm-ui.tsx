@@ -2,8 +2,8 @@
  *  small chrome helpers. */
 import { useDialogKeys } from '@/hooks/use-dialog-keys';
 import { useDesktop, useDesktopPage } from '@/hooks/use-desktop';
-import { type ReactNode, useState, useRef } from 'react';
-import { Pressable, type PressableProps, StyleSheet, Text, TextInput, View } from 'react-native';
+import { type ReactNode, useEffect, useState, useRef } from 'react';
+import { type GestureResponderEvent, Pressable, type PressableProps, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { Easing, FadeIn, FadeInDown, FadeOut, FadeOutDown, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
@@ -176,9 +176,28 @@ export function DmPress({ style, ...rest }: PressableProps) {
   const dim = useSharedValue(0);
   const anim = useAnimatedStyle(() => ({ opacity: 1 - dim.value * 0.42 }));
   const resolved = typeof style === 'function' ? style({ pressed: false, hovered: false }) : style;
+  // Desktop (v0.50.0): a right click does what holding does on a phone.
+  const inPort = !!useDesktop(), onPage = useDesktopPage();
+  const el = useRef<View>(null);
+  const hold = useRef(rest.onLongPress);
+  hold.current = rest.disabled ? undefined : rest.onLongPress;
+  const held = (inPort || onPage) && !!rest.onLongPress;
+  useEffect(() => {
+    const node = el.current as unknown as HTMLElement | null;
+    if (!held || !node?.addEventListener) return;
+    const onMenu = (e: MouseEvent) => {
+      if (!hold.current) return;
+      e.preventDefault();
+      e.stopPropagation();
+      hold.current({} as GestureResponderEvent);
+    };
+    node.addEventListener('contextmenu', onMenu);
+    return () => node.removeEventListener('contextmenu', onMenu);
+  }, [held]);
   return (
     <FadePressable
       {...rest}
+      ref={el}
       onPressIn={(e) => {
         if (!rest.disabled) dim.value = withTiming(1, { duration: 90, easing: Easing.out(Easing.quad) });
         rest.onPressIn?.(e);

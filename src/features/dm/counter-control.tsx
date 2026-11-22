@@ -66,12 +66,14 @@ function StepButton({ glyph, label, size, danger, onPress }: { glyph: Glyph; lab
  *
  * `onStep` absent draws it read-only, which is how the library shows a counter it cannot change.
  */
-export function CounterStepper({ c, size = 30, onStep, onSpent }: {
+export function CounterStepper({ c, size = 30, onStep, onSpent, spentVerb = 'Down this adversary' }: {
   c: AdversaryCounter;
   size?: number;
   onStep?: (delta: number) => void;
   /** Pressed the X on a spent countdown. Absent leaves the button inert rather than lying about it. */
   onSpent?: () => void;
+  /** What that X does, where it is not downing an adversary (a campaign's own counter, v0.50.0). */
+  spentVerb?: string;
 }) {
   const spent = isSpent(c);
   const name = c.name || 'the counter';
@@ -90,7 +92,7 @@ export function CounterStepper({ c, size = 30, onStep, onSpent }: {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
       {spent ? (
-        <StepButton glyph="cross" danger size={size} label={`${name} has run out. Down this adversary`} onPress={onSpent ? () => { playSfx('cardDisable'); onSpent(); } : undefined} />
+        <StepButton glyph="cross" danger size={size} label={`${name} has run out. ${spentVerb}`} onPress={onSpent ? () => { playSfx('cardDisable'); onSpent(); } : undefined} />
       ) : (
         <StepButton glyph="minus" size={size} label={`Lower ${name}`} onPress={onStep && canStep(c, -1) ? down : undefined} />
       )}

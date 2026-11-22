@@ -43,6 +43,7 @@ import type { LibraryCard } from '@/lib/library';
 import { useScreenDim } from '@/lib/screen-dim';
 import { playSfx } from '@/lib/sfx';
 import { useAndroidBack } from './use-android-back';
+import { DmSide } from './desk/dm-desk';
 import { DmPress } from './dm-ui';
 
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -179,14 +180,15 @@ export function DmCardsPanel({ file, category, onFile, onClose }: { file: Charac
   }, [file, onFile, withCategory]);
 
   if (mode === 'gear') {
-    return <GearBrowser acquiredIds={acquiredIds} enabledExpansionIds={file.enabledExpansionIds} onAdd={addGear} onAddCustom={addCustomGear} onClose={() => setMode(null)} />;
+    return <DmSide onClose={() => setMode(null)}><GearBrowser acquiredIds={acquiredIds} enabledExpansionIds={file.enabledExpansionIds} onAdd={addGear} onAddCustom={addCustomGear} onClose={() => setMode(null)} /></DmSide>;
   }
   if (mode === 'author') {
-    return <CardEditor kindLabel="Card" saveLabel="Create card" experiences={file.experiences} onSave={saveCard} onCancel={() => setMode(null)} />;
+    return <DmSide><CardEditor kindLabel="Card" saveLabel="Create card" experiences={file.experiences} onSave={saveCard} onCancel={() => setMode(null)} /></DmSide>;
   }
 
   const label = cats.find((c) => c.key === cat)?.label ?? 'Cards';
   return (
+    <DmSide onClose={() => { if (!carRef.current?.closeIfFullscreen()) onClose(); }}>
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 420 }}>
       <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,10,15,0.98)' }, bgStyle]} />
       <Animated.View style={[{ flex: 1, marginTop: insets.top + 6, marginBottom: insets.bottom + 6, paddingHorizontal: 8 }, panelStyle]}>
@@ -226,5 +228,6 @@ export function DmCardsPanel({ file, category, onFile, onClose }: { file: Charac
         </ChamferBox>
       </Animated.View>
     </View>
+    </DmSide>
   );
 }

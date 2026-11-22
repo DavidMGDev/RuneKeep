@@ -1,4 +1,4 @@
-import { cleanNotes, editNote, isNoteId, mendNotes, newNote, NOTE_TEXT_MAX, tearNote } from './table-notes';
+import { cleanNotes, editNote, isNoteId, mendNotes, newNote, NOTE_TEXT_MAX, NOTE_W, tearNote } from './table-notes';
 
 describe('sticky notes', () => {
   const note = { ...newNote('a1', 0.4, 0.6, 0), text: 'The tide gate opens at dusk' };
@@ -20,12 +20,16 @@ describe('sticky notes', () => {
 
   it('repairs a bad position and never drops the writing for it', () => {
     const [n] = cleanNotes([{ id: 'note-x', text: 'keep me', fx: 'no', fy: 9, w: NaN, paper: 'plaid' }]);
-    expect(n).toMatchObject({ text: 'keep me', fx: 0.5, fy: 1, w: 160, paper: 'gold', phys: true });
+    expect(n).toMatchObject({ text: 'keep me', fx: 0.5, fy: 1, w: NOTE_W, paper: 'gold', phys: true });
   });
 
   it('drops only what is not a note', () => {
     expect(cleanNotes([null, 4, { id: 'card-1', text: '' }, { id: 'note-a:b', text: '' }, note])).toEqual([note]);
     expect(cleanNotes('nonsense')).toEqual([]);
+  });
+
+  it('shrinks a note still at the old default and leaves a resized one alone', () => {
+    expect(cleanNotes([{ ...note, w: 160 }, { ...note, id: 'note-b', w: 240 }]).map((n) => n.w)).toEqual([NOTE_W, 240]);
   });
 
   it('stops writing at the limit', () => {

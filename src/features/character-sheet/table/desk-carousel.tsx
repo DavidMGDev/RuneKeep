@@ -331,6 +331,10 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
     let lastWheel = 0;
     const onWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) return;
+      // Heard on the whole felt, as the band between the cards takes no pointer: only over the band, and off the buttons.
+      const band = el.parentElement?.getBoundingClientRect();
+      if (!band || e.clientX < band.left || e.clientX > band.right || e.clientY < band.top || e.clientY > band.bottom) return;
+      if ((e.target as HTMLElement).closest?.('[data-ui], [role="listbox"], [role="dialog"], [role="menu"]')) return;
       e.preventDefault();
       const now = performance.now();
       if (now - lastWheel > 220) acc = 0;
@@ -423,7 +427,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       setHover(-1);
       if (lookRef.current.scroll === 'follow' && !lookRef.current.loop) goTo(Math.round(st.current.target));
     };
-    const wheelEl = el.parentElement ?? el;
+    const wheelEl = el.closest<HTMLElement>('[data-table-root]') ?? el.parentElement ?? el;
     wheelEl.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointermove', onMove);

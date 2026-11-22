@@ -24,7 +24,9 @@ export interface TableDm {
   cardRows: (id: string) => TableRow[];
   /** What an empty deck says. */
   emptyDeck: string;
-  /** Drawn on the felt, given its size (the Fear tracker). */
+  /** The counters' corner button and its rows on the table's menu. `add` takes shares of the felt. */
+  counters: { open: () => void; add: (at?: { x: number; y: number }) => void };
+  /** Drawn on the felt, given its size (the Fear tracker and the counters). */
   layer?: (w: number, h: number) => ReactNode;
 }
 

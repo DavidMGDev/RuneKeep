@@ -23,7 +23,7 @@
  * The frame's SHAPE is the caller's, because a character portrait is a tall rectangle and a campaign's
  * emblem is a square, and cropping to the wrong one is the thing this exists to prevent.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -33,6 +33,7 @@ import { RuneButton } from '@/components/rune-button';
 import { Body, Display, Gap, Rune } from '@/constants/theme';
 import { DimScreen } from '@/lib/screen-dim';
 import { playSfx } from '@/lib/sfx';
+import { useDesktop, useDesktopPage } from '@/hooks/use-desktop';
 
 /** How far in a picture may be pushed. Past this it is pixels rather than a portrait. */
 const MAX_ZOOM = 6;
@@ -137,6 +138,26 @@ export function ImageCropper({ uri, aspect = 3 / 4, title = 'Position your pictu
     .onUpdate((e) => { scale.value = Math.max(1, Math.min(MAX_ZOOM, start.value * e.scale)); })
     .onEnd(clamp);
 
+  // Desktop (v0.50.0): a mouse cannot pinch, so the wheel and two buttons zoom, about the middle of the frame.
+  const inPort = !!useDesktop(), onPage = useDesktopPage();
+  const mouse = inPort || onPage;
+  const zoomBy = useCallback((by: number) => {
+    if (!src) return;
+    const to = Math.max(1, Math.min(MAX_ZOOM, scale.value * by)), k = to / scale.value;
+    const keep = (v: number, frame: number, full: number) => Math.max(Math.min(0, frame - full * baseScale * to), Math.min(0, frame / 2 - (frame / 2 - v) * k));
+    tx.value = keep(tx.value, frameW, src.width);
+    ty.value = keep(ty.value, frameH, src.height);
+    scale.value = to;
+  }, [src, baseScale, frameW, frameH, scale, tx, ty]);
+  const frameRef = useRef<View>(null);
+  useEffect(() => {
+    const el = frameRef.current as unknown as HTMLElement | null;
+    if (!mouse || !el?.addEventListener) return;
+    const onWheel = (e: WheelEvent) => { e.preventDefault(); zoomBy(Math.exp(-e.deltaY * 0.0015)); };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [mouse, zoomBy]);
+
   const style = useAnimatedStyle(() => ({
     transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
     transformOrigin: 'top left',
@@ -161,12 +182,12 @@ export function ImageCropper({ uri, aspect = 3 / 4, title = 'Position your pictu
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ paddingHorizontal: 16, paddingVertical: 16, gap: Gap.intra, alignItems: 'center' }}>
         <Text style={{ color: Rune.goldText, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{title}</Text>
         <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, textAlign: 'center', maxWidth: frameW }}>
-          Drag to move it, pinch to zoom. What the frame shows is what is kept.
+          {mouse ? 'Drag to move it, scroll to zoom. What the frame shows is what is kept.' : 'Drag to move it, pinch to zoom. What the frame shows is what is kept.'}
         </Text>
 
         <GestureDetector gesture={Gesture.Simultaneous(pan, pinch)}>
           {/* The frame. Everything outside it is clipped, so the box IS the crop. */}
-          <View style={{ width: frameW, height: frameH, overflow: 'hidden', backgroundColor: '#000', borderWidth: 1, borderColor: Rune.goldEdge }}>
+          <View ref={frameRef} style={{ width: frameW, height: frameH, overflow: 'hidden', backgroundColor: '#000', borderWidth: 1, borderColor: Rune.goldEdge }}>
             {src ? (
               <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: src.width * baseScale, height: src.height * baseScale }, style]}>
                 <Image source={{ uri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
@@ -175,6 +196,12 @@ export function ImageCropper({ uri, aspect = 3 / 4, title = 'Position your pictu
           </View>
         </GestureDetector>
 
+        {mouse ? (
+          <View style={{ flexDirection: 'row', gap: 8, width: frameW }}>
+            <RuneButton label="Zoom out" kind="ghost" height={34} dense style={{ flex: 1 }} onPress={() => zoomBy(1 / 1.25)} />
+            <RuneButton label="Zoom in" kind="ghost" height={34} dense style={{ flex: 1 }} onPress={() => zoomBy(1.25)} />
+          </View>
+        ) : null}
         <View style={{ flexDirection: 'row', gap: 8, width: frameW }}>
           <RuneButton label="Cancel" kind="ghost" height={42} style={{ flex: 1 }} onPress={onCancel} />
           <RuneButton label={busy ? 'Cropping' : 'Use this'} kind="primary" height={42} style={{ flex: 1 }} disabled={busy} onPress={done} />

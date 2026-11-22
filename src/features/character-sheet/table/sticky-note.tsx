@@ -19,23 +19,19 @@ import { chamferClip, T, TButton } from './table-ui';
 /** A board card's own height at its natural 230 width: a note is square, a card is a card. */
 export const naturalH = (id: string): number => (isNoteId(id) ? NOTE_SIZE : FORGED_H);
 
-const PAD = 18, GLUE = 30;
+const PAD = 17, GLUE = 30;
 
 function NoteFace({ note }: { note: TableNote }) {
   const tint = NotePaperTint[note.paper];
   const text = note.text.trim();
   const box = { width: NOTE_SIZE - PAD * 2, height: NOTE_SIZE - GLUE - PAD - 6 };
-  const fit = fitText(text || 'Click to write', { ...box, base: 23, lineRatio: 1.25, min: 8.5 });
+  const fit = fitText(text || 'Click to write', { ...box, base: 30, lineRatio: 1.2, min: 8.5 });
   return (
     <View style={{ width: NOTE_SIZE, height: NOTE_SIZE, backgroundColor: tint.paper, overflow: 'hidden' }} pointerEvents="none">
       <View style={{ height: GLUE - 8, backgroundColor: tint.glue }} />
       <View style={{ flex: 1, paddingHorizontal: PAD, paddingTop: 10, overflow: 'hidden' }}>
         <Text style={{ color: text ? Rune.inkText : Rune.inkMuted, fontSize: fit.fontSize, lineHeight: fit.lineHeight, fontFamily: Body.medium }}>{text || 'Click to write'}</Text>
       </View>
-      {note.phys ? null : (
-        // Pinned: dice pass it by.
-        <View style={{ position: 'absolute', top: 3, left: NOTE_SIZE / 2 - 9, width: 18, height: 18, backgroundColor: Rune.red, borderWidth: 2, borderColor: Rune.inkText, transform: [{ rotate: '45deg' }] }} />
-      )}
     </View>
   );
 }
@@ -110,7 +106,7 @@ export function NoteEditor({ note, onEdit, onClose }: { note: TableNote; onEdit:
             </button>
           ))}
         </div>
-        <TButton label={note.phys ? 'Pin it down' : 'Unpin'} title={note.phys ? 'Dice will pass it by and cannot tear it' : 'Dice can knock it about and tear it again'} onPress={() => { cue('card:physical', 'cardSelect', { volume: 0.6 }); onEdit(note.phys ? { phys: false, rot: 0 } : { phys: true }); }} />
+        <TButton label={note.phys ? 'Pin' : 'Unpin'} title={note.phys ? 'Dice will pass it by and cannot tear it' : 'Dice can knock it about and tear it again'} onPress={() => { cue('card:physical', 'cardSelect', { volume: 0.6 }); onEdit(note.phys ? { phys: false, rot: 0 } : { phys: true }); }} />
         <TButton label="Done" primary onPress={onClose} />
       </div>
     </div>,

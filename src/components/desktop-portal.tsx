@@ -17,6 +17,8 @@ type Box = { width: number; height: number; scale: number; offsetX: number; offs
 export const PageSideContext = createContext<{ host: HTMLElement | null; layers: SideLayers; frame: Box } | null>(null);
 
 const InPageSide = createContext(false);
+/** Inside a full-screen dialog: what would open beside the port opens over the dialog, or it would be under it. */
+const InModal = createContext(false);
 /** True inside a desktop page's sidebar: a pop-up drops its scrim and sits at the top of the panel, full width. */
 export const useInPageSide = () => useContext(InPageSide);
 /** For a pop-up that wraps itself in a portal: asks the question from INSIDE it, where the answer is set. */
@@ -36,19 +38,22 @@ export const PAGE_SIDE_BODY = { position: 'absolute', top: 0, bottom: 0, left: 0
  * GEOMETRY are the exception and are reset at the boundary: the hosts are drawn at the window's own pixels,
  * not inside the scaled phone port, so gestures and sizes inside them must not divide by the port's scale.
  */
-export function DesktopPortal({ to, children, priority = 'panel', onDismiss }: { /** `window`: the whole window, over the port and the table (v0.46.0, level up). */ to: 'table' | 'side' | 'window'; children: ReactNode; /** Bands, low to high: panel, dialog, share, progress; open order breaks ties within one. */ priority?: LayerPriority; /** What Escape and Back do to this layer. Absent: they are BLOCKED while it is on top (an editor guarding unsaved work). */ onDismiss?: () => void }) {
+export function DesktopPortal({ to: asked, children, priority = 'panel', onDismiss }: { /** `window`: the whole window, over the port and the table (v0.46.0, level up). `modal`: over the side slot as well (v0.50.0). */ to: 'table' | 'side' | 'window' | 'modal'; children: ReactNode; /** Bands, low to high: panel, dialog, share, progress; open order breaks ties within one. */ priority?: LayerPriority; /** What Escape and Back do to this layer. Absent: they are BLOCKED while it is on top (an editor guarding unsaved work). */ onDismiss?: () => void }) {
   const desktop = useDesktop();
   const pageSide = useContext(PageSideContext);
+  const inModal = useContext(InModal);
+  const to = inModal && asked === 'side' ? 'modal' : asked;
   const frame = useMemo(() => {
     if (!desktop) return null;
-    const box = to === 'side' ? desktop.side : to === 'window' ? desktop.win : desktop.table;
+    const box = to === 'side' ? desktop.side : to === 'window' || to === 'modal' ? desktop.win : desktop.table;
     return { width: box.width, height: box.height, scale: 1, offsetX: box.left, offsetY: box.top };
   }, [desktop, to]);
-  const host = desktop ? (to === 'table' ? desktop.tableHost : to === 'window' ? desktop.windowHost : desktop.sideHost) : null;
-  if (!desktop && to === 'side' && pageSide?.host) {
+  const host = desktop ? (to === 'table' ? desktop.tableHost : to === 'window' ? desktop.windowHost : to === 'modal' ? desktop.modalHost : desktop.sideHost) : null;
+  if (!desktop && (to === 'side' || to === 'modal') && pageSide?.host) {
     return createPortal(<SideLayer page layers={pageSide.layers} frame={pageSide.frame} priority={priority} onDismiss={onDismiss}>{children}</SideLayer>, pageSide.host);
   }
   if (!desktop || !frame) return <>{children}</>;
+  if (to === 'modal' && host) return createPortal(<InModal.Provider value><SideLayer layers={desktop.layers} frame={frame} priority={priority} onDismiss={onDismiss}>{children}</SideLayer></InModal.Provider>, host);
   if ((to === 'side' || to === 'window') && host) return createPortal(<SideLayer layers={desktop.layers} frame={frame} priority={priority} onDismiss={onDismiss}>{children}</SideLayer>, host);
   // The host mounts one frame after the port; render nothing rather than in the wrong place meanwhile.
   return host

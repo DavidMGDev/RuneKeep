@@ -58,6 +58,8 @@ export interface Desktop {
   /** v0.46.0: the whole window, for a full-screen dialogue (level up) drawn over the port and the table. */
   win: { left: number; top: number; width: number; height: number };
   windowHost: HTMLElement | null;
+  /** v0.50.0: over all of it, the side slot too: a dialog that dims and blurs the whole screen. */
+  modalHost: HTMLElement | null;
 }
 
 export const DesktopContext = createContext<Desktop | null>(null);

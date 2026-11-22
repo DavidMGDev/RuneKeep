@@ -12,6 +12,10 @@ export type NotePaper = (typeof NOTE_PAPERS)[number];
 /** A note's own drawing size: square, where a card is 230 by 322. */
 export const NOTE_SIZE = 230;
 export const NOTE_MAX = 80;
+/** How wide one lies until it is resized (v0.50.0, owner: much smaller). */
+export const NOTE_W = 108;
+/** What they were made at before. shortcut: one resized to exactly this comes back small too, keep a version if that matters. */
+const OLD_W = 160;
 export const NOTE_TEXT_MAX = 600;
 const PREFIX = 'note-';
 
@@ -34,7 +38,7 @@ export const isNoteId = (id: string): boolean => id.startsWith(PREFIX);
 
 export function newNote(serial: string, fx: number, fy: number, count: number): TableNote {
   // A slight lean, a different one each time, as a note slapped down has.
-  return { id: `${PREFIX}${serial}`, text: '', paper: NOTE_PAPERS[count % NOTE_PAPERS.length], fx, fy, w: 160, rot: ((count * 5) % 9) - 4, phys: true };
+  return { id: `${PREFIX}${serial}`, text: '', paper: NOTE_PAPERS[count % NOTE_PAPERS.length], fx, fy, w: NOTE_W, rot: ((count * 5) % 9) - 4, phys: true };
 }
 
 const num = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
@@ -52,7 +56,7 @@ export function cleanNotes(raw: unknown): TableNote[] {
       paper: NOTE_PAPERS.includes(n.paper as NotePaper) ? (n.paper as NotePaper) : 'gold',
       fx: share(n.fx),
       fy: share(n.fy),
-      w: Math.min(460, Math.max(96, num(n.w, 160))),
+      w: n.w === OLD_W ? NOTE_W : Math.min(460, Math.max(96, num(n.w, NOTE_W))),
       rot: num(n.rot, 0),
       phys: n.phys !== false,
       ...(n.torn === true ? { torn: true } : {}),

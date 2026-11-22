@@ -32,6 +32,7 @@ import {
   memberBonus,
   appendLog,
   canEditMembers,
+  changeCombatant,
   cloneCombatant,
   type Combatant,
   type Ally,
@@ -50,7 +51,6 @@ import {
   memberSet,
   memberVitals,
   moveLogEntry,
-  mutateCombatant,
   newAdversary,
   newNpc,
   recover,
@@ -247,8 +247,7 @@ export function EncounterScreen({ encounterId }: { /** The DM screen's port says
   }, []);
   const updateCombatant = useCallback((cid: string, fn: (c: Combatant) => Combatant): Encounter | null => {
     const enc = encRef.current; if (!enc) return null;
-    if (enc.adversaries.some((c) => c.id === cid)) return { ...enc, adversaries: mutateCombatant(enc.adversaries, cid, fn) };
-    return { ...enc, allies: enc.allies.map((a) => (a.kind === 'npc' && a.combatant.id === cid ? { kind: 'npc', combatant: fn(a.combatant) } : a)) };
+    return changeCombatant(enc, cid, fn);
   }, []);
 
   const blockedVitals = useCallback(() => showToast('Start the encounter to change member vitals'), []);
@@ -554,6 +553,13 @@ export function EncounterScreen({ encounterId }: { /** The DM screen's port says
     },
     spawn: (tid, as) => { const t = library.find((x) => x.id === tid); if (t) spawnMany(t, 1, as); },
     edit: (cid) => { const r = findCombatant(cid); if (r) setEditing(r.c); },
+    change: (cid, fn) => {
+      const next = updateCombatant(cid, fn);
+      if (!next) return;
+      commitEncounter(next);
+      if (encTimer.current) { clearTimeout(encTimer.current); encTimer.current = null; }
+      void saveEncounter(next);
+    },
     image: (cid) => { const r = findCombatant(cid); if (r) setViewImage(r.c); },
     fell: fellCombatant,
     recover: recoverCombatant,

@@ -10,7 +10,7 @@ import { createContext, type ReactNode, useContext, useLayoutEffect } from 'reac
 
 import { DesktopPortal } from '@/components/desktop-portal';
 import { useDesktop } from '@/hooks/use-desktop';
-import type { CombatantStat } from '@/lib/session';
+import type { Combatant, CombatantStat } from '@/lib/session';
 import type { VitalKey } from '@/lib/party';
 
 export type DmView = 'session' | 'encounter' | 'party' | 'cast' | 'library';
@@ -32,6 +32,8 @@ export interface EncounterApi {
   /** A template from the DM's own library into this fight. */
   spawn: (templateId: string, as: Side) => void;
   edit: (cid: string) => void;
+  /** Any change to one combatant, saved at once: the table draws from what is saved. */
+  change: (cid: string, fn: (c: Combatant) => Combatant) => void;
   image: (cid: string) => void;
   fell: (cid: string) => void;
   recover: (cid: string) => void;

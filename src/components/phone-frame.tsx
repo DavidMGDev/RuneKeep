@@ -83,6 +83,7 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const [tableHost, setTableHost] = useState<HTMLElement | null>(null);
   const [sideHost, setSideHost] = useState<HTMLElement | null>(null);
   const [windowHost, setWindowHost] = useState<HTMLElement | null>(null);
+  const [modalHost, setModalHost] = useState<HTMLElement | null>(null);
   const [layers] = useState(createSideLayers);
   const desktopWindow = isDesktopWindow(width, scaleH);
   // v0.49.0: a session has the sheet's shape too (the DM screen): a port, and a table beside it.
@@ -97,8 +98,8 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
     const port = { left: pad, top: pad, width: DESIGN_W * scale, height: DESIGN_H * scale, scale };
     const side = { left: port.left + port.width + 10, top: port.top, width: SIDE_W, height: port.height };
     const table = { left: port.left + port.width, top: 0, width: Math.max(0, width - port.left - port.width), height };
-    return { port, side, table, layers, tableHost, sideHost, win: { left: 0, top: 0, width, height }, windowHost };
-  }, [desktopTable, scaleH, width, height, layers, tableHost, sideHost, windowHost]);
+    return { port, side, table, layers, tableHost, sideHost, win: { left: 0, top: 0, width, height }, windowHost, modalHost };
+  }, [desktopTable, scaleH, width, height, layers, tableHost, sideHost, windowHost, modalHost]);
   // Desktop sheet (v0.46.0, owner): a press outside the side slot closes the panel on top, as Escape does, and
   // that press does nothing else (it never also hits a heart in the port). A panel with no closer stays open.
   useEffect(() => {
@@ -106,7 +107,7 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
     const swallow = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
     let release: ReturnType<typeof setTimeout> | undefined;
     const onDown = (e: PointerEvent) => {
-      if (e.button !== 0 || !sideHost.querySelector('[data-side-layer]') || sideHost.contains(e.target as Node) || windowHost?.contains(e.target as Node)) return;
+      if (e.button !== 0 || !sideHost.querySelector('[data-side-layer]') || sideHost.contains(e.target as Node) || windowHost?.contains(e.target as Node) || modalHost?.contains(e.target as Node)) return;
       if (layers.dismissTop() !== 'dismissed') return;
       swallow(e);
       document.addEventListener('click', swallow, { capture: true, once: true });
@@ -115,7 +116,7 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
     };
     document.addEventListener('pointerdown', onDown, true);
     return () => { document.removeEventListener('pointerdown', onDown, true); document.removeEventListener('click', swallow, { capture: true }); clearTimeout(release); };
-  }, [desktopTable, sideHost, windowHost, layers]);
+  }, [desktopTable, sideHost, windowHost, modalHost, layers]);
   const portFrame = useMemo(
     () =>
       desktop
@@ -171,6 +172,7 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
       ) : null}
       <View ref={setSideHost as never} pointerEvents="box-none" style={desktop ? { position: 'absolute', left: desktop.side.left, top: desktop.side.top, width: desktop.side.width, height: desktop.side.height, zIndex: 50 } : { display: 'none' }} />
       <View ref={setWindowHost as never} pointerEvents="box-none" style={desktop ? { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 45 } : { display: 'none' }} />
+      <View ref={setModalHost as never} pointerEvents="box-none" style={desktop ? { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 60 } : { display: 'none' }} />
     </View>
   );
 }

@@ -24,7 +24,7 @@ import { type DmIdentity } from '@/lib/dm-identity';
 import { type Party } from '@/lib/party';
 import { getParty, listParties } from '@/lib/party-store';
 import { copyEncounterToSession, duplicateEncounter, type Encounter, moveEncounterToSession, newEncounter, newSession, nextIndex, type Session, sortedEncounters } from '@/lib/session';
-import { deleteEncounter, getSession, listEncounters, listSessions, saveEncounter, saveSession } from '@/lib/session-store';
+import { deleteEncounter, getEncounter, getSession, listEncounters, listSessions, saveEncounter, saveSession } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
 import { IdentityBadge, IdentityDropdown, IdentityLines } from './dm-identity-ui';
 import { EncounterMovePicker, type MoveTarget } from './encounter-move-picker';
@@ -73,7 +73,7 @@ export function SessionScreen() {
   }, [session, party, encounters, router, desk]);
 
   const duplicate = useCallback(async (eid: string = [...sel.ids][0]) => {
-    const e = encounters.find((x) => x.id === eid);
+    const e = await getEncounter(eid);
     if (!e) return;
     await saveEncounter(duplicateEncounter(e, nextIndex(encounters)));
     sel.clear(); showToast('Encounter duplicated', 'success'); reload();
@@ -111,13 +111,14 @@ export function SessionScreen() {
     const targetEncs = await listEncounters(targetId);
     let idx = targetEncs.length;
     for (const eid of sel.ids) {
-      const e = encounters.find((x) => x.id === eid);
+      // As saved, not as listed: the table may have moved a counter in it since the list was read.
+      const e = await getEncounter(eid);
       if (!e) continue;
       idx += 1;
       await saveEncounter(mode === 'move' ? moveEncounterToSession(e, targetId, idx) : copyEncounterToSession(e, targetId, idx));
     }
     sel.clear(); showToast(mode === 'move' ? 'Moved' : 'Copied', 'success'); reload();
-  }, [sel, encounters, reload]);
+  }, [sel, reload]);
   const moveTo = useCallback((targetId: string) => sendTo(targetId, 'move'), [sendTo]);
 
   const moveToNew = useCallback(async () => {
@@ -129,7 +130,7 @@ export function SessionScreen() {
 
   const saveIdentity = useCallback(async (idn: DmIdentity) => {
     if (!editing) return;
-    await saveEncounter({ ...editing, name: idn.name, description: idn.description, color: idn.color, imageUri: idn.imageUri });
+    await saveEncounter({ ...((await getEncounter(editing.id)) ?? editing), name: idn.name, description: idn.description, color: idn.color, imageUri: idn.imageUri });
     setEditing(null); sel.clear(); reload();
   }, [editing, sel, reload]);
 

@@ -122,6 +122,8 @@ export interface DeckLook {
   catSize: number;
   /** The token supply lying ready on the table (tokens and a token die to throw out copies of). */
   tokenTray: boolean;
+  /** The Deck of Many Things, lying with the supply (v0.50.0: a switch of its own). */
+  domat: boolean;
   /** The supply and the control dice go back to their places a moment after they are knocked or thrown away (v0.47.12). */
   autoReturn: boolean;
   /** The supply's die is a chest (v0.47.12, owner): a click and it spits out one of every die, to keep one or more. */
@@ -165,7 +167,7 @@ export const DEFAULT_LOOK: DeckLook = {
   shrink: 0.085, minScale: 0.3, drop: 0, turn: 0, perspective: 1400, stack: 'centre',
   edge: 'fade', edgeWidth: 17, dim: 0.12, blur: 0, grey: 0, shadow: 0.5, glow: 0, exit: 'fade',
   scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, endDots: true, autoReturn: true, diceChest: true, chest: 'cute', hoverLift: 10, hoverZoom: 1.04, sharp: false, clickTake: false, physCarousel: true, centreClick: 'view', switchFx: 'slide',
-  areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'roll', ctlSize: 1, catSize: 1, tokenTray: true,
+  areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'roll', ctlSize: 1, catSize: 1, tokenTray: true, domat: true,
   handMode: 'carousel', ctlX: 0.86, ctlY: 0.08, ctlDir: 'row', supX: 0.15, supY: 0.08, supDir: 'row', catX: 0.07, catY: 0.36, areaY: -1,
   apart: {},
   hidden: [],
@@ -302,7 +304,8 @@ export const LOOK_PAGES: LookPage[] = [
           { kind: 'toggle', key: 'autoReturn', label: 'Pieces go back', help: 'The supply and the control dice find their way back to their places a moment after they are rolled, thrown or knocked away.' },
           { kind: 'toggle', key: 'diceChest', label: 'Dice chest', help: 'The supply keeps its dice in a chest. Click it and it spits out one of every die; click the one you want (or select several and grab them) and the rest fade away.' },
           { kind: 'choice', key: 'chest', label: 'Chests', help: 'How the dice chest and the mimic look.', options: opts(['cute', 'Cute'], ['fang', 'Toothy']) },
-          { kind: 'toggle', key: 'tokenTray', label: 'Token supply', help: 'A token, a colour token, a die and the Deck of Many Things lying ready on the table. Click one to throw out a copy, scroll over it to change it.' },
+          { kind: 'toggle', key: 'tokenTray', label: 'Token supply', help: 'A token, a colour token and a die lying ready on the table. Click one to throw out a copy, scroll over it to change it.' },
+          { kind: 'toggle', key: 'domat', label: 'Deck of Many Things', help: 'The Deck of Many Things lying with the token supply. Turn it off to keep it off this table.' },
         ],
       },
       {

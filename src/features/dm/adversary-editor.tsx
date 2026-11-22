@@ -14,6 +14,7 @@ import { ownImage } from '@/lib/owned-image';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 
 import { ChamferBox } from '@/components/chamfer-box';
+import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { ADVERSARY_ROLES, type AdversaryFeature, type AdversaryRole, type FeatureKind } from '@/data/adversaries';
@@ -105,16 +106,18 @@ const COUNTER_KINDS: { key: CounterKind; label: string }[] = [
   { key: 'countdown', label: 'Countdown' },
 ];
 
-function CounterEditor({ c, onChange, onRemove }: { c: AdversaryCounter; onChange: (c: AdversaryCounter) => void; onRemove: () => void }) {
+export function CounterEditor({ c, onChange, onRemove, standalone }: { c: AdversaryCounter; onChange: (c: AdversaryCounter) => void; onRemove?: () => void; /** Nobody's: it has no entry to take over. */ standalone?: boolean }) {
   return (
     <ChamferBox chamfer={8} fill="rgba(16,20,26,0.8)" stroke={DmRune.line} strokeWidth={1.1} style={{ padding: 10, gap: 8 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <ChamferBox chamfer={5} fill={INPUT_FILL} stroke={DmRune.line} strokeWidth={1.1} style={{ flex: 1, minHeight: 42, justifyContent: 'center', paddingHorizontal: 9 }}>
           <TextInput value={c.name} onChangeText={(name) => onChange({ ...c, name })} placeholder="Counter name" placeholderTextColor={DmRune.muted} maxLength={50} style={{ color: DmRune.ivory, fontSize: DmType.body, fontFamily: Body.bold, paddingVertical: 6, lineHeight: 18, textAlignVertical: 'center' }} />
         </ChamferBox>
-        <DmPress onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove counter">
-          <Svg width={14} height={14} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
-        </DmPress>
+        {onRemove ? (
+          <DmPress onPress={onRemove} hitSlop={8} accessibilityRole="button" accessibilityLabel="Remove counter">
+            <Svg width={14} height={14} viewBox="0 0 16 16"><Line x1={3} y1={3} x2={13} y2={13} stroke={DmRune.red} strokeWidth={2} /><Line x1={13} y1={3} x2={3} y2={13} stroke={DmRune.red} strokeWidth={2} /></Svg>
+          </DmPress>
+        ) : null}
       </View>
       <View style={{ flexDirection: 'row', gap: 6 }}>
         {COUNTER_KINDS.map((k) => <Chip key={k.key} label={k.label} on={c.kind === k.key} onPress={() => onChange({ ...c, kind: k.key, loop: k.key === 'countdown' ? c.loop : undefined })} />)}
@@ -131,7 +134,7 @@ function CounterEditor({ c, onChange, onRemove }: { c: AdversaryCounter; onChang
           </View>
         ) : <View style={{ flex: 1 }} />}
       </View>
-      <InfoToggle label="Take Over" on={!!c.takeOver} onPress={() => onChange({ ...c, takeOver: !c.takeOver })} info={TAKE_OVER_INFO} />
+      {standalone ? null : <InfoToggle label="Take Over" on={!!c.takeOver} onPress={() => onChange({ ...c, takeOver: !c.takeOver })} info={TAKE_OVER_INFO} />}
     </ChamferBox>
   );
 }
@@ -178,8 +181,12 @@ export function AdversaryEditor({ initial, onSave, onCancel }: { initial: Combat
   const addFeature = () => set({ features: [...features, { name: '', kind: 'Passive', text: '' }] });
   const removeFeature = (i: number) => set({ features: features.filter((_, j) => j !== i) });
 
+  // Escape, the dim and a click on the table all land here, and none of them may throw a stat block away unasked.
+  const [discard, setDiscard] = useState(false);
+  const close = () => (JSON.stringify(c) === JSON.stringify(initial) ? onCancel() : setDiscard(true));
   return (
-    <DmModal onClose={onCancel}>
+    <DmModal onClose={close}>
+      {discard ? <PopupDialog dm destructive title="Discard your changes?" body="What you changed here is not saved yet." confirmLabel="Discard" cancelLabel="Keep editing" onConfirm={onCancel} onCancel={() => setDiscard(false)} /> : null}
       <ChamferBox chamfer={14} fill="rgba(12,15,20,0.99)" stroke={DmRune.lineStrong} strokeWidth={1.5} style={{ width: 340, maxHeight: 660, padding: 18 }}>
         <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 12 }}>Configure</Text>
         {/**

@@ -39,6 +39,7 @@ export interface ControlsEnv {
   toggleMute: () => void;
   dice: () => void;
   guide: () => void;
+  counters: { open: (start?: { cid?: string }) => void; add: () => void; showAll: (cid: string) => void; out: number };
 }
 
 const onOff = (on: boolean) => (on ? 'On' : 'Off');
@@ -129,8 +130,10 @@ export function controlDice(e: ControlsEnv): TableAction[] {
       },
     },
     {
-      key: 'dm-tools', label: 'Tools', glyph: 'settings', verb: 'Open the tools', sides: ['fear', 'roll', 'mute', 'cards'],
+      key: 'dm-tools', label: 'Tools', glyph: 'settings', verb: 'Open the tools', sides: ['counter', 'fear', 'roll', 'cards'],
       menu: () => [
+        { key: 'counters', label: 'Counters', glyph: 'counter', sub: String(e.counters.out), onPress: () => e.counters.open() },
+        { key: 'newCounter', label: 'New counter', glyph: 'add', onPress: () => e.counters.add() },
         { key: 'fear', label: 'Fear tracker', glyph: 'fear', sub: onOff(table.fear.on), onPress: e.toggleFear },
         { key: 'dice', label: 'Dice tray', glyph: 'roll', onPress: e.dice },
         { key: 'archive', label: 'Card archive', glyph: 'cards', onPress: e.go.archive },
@@ -202,6 +205,8 @@ export function cardRows(e: ControlsEnv, id: string): TableRow[] {
     ...(c.maxHp ? [{ label: 'Set Hit Points', gap: true, onPress: () => e.inEncounter((a) => a.setStat(c.id, 'hp')) }] : []),
     ...(c.maxStress ? [{ label: 'Set Stress', onPress: () => e.inEncounter((a) => a.setStat(c.id, 'stress')) }] : []),
     { label: 'Edit stat block', onPress: () => e.inEncounter((a) => a.edit(c.id)) },
+    { label: 'Counters', onPress: () => e.counters.open({ cid: c.id }) },
+    ...(c.counters?.length ? [{ label: 'Put its counters on the table', onPress: () => e.counters.showAll(c.id) }] : []),
     ...(c.portraitUri ? [{ label: 'See the picture', onPress: () => e.inEncounter((a) => a.image(c.id)) }] : []),
     c.fallen
       ? { label: 'Recover', onPress: () => e.inEncounter((a) => a.recover(c.id)) }

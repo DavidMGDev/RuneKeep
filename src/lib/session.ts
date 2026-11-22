@@ -272,6 +272,15 @@ export function mutateCombatant(list: Combatant[], id: string, fn: (c: Combatant
   return list.map((c) => (c.id === id ? fn(c) : c));
 }
 
+/** One combatant of an encounter changed, whichever side it is on. */
+export function changeCombatant(enc: Encounter, id: string, fn: (c: Combatant) => Combatant): Encounter {
+  if (enc.adversaries.some((c) => c.id === id)) return { ...enc, adversaries: mutateCombatant(enc.adversaries, id, fn) };
+  return { ...enc, allies: enc.allies.map((a) => (a.kind === 'npc' && a.combatant.id === id ? { kind: 'npc', combatant: fn(a.combatant) } : a)) };
+}
+
+/** Everyone in an encounter who has a stat block: the adversaries, then the NPC allies. */
+export const fighters = (enc: Encounter): Combatant[] => [...enc.adversaries, ...enc.allies.flatMap((a) => (a.kind === 'npc' ? [a.combatant] : []))];
+
 /** Apply the fallen state implied by an HP value (PRD #9): 0 → Fallen (recover to half); >0 → up. */
 function withHp(c: Combatant, hp: number): Combatant {
   if (hp <= 0) return { ...c, hp: 0, fallen: true, recoverHp: c.fallen ? c.recoverHp : Math.max(1, Math.ceil((c.maxHp ?? 2) / 2)) };

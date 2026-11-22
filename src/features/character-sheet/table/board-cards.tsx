@@ -10,6 +10,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
 import { CardFace, type TableCard } from './desk-carousel';
 import type { BoardCard } from './table-store';
+import { NOTE_W } from '@/lib/table-notes';
 import { T } from './table-ui';
 import { cue } from './table-sound';
 
@@ -19,7 +20,7 @@ export const DEFAULT_W = 170;
 /** The biggest a card may grow: most of the felt's height, and never past 460 px wide. */
 export const maxW = (feltH: number) => Math.max(MIN_W, Math.min(460, (feltH * 0.94 * FORGED_W) / FORGED_H));
 
-export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, onTap, overTray, onMenu, onLift, onCarry, onSettle, onDragTo, hidden, live }: {
+export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, onTap, overTray, onMenu, onLift, onCarry, onSettle, onDragTo, hidden, live, onUnpin }: {
   cards: BoardCard[];
   lookup: (id: string) => TableCard | undefined;
   feltW: number;
@@ -44,6 +45,8 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, on
   hidden?: Set<string>;
   /** Pressed and let go without moving, when it has no pages to turn and was not caught in flight (a note opens). */
   onTap?: (uid: string) => void;
+  /** A pinned note's pin was clicked. */
+  onUnpin?: (uid: string) => void;
   /** Where physical cards really are while physics moves them (px, degrees): drawn from here until they stop. */
   live?: Map<string, { x: number; y: number; rot: number }>;
 }) {
@@ -78,6 +81,7 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, on
             // A note has no hand to go back to.
             overTray={card.h ? NEVER : overTray}
             onTap={() => onTap?.(c.uid)}
+            onUnpin={card.h && !c.phys ? () => onUnpin?.(c.uid) : undefined}
             onMenu={(x, y) => onMenu(c.uid, x, y)}
           />
         );
@@ -88,10 +92,10 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, on
 
 const NEVER = () => false;
 
-const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live, onGrab, onLift, onCarry, onSettle, onDragTo, onMove, onDrop, onResize, onRotate, onTurn, onTap, overTray, onMenu }: {
+const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live, onGrab, onLift, onCarry, onSettle, onDragTo, onMove, onDrop, onResize, onRotate, onTurn, onTap, onUnpin, overTray, onMenu }: {
   entry: BoardCard; card: TableCard; feltW: number; feltH: number; returning: boolean; live?: Map<string, { x: number; y: number; rot: number }>;
   onGrab: () => void; onLift: () => void; onCarry: (dx: number, dy: number) => void; onSettle: () => void; onDragTo: (x: number, y: number, rot: number, end?: boolean) => void; onMove: (fx: number, fy: number, overTray: boolean) => void; onDrop: (overTray: boolean) => void;
-  onResize: (w: number) => void; onRotate: (deg: number) => void; onTurn: () => void; onTap: () => void; overTray: (x: number, y: number) => boolean; onMenu: (x: number, y: number) => void;
+  onResize: (w: number) => void; onRotate: (deg: number) => void; onTurn: () => void; onTap: () => void; onUnpin?: () => void; overTray: (x: number, y: number) => boolean; onMenu: (x: number, y: number) => void;
 }) {
   const [hover, setHover] = useState(false);
   const [drag, setDrag] = useState<'move' | 'size' | 'turn' | null>(null);
@@ -194,7 +198,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       setDrag(null);
-      if (mode === 'size' && !moved) { cue('card:place', 'cardDragEnd', { volume: 0.5 }); onResize(DEFAULT_W); return; }
+      if (mode === 'size' && !moved) { cue('card:place', 'cardDragEnd', { volume: 0.5 }); onResize(card.h ? NOTE_W : DEFAULT_W); return; }
       if (mode === 'move') {
         if (moved) onSettle();
         onDragTo(last.fx * feltW, last.fy * feltH, rot, true);
@@ -239,6 +243,14 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
         <div style={{ position: 'absolute', bottom: -16, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 5, pointerEvents: 'none' }}>
           {Array.from({ length: pages }, (_, i) => <span key={i} style={{ width: 6, height: 6, transform: 'rotate(45deg)', background: i === (entry.face ?? 0) ? T.red : 'rgba(147,142,136,0.6)' }} />)}
         </div>
+      ) : null}
+      {/* The pin: small at any size of note, with room round it to be clicked. */}
+      {onUnpin ? (
+        <button type="button" data-pin="" aria-label="Unpin the note" title="Unpin"
+          onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onUnpin(); }}
+          style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', position: 'absolute', left: '50%', top: -6, marginLeft: -10, width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>
+          <span style={{ width: 8, height: 8, boxSizing: 'border-box', transform: 'rotate(45deg)', background: T.red, border: `1px solid ${T.ink}` }} />
+        </button>
       ) : null}
       {/* The rotate grip: click for a quarter turn, drag to turn freely. */}
       <div
