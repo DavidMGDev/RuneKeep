@@ -149,12 +149,14 @@ function DetailSheet({ item, mode, onSpawn, onViewImage, onClose }: { item: Item
   );
 }
 
-export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDeleteSaved, onClose }: {
+export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDeleteSaved, onClose, embedded }: {
   mode?: Mode;
   savedList: SavedAdversary[];
   onSpawn?: (c: Combatant, count: number) => void;
   onDeleteSaved?: (ids: Set<string>) => void;
   onClose: () => void;
+  /** A tab of the DM screen (v0.50.2): the tab is its title and its way out, so the search takes their place. */
+  embedded?: boolean;
 }) {
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [search, setSearch] = useState('');
@@ -211,14 +213,21 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
 
   const title = mode === 'adversary' ? 'Spawn Adversary' : mode === 'ally' ? 'Spawn Ally' : 'Adversary Library';
 
+  const searchBox = (
+    <ChamferBox chamfer={6} fill="rgba(20,24,30,0.9)" stroke={DmRune.line} strokeWidth={1.1} style={[{ height: 42, justifyContent: 'center', paddingHorizontal: 12 }, embedded ? { flex: 1 } : { marginBottom: 10 }]}>
+      <TextInput value={search} onChangeText={setSearch} placeholder="Search adversaries…" placeholderTextColor={DmRune.muted} style={{ color: DmRune.text, fontSize: DmType.body, fontFamily: Body.semibold }} />
+    </ChamferBox>
+  );
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 350, backgroundColor: DmRune.ink }}>
-      <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 54, paddingBottom: 12 }}>
+      <View style={{ flex: 1, paddingHorizontal: embedded ? 12 : 16, paddingTop: embedded ? 12 : 54, paddingBottom: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          {embedded ? searchBox : <>
           <DmPress onPress={onClose} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close">
             <Svg width={22} height={22} viewBox="0 0 22 22"><Polyline points="13,4 6,11 13,18" fill="none" stroke={DmRune.accent} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" /></Svg>
           </DmPress>
           <Text style={{ flex: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 1.5, textTransform: 'uppercase' }}>{title}</Text>
+          </>}
           <DmPress onPress={() => setInfo(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Adversary reference">
             <Svg width={22} height={22} viewBox="0 0 22 22"><Polyline points="11,2 18,6.5 18,15.5 11,20 4,15.5 4,6.5 11,2" fill="none" stroke={DmRune.accentDim} strokeWidth={1.4} strokeLinejoin="round" /><Line x1={11} y1={6} x2={11} y2={6.4} stroke={DmRune.accent} strokeWidth={2.6} strokeLinecap="round" /><Line x1={11} y1={9.5} x2={11} y2={15.5} stroke={DmRune.accent} strokeWidth={2.2} strokeLinecap="round" /></Svg>
           </DmPress>
@@ -228,9 +237,7 @@ export function AdversaryLibrary({ mode = 'browse', savedList, onSpawn, onDelete
           </DmPress>
         </View>
 
-        <ChamferBox chamfer={6} fill="rgba(20,24,30,0.9)" stroke={DmRune.line} strokeWidth={1.1} style={{ height: 42, justifyContent: 'center', paddingHorizontal: 12, marginBottom: 10 }}>
-          <TextInput value={search} onChangeText={setSearch} placeholder="Search adversaries…" placeholderTextColor={DmRune.muted} style={{ color: DmRune.text, fontSize: DmType.body, fontFamily: Body.semibold }} />
-        </ChamferBox>
+        {embedded ? null : searchBox}
 
         {/* v0.35 (owner): labelled bands, like the card archive, so a chip says what it filters ON.
             Capped and scrollable: four wrapping bands can be taller than the roster below them. */}

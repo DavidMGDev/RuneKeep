@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 
 import { StageScaleReset } from '@/components/design-stage';
 import { useDesktop } from '@/hooks/use-desktop';
-import { FrameContext } from '@/hooks/use-layout';
+import { DESIGN_W, FrameContext } from '@/hooks/use-layout';
 import { Rune } from '@/constants/theme';
 
 type Box = { width: number; height: number; scale: number; offsetX: number; offsetY: number };
@@ -38,22 +38,27 @@ export const PAGE_SIDE_BODY = { position: 'absolute', top: 0, bottom: 0, left: 0
  * GEOMETRY are the exception and are reset at the boundary: the hosts are drawn at the window's own pixels,
  * not inside the scaled phone port, so gestures and sizes inside them must not divide by the port's scale.
  */
-export function DesktopPortal({ to: asked, children, priority = 'panel', onDismiss }: { /** `window`: the whole window, over the port and the table (v0.46.0, level up). `modal`: over the side slot as well (v0.50.0). */ to: 'table' | 'side' | 'window' | 'modal'; children: ReactNode; /** Bands, low to high: panel, dialog, share, progress; open order breaks ties within one. */ priority?: LayerPriority; /** What Escape and Back do to this layer. Absent: they are BLOCKED while it is on top (an editor guarding unsaved work). */ onDismiss?: () => void }) {
+export function DesktopPortal({ to: asked, children, priority = 'panel', onDismiss }: { /** `window`: the whole window, over the port and the table (v0.46.0, level up). `modal`: over the side slot as well (v0.50.0). `beside`: the DM screen's party side. `bar`: its frame and title (v0.50.2). */ to: 'table' | 'side' | 'window' | 'modal' | 'beside' | 'bar'; children: ReactNode; /** Bands, low to high: panel, dialog, share, progress; open order breaks ties within one. */ priority?: LayerPriority; /** What Escape and Back do to this layer. Absent: they are BLOCKED while it is on top (an editor guarding unsaved work). */ onDismiss?: () => void }) {
   const desktop = useDesktop();
   const pageSide = useContext(PageSideContext);
   const inModal = useContext(InModal);
   const to = inModal && asked === 'side' ? 'modal' : asked;
   const frame = useMemo(() => {
     if (!desktop) return null;
-    const box = to === 'side' ? desktop.side : to === 'window' || to === 'modal' ? desktop.win : desktop.table;
+    if (to === 'beside') {
+      const b = desktop.beside;
+      return b && { width: DESIGN_W, height: b.height / b.scale, scale: b.scale, offsetX: b.left, offsetY: b.top };
+    }
+    const box = to === 'side' ? desktop.side : to === 'window' || to === 'modal' ? desktop.win : to === 'bar' ? desktop.screen : desktop.table;
     return { width: box.width, height: box.height, scale: 1, offsetX: box.left, offsetY: box.top };
   }, [desktop, to]);
-  const host = desktop ? (to === 'table' ? desktop.tableHost : to === 'window' ? desktop.windowHost : to === 'modal' ? desktop.modalHost : desktop.sideHost) : null;
+  const host = desktop ? { table: desktop.tableHost, side: desktop.sideHost, window: desktop.windowHost, modal: desktop.modalHost, beside: desktop.besideHost, bar: desktop.barHost }[to] : null;
   // A full-window page has no hosts and needs none: a dialog that takes the whole screen is drawn over the page.
   if (!desktop && to === 'modal' && typeof document !== 'undefined') return createPortal(<InModal.Provider value><PageModal>{children}</PageModal></InModal.Provider>, document.body);
   if (!desktop && to === 'side' && pageSide?.host) {
     return createPortal(<SideLayer page layers={pageSide.layers} frame={pageSide.frame} priority={priority} onDismiss={onDismiss}>{children}</SideLayer>, pageSide.host);
   }
+  if (to === 'beside' && !frame) return null;
   if (!desktop || !frame) return <>{children}</>;
   if (to === 'modal' && host) return createPortal(<InModal.Provider value><SideLayer layers={desktop.layers} frame={frame} priority={priority} onDismiss={onDismiss}>{children}</SideLayer></InModal.Provider>, host);
   if ((to === 'side' || to === 'window') && host) return createPortal(<SideLayer layers={desktop.layers} frame={frame} priority={priority} onDismiss={onDismiss}>{children}</SideLayer>, host);

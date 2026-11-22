@@ -52,6 +52,9 @@ export function MemberPanel({
   dimmed,
   foe,
   flash,
+  compact,
+  note,
+  onPresence,
 }: {
   file: CharacterFile;
   vitals: MemberVitals;
@@ -88,6 +91,15 @@ export function MemberPanel({
   /** Bumping this number flashes the panel once, so tapping a portrait in the roster tile lands
    *  somewhere visible rather than silently scrolling. */
   flash?: number;
+  /**
+   * v0.50.2, the DM screen: as tall as an adversary's row, so the two sides read across. Someone absent is a name
+   * until opened, under their own heading.
+   */
+  compact?: boolean;
+  /** Said in place of the subclass, when there is something more pressing to say. */
+  note?: string;
+  /** Mark them here or absent, from the opened row. */
+  onPresence?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const s = memberSummary(file);
@@ -124,7 +136,7 @@ export function MemberPanel({
 
   return (
     <Animated.View style={fadeStyle}>
-    <ChamferBox chamfer={11} fill={selected ? 'rgba(218,162,73,0.16)' : 'rgba(14,17,22,0.92)'} stroke={selected ? DmRune.accent : foe ? DmRune.red : DmRune.line} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: 12, gap: 12, opacity: absent ? 0.5 : 1 }}>
+    <ChamferBox chamfer={11} fill={selected ? 'rgba(218,162,73,0.16)' : 'rgba(14,17,22,0.92)'} stroke={selected ? DmRune.accent : foe ? DmRune.red : DmRune.line} strokeWidth={selected ? 2 : 1.3} style={{ paddingHorizontal: 12, paddingVertical: compact ? 11 : 12, gap: compact ? 10 : 12, opacity: absent && !(compact && open) ? (compact ? 0.75 : 0.5) : 1 }}>
       <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: DmRune.accent }, litStyle]} />
       {/* Any tap on the entry selects it while the list is selecting. */}
       {selecting ? (
@@ -148,18 +160,18 @@ export function MemberPanel({
         ) : (
           /* v0.36.1: chamfered, so the frame and the picture are one shape (see components/portrait). */
           <View style={downed ? { filter: [{ grayscale: 1 }] } : undefined}>
-            <Portrait uri={s.portraitUri} size={46} tint={downed ? DmRune.muted : DmRune.accentDim} fill={DmRune.ink} />
+            <Portrait uri={s.portraitUri} size={compact ? 38 : 46} tint={downed ? DmRune.muted : DmRune.accentDim} fill={DmRune.ink} />
             {/* Greyed AND darkened: desaturation alone is easy to miss on a portrait that is already
                 dim, and a scrim alone reads as a loading state. */}
-            {downed ? <DownedVeil size={46} /> : null}
+            {downed ? <DownedVeil size={compact ? 38 : 46} /> : null}
           </View>
         )}
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
             <FitLine style={{ flexShrink: 1, color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.5, textTransform: 'uppercase' }}>{s.name}</FitLine>
-            {absent ? <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: DmRune.accentDim }}><Text style={{ color: DmRune.accentDim, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Absent</Text></View> : null}
+            {absent && !compact ? <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: DmRune.accentDim }}><Text style={{ color: DmRune.accentDim, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.8, textTransform: 'uppercase' }}>Absent</Text></View> : null}
           </View>
-          <Text numberOfLines={1} style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase', marginTop: 2 }}>{s.subclass || `Lvl ${s.level}`}</Text>
+          <Text numberOfLines={1} style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase', marginTop: 2 }}>{note || s.subclass || `Lvl ${s.level}`}</Text>
         </View>
         <ReadStat label="Eva" value={String(s.evasion)} />
         <ReadStat label="Thr" value={`${s.thresholds.major}/${s.thresholds.severe}`} color={DmRune.accent} />
@@ -170,12 +182,14 @@ export function MemberPanel({
 
       {/* vitals row: the four editable tracks, tightly grouped, sheet-coloured. Inert while selecting
           (v0.36.3): a tap on the entry is a selection then, not a stat change. */}
+      {compact && absent && !open ? null : (
       <View pointerEvents={selecting ? 'none' : 'auto'} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', columnGap: 14, rowGap: 8 }}>
         {pulse('hp', 'hp', m.maxHp)}
         {pulse('armor', 'armor', m.armorMax)}
         {pulse('stress', 'stress', m.stressMax)}
         {pulse('hope', 'hope', m.hopeMax)}
       </View>
+      )}
 
       {open ? (
         <View style={{ gap: 9, borderTopWidth: 1, borderTopColor: DmRune.line, paddingTop: 10, paddingHorizontal: 6 }}>
@@ -193,10 +207,11 @@ export function MemberPanel({
             <ReadStat label="Domain Cards" value={String(domainCardCount(file))} color={DmRune.accent} />
           </View>
           {/* v0.35 (owner): the DM's two tools for this character, where expanding them already is. */}
-          {onModifiers || onCards ? (
+          {onModifiers || onCards || onPresence ? (
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 2 }}>
               {onModifiers ? <RuneButton label="Modifiers" kind="secondary" height={34} dense dm style={{ flex: 1 }} onPress={() => onModifiers(true)} /> : null}
               {onCards ? <RuneButton label="Cards" kind="secondary" height={34} dense dm style={{ flex: 1 }} onPress={onCards} /> : null}
+              {onPresence ? <RuneButton label={absent ? 'Mark present' : 'Mark absent'} accessibilityLabel={absent ? `Mark ${s.name} present` : `Mark ${s.name} absent`} kind="ghost" height={34} dense dm style={{ flex: 1.4 }} onPress={onPresence} /> : null}
             </View>
           ) : null}
         </View>

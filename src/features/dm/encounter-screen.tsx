@@ -26,6 +26,7 @@ import { dmEffectsOf, setDmEffects, setPartyEffects } from '@/lib/dm-cards';
 import { initialVitals, memberMaxes } from '@/lib/dm-vitals';
 import { applyVitalDelta, isPresent, type Party, setVital, togglePresent, type VitalKey } from '@/lib/party';
 import { getParty, saveParty } from '@/lib/party-store';
+import { type CounterMove } from '@/lib/dm-counters';
 import {
   bonusMaxes,
   grantMaxBonus,
@@ -75,7 +76,7 @@ import { useDmCharacterTools } from './dm-character-tools';
 import { ArchiveIcon, PartySheetIcon } from './dm-icons';
 import { DmDiceButton, DmDicePanel } from './dm-dice-panel';
 import { useSelection } from './use-selection';
-import { DmSide, useDeskApi, useDmDesk } from './desk/dm-desk';
+import { DmSide, useDeskApi, useDeskFollow, useDmDesk } from './desk/dm-desk';
 
 const KEY_LABEL: Record<VitalKey, string> = { hp: 'HP', stress: 'Stress', hope: 'Hope', armor: 'Armor' };
 type KeypadTarget = { kind: 'member'; charId: string; key: VitalKey } | { kind: 'char'; charId: string; key: VitalKey } | { kind: 'combatant'; id: string; stat: CombatantStat };
@@ -126,7 +127,7 @@ const DIM = 0.4;
 /** The same reflow the combatant panels use, so the headers move with them rather than after. */
 const ROW_SPRING = LinearTransition.duration(180).easing(Easing.out(Easing.cubic));
 
-export function EncounterScreen({ encounterId }: { /** The DM screen's port says which; on its own route, the address does. */ encounterId?: string }) {
+export function EncounterScreen({ encounterId, partyBeside }: { /** The DM screen's port says which; on its own route, the address does. */ encounterId?: string; /** The party's side lists the members, so this one lists what the encounter adds to them. */ partyBeside?: boolean }) {
   const router = useRouter();
   const desk = useDmDesk();
   const params = useLocalSearchParams<{ id: string }>();
@@ -228,13 +229,23 @@ export function EncounterScreen({ encounterId }: { /** The DM screen's port says
   const commitEncounter = useCallback((next: Encounter) => {
     setEncounter(next); encRef.current = next;
     if (encTimer.current) clearTimeout(encTimer.current);
+    // On the desk the party's side draws a self-contained fight's numbers from what is saved.
+    if (desk) { encTimer.current = null; void saveEncounter(next); return; }
     encTimer.current = setTimeout(() => { encTimer.current = null; void saveEncounter(next); }, 200);
-  }, []);
+  }, [desk]);
   const commitParty = useCallback((next: Party) => {
     setParty(next); partyRef.current = next;
     if (partyTimer.current) clearTimeout(partyTimer.current);
+    if (desk) { partyTimer.current = null; void saveParty(next); return; }
     partyTimer.current = setTimeout(() => { partyTimer.current = null; void saveParty(next); }, 200);
-  }, []);
+  }, [desk]);
+  useDeskFollow(
+    () => Promise.all([partyRef.current ? getParty(partyRef.current.id) : null, listCharacters()]),
+    ([p, all]) => {
+      if (p) { setParty(p); partyRef.current = p; }
+      setFiles(Object.fromEntries(all.map((f) => [f.id, f])));
+    },
+  );
   const commitLibrary = useCallback((next: SavedAdversary[]) => { setLibrary(next); void saveAdversaries(next); }, []);
 
   // --- combatant lookup across adversaries + NPC allies ---
@@ -328,7 +339,7 @@ export function EncounterScreen({ encounterId }: { /** The DM screen's port says
    * the screen exactly as hit points do. It is deliberately NOT auto-logged: a countdown ticking once
    * a round would bury the log in a fight, and the number is on screen the whole time anyway.
    */
-  const onCombatantCounter = useCallback((cid: string, counterId: string, delta: number) => {
+  const onCombatantCounter = useCallback((cid: string, counterId: string, delta: CounterMove) => {
     const next = updateCombatant(cid, (c) => counterDelta(c, counterId, delta));
     if (next) commitEncounter(next);
   }, [updateCombatant, commitEncounter]);
@@ -510,15 +521,18 @@ export function EncounterScreen({ encounterId }: { /** The DM screen's port says
     setSession(r.session); void saveSession(r.session);
     // Rolling back to the snapshot puts each member back under the modifiers they fought it under.
     if (r.restoreEffects) {
+      // Both loops write the same files, so the second starts from what the first made.
+      const restored = { ...files };
       for (const [id, effects] of Object.entries(r.restoreEffects.members)) {
         const f = files[id];
         if (!f) continue;
         const next = setDmEffects(f, effects);
+        restored[id] = next;
         setFiles((cur) => ({ ...cur, [id]: next }));
         void saveCharacter(next);
       }
       for (const id of r.party.memberIds) {
-        const f = files[id];
+        const f = restored[id];
         if (!f) continue;
         const next = setPartyEffects(f, r.party.id, r.party.name, r.restoreEffects.party);
         setFiles((cur) => ({ ...cur, [id]: next }));
@@ -526,7 +540,7 @@ export function EncounterScreen({ encounterId }: { /** The DM screen's port says
       }
     }
     commitParty(r.party); commitEncounter(r.encounter);
-  }, [session, commitParty, commitEncounter]);
+  }, [session, commitParty, commitEncounter, files]);
 
   /** To the party sheet: in the port on the DM screen, a screen of its own anywhere else. */
   const openParty = () => {
@@ -571,6 +585,7 @@ export function EncounterScreen({ encounterId }: { /** The DM screen's port says
     modifiers: (charId) => tools.openModifiers(charId, true),
     cards: tools.openCards,
     setStat: (cid, stat) => setKeypad({ kind: 'combatant', id: cid, stat }),
+    moveVital: onMemberApply,
     setVital: (charId, key, member) => {
       if (!member) setKeypad({ kind: 'char', charId, key });
       else if (canEditMembers(encounter)) setKeypad({ kind: 'member', charId, key });
@@ -641,10 +656,77 @@ export function EncounterScreen({ encounterId }: { /** The DM screen's port says
    */
   const notStarted = enc.status === 'prepared';
 
+  const alliesList = (
+    <>
+      <Animated.View layout={ROW_SPRING} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: partyBeside ? DmGap.section : 0 }}>
+        <View style={{ opacity: notStarted ? DIM : 1 }}><SectionLabel dm>Allies</SectionLabel></View>
+        <View style={{ flexDirection: 'row', gap: 14 }}>
+          {(desk ? reordering === 'allies' : enc.allies.length > 1) ? <RuneButton label={reordering === 'allies' ? 'Done' : 'Reorder'} kind="ghost" height={28} dense dm onPress={() => { playSfx('buttonTap'); allySel.clear(); setReordering((r) => (r === 'allies' ? null : 'allies')); }} /> : null}
+          {!desk && reordering !== 'allies' ? <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('ally')} /> : null}
+          {!desk && reordering !== 'allies' ? <RuneButton label="+ NPC" kind="secondary" height={28} dense dm onPress={() => setAddingNpc(true)} /> : null}
+        </View>
+      </Animated.View>
+      {!partyBeside && memberAllies.length === 0 && npcAllies.length === 0 ? (
+        <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic', opacity: notStarted ? DIM : 1 }}>
+          No allies yet. Present party members appear here automatically; add an NPC to fight alongside them.
+        </Text>
+      ) : null}
+      {reordering === 'allies' ? (
+        <ReorderList
+          rows={orderedAllies.map((x) => ({ id: x.id, name: x.a.kind === 'member' ? files[x.a.charId]?.name ?? 'Ally' : x.a.combatant.name }))}
+          onMove={(id, delta) => setOrder('allies', nudge(orderedAllies.map((x) => x.id), id, delta))}
+        />
+      ) : null}
+      {reordering === 'allies' || partyBeside ? null : memberAllies.map((a) => (
+        <MemberPanel
+          key={a.charId}
+          file={files[a.charId]}
+          vitals={(partyRef.current && memberVitals(enc, partyRef.current, a.charId)) || { hp: 0, stress: 0, hope: 0, armor: 0 }}
+          maxes={partyRef.current && files[a.charId] ? bonusMaxes(memberMaxes(files[a.charId]), memberBonus(enc, partyRef.current, a.charId)) : undefined}
+          dimmed={notStarted}
+          editable={editableMembers && !!partyRef.current}
+          absent={!!partyRef.current && !isPresent(partyRef.current, a.charId)}
+          selected={allySel.ids.has(a.charId)}
+          onApply={(key, delta) => onMemberApply(a.charId, key, delta)}
+          onRequestSet={(key) => (editableMembers ? setKeypad({ kind: 'member', charId: a.charId, key }) : blockedVitals())}
+          onBlocked={blockedVitals}
+          onLongPress={() => startAlly(a.charId)}
+          onModifiers={(edit) => tools.openModifiers(a.charId, edit)}
+          onCards={() => tools.openCards(a.charId)}
+        />
+      ))}
+      {reordering === 'allies' ? null : npcAllies.map((a) =>
+        // v0.36: a characterized ally is a CHARACTER, drawn the way a party member is, with the
+        // DM's modifier and card tools on it. Its vitals live on the encounter, not the party.
+        a.combatant.charId && files[a.combatant.charId] ? (
+          <CharacterCombatant
+            key={a.combatant.id}
+            file={files[a.combatant.charId]}
+            vitals={charVitalsOf(a.combatant.charId) ?? initialVitals(files[a.combatant.charId])}
+            dimmed={notStarted}
+            selected={allySel.ids.has(a.combatant.id)}
+            onApply={(k, d) => onCharApply(a.combatant.charId!, k, d)}
+            onRequestSet={(k) => setKeypad({ kind: 'char', charId: a.combatant.charId!, key: k })}
+            onLongPress={() => startAlly(a.combatant.id)}
+            onModifiers={(edit) => tools.openModifiers(a.combatant.charId!, edit)}
+            onCards={() => tools.openCards(a.combatant.charId!)}
+          />
+        ) : (
+        <CombatantPanel key={a.combatant.id} combatant={a.combatant} friendly dimmed={notStarted} selecting={allySel.selecting} selected={allySel.ids.has(a.combatant.id)}
+          onApply={(s, delta) => onCombatantApply(a.combatant.id, s, delta)} onRequestSet={(s) => setKeypad({ kind: 'combatant', id: a.combatant.id, stat: s })}
+          onCounter={(counterId, d) => onCombatantCounter(a.combatant.id, counterId, d)}
+          onEdit={() => setEditing(a.combatant)} onFell={() => fellCombatant(a.combatant.id)} onRecover={() => recoverCombatant(a.combatant.id)} onDelete={() => deleteCombatants(new Set([a.combatant.id]))}
+          onLongPress={() => startAlly(a.combatant.id)} onToggleSelect={() => allySel.toggle(a.combatant.id)} onOpenImage={() => setViewImage(a.combatant)} />
+        ),
+      )}
+    </>
+  );
+
   return (
     <StatRadialProvider>
     <AppScreen
       title={enc.name}
+      bare={!!desk}
       dm
       onBack={() => (desk ? desk.open('session') : router.back())}
       headerRight={desk ? undefined :
@@ -656,14 +738,13 @@ export function EncounterScreen({ encounterId }: { /** The DM screen's port says
         {/* v0.23.0: status on its own line, then ONE row of controls all at the same 28dp height
             and on the same baseline. The lifecycle button was 40dp next to a 28dp Log and a 30dp
             archive tile, so three controls that belong together sat at three different heights. */}
-        <View style={{ gap: 8, marginBottom: 10 }}>
+        {/* On the DM screen the status and Start are in its title, and the rest are dice. */}
+        {desk ? null : <View style={{ gap: 8, marginBottom: 10 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, opacity: notStarted ? DIM : 1 }}>
             <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: statusColor }} />
             <Text style={{ color: statusColor, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>{enc.status === 'completed' ? 'Finished' : enc.status}</Text>
             {!enc.options.globalSync ? <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>· Self-contained</Text> : null}
           </View>
-          {/* On the DM screen all of these are dice. Only Start stays, so a fight that is waiting says what it waits for. */}
-          {desk ? (enc.status === 'prepared' ? <RuneButton label="Start encounter" kind="primary" height={36} dm onPress={onStart} /> : null) :
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <DmPress onPress={() => setShowLog('read')} hitSlop={6} accessibilityRole="button" accessibilityLabel="Open log">
               <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.line} strokeWidth={1.1} style={{ paddingHorizontal: 11, height: CTRL_H, justifyContent: 'center' }}>
@@ -690,75 +771,15 @@ export function EncounterScreen({ encounterId }: { /** The DM screen's port says
                 </ChamferBox>
               </DmPress>
             ) : null}
-          </View>}
-        </View>
+          </View>
+        </View>}
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: allySel.selecting || advSel.selecting ? 150 : 90, gap: 8 }}>
-          <Animated.View layout={ROW_SPRING} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View style={{ opacity: notStarted ? DIM : 1 }}><SectionLabel dm>Allies</SectionLabel></View>
-            <View style={{ flexDirection: 'row', gap: 14 }}>
-              {(desk ? reordering === 'allies' : enc.allies.length > 1) ? <RuneButton label={reordering === 'allies' ? 'Done' : 'Reorder'} kind="ghost" height={28} dense dm onPress={() => { playSfx('buttonTap'); allySel.clear(); setReordering((r) => (r === 'allies' ? null : 'allies')); }} /> : null}
-              {!desk && reordering !== 'allies' ? <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('ally')} /> : null}
-              {!desk && reordering !== 'allies' ? <RuneButton label="+ NPC" kind="secondary" height={28} dense dm onPress={() => setAddingNpc(true)} /> : null}
-            </View>
-          </Animated.View>
-          {memberAllies.length === 0 && npcAllies.length === 0 ? (
-            <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic', opacity: notStarted ? DIM : 1 }}>
-              No allies yet. Present party members appear here automatically; add an NPC to fight alongside them.
-            </Text>
-          ) : null}
-          {reordering === 'allies' ? (
-            <ReorderList
-              rows={orderedAllies.map((x) => ({ id: x.id, name: x.a.kind === 'member' ? files[x.a.charId]?.name ?? 'Ally' : x.a.combatant.name }))}
-              onMove={(id, delta) => setOrder('allies', nudge(orderedAllies.map((x) => x.id), id, delta))}
-            />
-          ) : null}
-          {reordering === 'allies' ? null : memberAllies.map((a) => (
-            <MemberPanel
-              key={a.charId}
-              file={files[a.charId]}
-              vitals={(partyRef.current && memberVitals(enc, partyRef.current, a.charId)) || { hp: 0, stress: 0, hope: 0, armor: 0 }}
-              maxes={partyRef.current && files[a.charId] ? bonusMaxes(memberMaxes(files[a.charId]), memberBonus(enc, partyRef.current, a.charId)) : undefined}
-              dimmed={notStarted}
-              editable={editableMembers && !!partyRef.current}
-              absent={!!partyRef.current && !isPresent(partyRef.current, a.charId)}
-              selected={allySel.ids.has(a.charId)}
-              onApply={(key, delta) => onMemberApply(a.charId, key, delta)}
-              onRequestSet={(key) => (editableMembers ? setKeypad({ kind: 'member', charId: a.charId, key }) : blockedVitals())}
-              onBlocked={blockedVitals}
-              onLongPress={() => startAlly(a.charId)}
-              onModifiers={(edit) => tools.openModifiers(a.charId, edit)}
-              onCards={() => tools.openCards(a.charId)}
-            />
-          ))}
-          {reordering === 'allies' ? null : npcAllies.map((a) =>
-            // v0.36: a characterized ally is a CHARACTER, drawn the way a party member is, with the
-            // DM's modifier and card tools on it. Its vitals live on the encounter, not the party.
-            a.combatant.charId && files[a.combatant.charId] ? (
-              <CharacterCombatant
-                key={a.combatant.id}
-                file={files[a.combatant.charId]}
-                vitals={charVitalsOf(a.combatant.charId) ?? initialVitals(files[a.combatant.charId])}
-                dimmed={notStarted}
-                selected={allySel.ids.has(a.combatant.id)}
-                onApply={(k, d) => onCharApply(a.combatant.charId!, k, d)}
-                onRequestSet={(k) => setKeypad({ kind: 'char', charId: a.combatant.charId!, key: k })}
-                onLongPress={() => startAlly(a.combatant.id)}
-                onModifiers={(edit) => tools.openModifiers(a.combatant.charId!, edit)}
-                onCards={() => tools.openCards(a.combatant.charId!)}
-              />
-            ) : (
-            <CombatantPanel key={a.combatant.id} combatant={a.combatant} friendly dimmed={notStarted} selecting={allySel.selecting} selected={allySel.ids.has(a.combatant.id)}
-              onApply={(s, delta) => onCombatantApply(a.combatant.id, s, delta)} onRequestSet={(s) => setKeypad({ kind: 'combatant', id: a.combatant.id, stat: s })}
-              onCounter={(counterId, d) => onCombatantCounter(a.combatant.id, counterId, d)}
-              onEdit={() => setEditing(a.combatant)} onFell={() => fellCombatant(a.combatant.id)} onRecover={() => recoverCombatant(a.combatant.id)} onDelete={() => deleteCombatants(new Set([a.combatant.id]))}
-              onLongPress={() => startAlly(a.combatant.id)} onToggleSelect={() => allySel.toggle(a.combatant.id)} onOpenImage={() => setViewImage(a.combatant)} />
-            ),
-          )}
+          {partyBeside ? null : alliesList}
 
           {/* v0.36.3 (owner): the section header reflows WITH the list. Everything else animated when a
               combatant expanded and this row teleported, which is what made the expand feel broken. */}
-          <Animated.View layout={ROW_SPRING} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: DmGap.section }}>
+          <Animated.View layout={ROW_SPRING} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: partyBeside ? 0 : DmGap.section }}>
             <View style={{ opacity: notStarted ? DIM : 1 }}><SectionLabel dm>Adversaries</SectionLabel></View>
             <View style={{ flexDirection: 'row', flexShrink: 1, flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 }}>
               {(desk ? reordering === 'adversaries' : enc.adversaries.length > 1) ? <RuneButton label={reordering === 'adversaries' ? 'Done' : 'Reorder'} kind="ghost" height={28} dense dm onPress={() => { playSfx('buttonTap'); advSel.clear(); setReordering((r) => (r === 'adversaries' ? null : 'adversaries')); }} /> : null}
@@ -798,6 +819,8 @@ export function EncounterScreen({ encounterId }: { /** The DM screen's port says
               onLongPress={() => startAdv(c.id)} onToggleSelect={() => advSel.toggle(c.id)} onOpenImage={() => setViewImage(c)} />
             ),
           )}
+          {/* With the party on a side of its own, the allies here are only the encounter's, so they follow. */}
+          {partyBeside && (npcAllies.length > 0 || reordering === 'allies') ? alliesList : null}
         </ScrollView>
       </View>
 
@@ -895,7 +918,7 @@ export function EncounterScreen({ encounterId }: { /** The DM screen's port says
             <View style={{ gap: 10, marginTop: 12 }}>
               {/* v0.35 (owner): the party sheet is where party-wide modifiers live, and getting to it
                   from a fight meant backing out through the session. */}
-              {partyRef.current ? (
+              {!desk && partyRef.current ? (
                 <RuneButton label="Party sheet" kind="secondary" height={44} dm onPress={() => { setShowOptions(false); openParty(); }} />
               ) : null}
               <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 15, textAlign: 'center' }}>{desk ? 'Rename this encounter from the Encounter die, under Edit details. The card archive is under Tools.' : 'Rename this encounter by holding it in the session list. The card archive button is on the encounter, next to the log.'}</Text>

@@ -41,6 +41,8 @@ export interface DmTable {
   counters: AdversaryCounter[];
   /** Where each counter that is out lies, by `counterKey`. */
   spots: Record<string, CounterSpot>;
+  /** v0.50.2: the party sheet has a port of its own, where the window has room. */
+  partyBeside: boolean;
 }
 
 export const DM_DECKS = [
@@ -75,6 +77,7 @@ export function cleanDmTable(raw: unknown): DmTable {
     fear: { on: f.on === true, n: clampFear(num(f.n, 0)), x: Math.min(1, Math.max(0, num(f.x, 0.5))), y: Math.min(1, Math.max(0, num(f.y, FEAR_Y))) },
     counters: cleanCounters(r.counters),
     spots: cleanSpots(r.spots),
+    partyBeside: r.partyBeside !== false,
   };
 }
 

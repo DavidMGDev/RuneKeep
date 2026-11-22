@@ -45,9 +45,19 @@ export interface DesktopPort {
 
 export interface Desktop {
   port: DesktopPort;
+  /** v0.50.2: everything left of the table. The port itself, or the DM screen's one frame round both its sides. */
+  screen: { left: number; top: number; width: number; height: number };
+  /** The DM screen's party side, left of the port. Null where there is none. */
+  beside: DesktopPort | null;
+  besideHost: HTMLElement | null;
+  /** The DM screen's frame and title, over both sides. */
+  barHost: HTMLElement | null;
+  /** The window has room for both sides. */
+  canPair: boolean;
+  setPaired: (on: boolean) => void;
   /** The side slot panels open into, window pixels. Drawn at scale 1, unlike the port. */
   side: { left: number; top: number; width: number; height: number };
-  /** Everything right of the port, where the card table draws; window pixels. */
+  /** Everything right of the screen, where the card table draws; window pixels. */
   table: { left: number; top: number; width: number; height: number };
   /** The side slot's layer registry: stacking, inertness and Escape/Back for everything opened there. */
   layers: SideLayers;

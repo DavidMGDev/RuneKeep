@@ -31,7 +31,7 @@ import { EncounterMovePicker, type MoveTarget } from './encounter-move-picker';
 import { IdentityEditor } from './identity-editor';
 import { DmEmpty, DmPress } from './dm-ui';
 import { useSelection } from './use-selection';
-import { useDeskApi, useDmDesk } from './desk/dm-desk';
+import { useDeskApi, useDeskFollow, useDmDesk } from './desk/dm-desk';
 
 const STATUS_COLOR = (s: Encounter['status']) => (s === 'active' ? DmRune.accent : s === 'completed' ? DmRune.muted : DmRune.accentDim);
 
@@ -64,6 +64,8 @@ export function SessionScreen() {
     return () => { live = false; };
   }, [id]);
   useFocusEffect(reload);
+  // Who is present can change in the port beside this one, and a new encounter takes the party as it is.
+  useDeskFollow(async () => (party ? getParty(party.id) : null), (p) => { if (p) setParty(p); });
 
   const create = useCallback(() => {
     if (!session || !party) return;
@@ -147,11 +149,12 @@ export function SessionScreen() {
   const ordered = sortedEncounters(encounters, session.activeEncounterId);
 
   return (
-    <AppScreen title={session.name} dm onBack={() => router.back()}>
+    <AppScreen title={session.name} bare={!!desk} dm onBack={() => router.back()}>
       <View style={{ flex: 1, gap: 12 }}>
         {/* The session switcher (v0.41.4, owner): the same control the campaign list has, one level
             down. Choosing simply navigates; nothing is written by looking. */}
-        {siblings.length > 1 ? (
+        {/* On the DM screen the title is the campaign's, so this is where the session is named. */}
+        {siblings.length > (desk ? 0 : 1) ? (
           <IdentityDropdown
             label="Session"
             items={siblings}

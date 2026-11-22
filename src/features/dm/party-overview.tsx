@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Text, View } from 'react-native';
 import  {  } from 'react-native-svg';
 
-import { AppScreen } from '@/components/app-screen';
+import { AppScreen, SectionLabel } from '@/components/app-screen';
 import { ChamferBox } from '@/components/chamfer-box';
 import { FitLine } from '@/components/fit-line';
 import { Body, Display, DmRune, DmType } from '@/constants/theme';
@@ -26,6 +26,8 @@ import { initialVitals, memberMaxes } from '@/lib/dm-vitals';
 import { type CardEffect } from '@/lib/modifiers';
 import { addMembers, applyVitalDelta, isPresent, togglePresent, type Party, setGlobalEffects, setMemberVitals, setVital, type VitalKey } from '@/lib/party';
 import { getParty, saveParty } from '@/lib/party-store';
+import { bonusMaxes, canEditMembers, type Encounter, memberBonus, memberVitals } from '@/lib/session';
+import { applyOrder } from '@/lib/encounter-order';
 import { playSfx } from '@/lib/sfx';
 import { useDmCharacterTools } from './dm-character-tools';
 import { AddMemberIcon, PartyEffectsIcon } from './dm-icons';
@@ -35,13 +37,31 @@ import { MemberPanel } from './member-panel';
 import { DownedVeil, Portrait } from '@/components/portrait';
 import { StatGlyph } from './stat-glyphs';
 import { StatRadialProvider } from './stat-radial';
-import { DmSide, useDeskApi, useDmDesk } from './desk/dm-desk';
-import { DmPress } from './dm-ui';
+import { DmSide, useDeskApi, useDeskFollow, useDmDesk } from './desk/dm-desk';
+import { DmEmpty, DmPress } from './dm-ui';
 
 const KEY_LABEL: Record<VitalKey, string> = { hp: 'HP', stress: 'Stress', hope: 'Hope', armor: 'Armor' };
 
 /** Four to a row, and as many rows as the party needs. No cap: a party is however big it is. */
 const PER_ROW = 4;
+
+/** Whose numbers the DM screen's party side shows, where an encounter keeps its own. */
+function Numbers({ finished, totals, onPick }: { finished: boolean; totals: boolean; onPick: (totals: boolean) => void }) {
+  const options = finished ? ['At the finish', 'Now'] : ['This encounter', 'Campaign'];
+  return (
+    <View style={{ flexDirection: 'row', gap: 16 }}>
+      {options.map((label, i) => {
+        const on = totals === (i === 1);
+        return (
+          <DmPress key={label} onPress={() => { playSfx('buttonTap'); onPick(i === 1); }} hitSlop={8} accessibilityRole="radio" accessibilityState={{ checked: on }} accessibilityLabel={label}
+            style={{ borderBottomWidth: 2, borderBottomColor: on ? DmRune.accent : 'transparent' }}>
+            <Text style={{ color: on ? DmRune.ivory : DmRune.accent, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</Text>
+          </DmPress>
+        );
+      })}
+    </View>
+  );
+}
 
 /**
  * The party at a glance (v0.36, owner).
@@ -110,7 +130,17 @@ function PartyRoster({
   );
 }
 
-export function PartyOverviewScreen({ partyId: given }: { /** The DM screen's port says which. */ partyId?: string }) {
+/**
+ * The encounter on the other side of the DM screen, which lists no members of its own: this list speaks for it. A
+ * running fight's numbers are changed through it, so they are logged and held to its maximums.
+ */
+export interface PartyFight {
+  encounter: Encounter;
+  move: (charId: string, key: VitalKey, delta: number) => void;
+  set: (charId: string, key: VitalKey) => void;
+}
+
+export function PartyOverviewScreen({ partyId: given, fight }: { /** The DM screen's port says which. */ partyId?: string; fight?: PartyFight }) {
   const router = useRouter();
   const desk = useDmDesk();
   const params = useLocalSearchParams<{ partyId: string }>();
@@ -134,12 +164,16 @@ export function PartyOverviewScreen({ partyId: given }: { /** The DM screen's po
   // disk write trails the last change by a beat.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const waiting = useRef<Party | null>(null);
-  const commit = useCallback((next: Party) => {
-    setParty(next);
+  // Every change is made to the newest party, which the port beside this one may have written a moment ago.
+  const partyRef = useRef(party);
+  partyRef.current = party;
+  const persist = useCallback((next: Party) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (desk) { waiting.current = null; void saveParty(next); return; }
     waiting.current = next;
     saveTimer.current = setTimeout(() => { waiting.current = null; void saveParty(next); }, 220);
-  }, []);
+  }, [desk]);
+  const commit = useCallback((next: Party) => { partyRef.current = next; setParty(next); persist(next); }, [persist]);
   // Leaving writes what is waiting: a change made a moment before Back (or a press of a die) is not lost.
   useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); if (waiting.current) void saveParty(waiting.current); }, []);
 
@@ -153,6 +187,11 @@ export function PartyOverviewScreen({ partyId: given }: { /** The DM screen's po
     });
     return () => { live = false; };
   }, [partyId]);
+
+  useDeskFollow(() => Promise.all([getParty(partyId), listCharacters()]), ([p, all]) => {
+    if (p) { partyRef.current = p; setParty(p); }
+    setFiles(Object.fromEntries(all.map((f) => [f.id, f])));
+  });
 
   /**
    * Keep every member's party card in step with the party (v0.35).
@@ -178,17 +217,9 @@ export function PartyOverviewScreen({ partyId: given }: { /** The DM screen's po
   }, [party?.id, party?.memberIds, party?.globalEffects, party?.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onApply = useCallback((charId: string, key: VitalKey, delta: number) => {
-    setParty((p) => {
-      if (!p) return p;
-      const f = files[charId];
-      if (!f) return p;
-      const next = setMemberVitals(p, charId, applyVitalDelta(p.global[charId], key, delta, memberMaxes(f)));
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      waiting.current = next;
-      saveTimer.current = setTimeout(() => { waiting.current = null; void saveParty(next); }, 220);
-      return next;
-    });
-  }, [files]);
+    const p = partyRef.current, f = files[charId];
+    if (p && f) commit(setMemberVitals(p, charId, applyVitalDelta(p.global[charId], key, delta, memberMaxes(f))));
+  }, [files, commit]);
 
   const onSet = useCallback((n: number) => {
     if (!keypad || !party) return;
@@ -246,6 +277,21 @@ export function PartyOverviewScreen({ partyId: given }: { /** The DM screen's po
     setLanded((l) => ({ id: charId, n: (l?.n ?? 0) + 1 }));
   };
 
+  const inFight = (charId: string) => !!fight?.encounter.allies.some((a) => a.kind === 'member' && a.charId === charId);
+  /** An encounter with numbers of its own, finished or self-contained. The DM picks whose the list shows. */
+  const apart = !!fight && (fight.encounter.status === 'completed' || !fight.encounter.options.globalSync);
+  const [totalsIn, setTotalsIn] = useState<string | null>(null);
+  const totals = apart && totalsIn === fight?.encounter.id;
+  const running = !!fight && canEditMembers(fight.encounter);
+  /** Changed through the fight. */
+  const viaFight = (charId: string) => (running && !totals && inFight(charId) ? fight : undefined);
+  /** The encounter's own numbers, which only a running one may change. */
+  const frozen = (charId: string) => apart && !totals && !running && inFight(charId);
+  const requestSet = (charId: string, key: VitalKey) => {
+    const on = viaFight(charId);
+    if (on) on.set(charId, key); else setKeypad({ charId, key });
+  };
+
   useDeskApi('party', party && rosterRead ? {
     id: party.id,
     add: () => setPicking(true),
@@ -253,12 +299,16 @@ export function PartyOverviewScreen({ partyId: given }: { /** The DM screen's po
     modifiers: (charId) => tools.openModifiers(charId, true),
     cards: tools.openCards,
     presence: (charId) => commit(togglePresent(party, charId)),
-    setVital: (charId, key) => setKeypad({ charId, key }),
+    setVital: (charId, key) => requestSet(charId, key),
   } : null);
 
   if (!party) return <LoadingScreen dm label="Reading the party" />;
 
-  const memberIds = party.memberIds.filter((id) => files[id]);
+  const known = party.memberIds.filter((id) => files[id]);
+  // On the DM screen: the fight's order, and whoever is absent after everyone who is here.
+  const ordered = applyOrder(known.map((id) => ({ id })), fight?.encounter.order?.allies).map((x) => x.id);
+  const memberIds = desk ? [...ordered.filter((id) => isPresent(party, id)), ...ordered.filter((id) => !isPresent(party, id))] : known;
+  const firstAbsent = desk ? memberIds.find((id) => !isPresent(party, id)) : undefined;
   const kpFile = keypad ? files[keypad.charId] : undefined;
   const kpMax = kpFile && keypad ? memberMaxes(kpFile)[keypad.key === 'hp' ? 'maxHp' : keypad.key === 'stress' ? 'stressMax' : keypad.key === 'hope' ? 'hopeMax' : 'armorMax'] : 0;
   const globalCount = party.globalEffects?.length ?? 0;
@@ -269,7 +319,8 @@ export function PartyOverviewScreen({ partyId: given }: { /** The DM screen's po
       title="Party sheet"
       dm
       desktopMaxWidth={760}
-      onBack={() => (desk ? desk.open('session') : router.back())}
+      bare={!!desk}
+      onBack={() => router.back()}
       headerRight={desk ? undefined :
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
           <DmPress onPress={() => { playSfx('buttonTap'); setPicking(true); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Add characters to this party">
@@ -284,7 +335,7 @@ export function PartyOverviewScreen({ partyId: given }: { /** The DM screen's po
         ref={listRef}
         data={memberIds}
         keyExtractor={(id) => id}
-        contentContainerStyle={{ gap: 12, paddingTop: 4, paddingBottom: 16 }}
+        contentContainerStyle={{ gap: desk ? 8 : 12, paddingTop: desk ? 0 : 4, paddingBottom: 16 }}
         showsVerticalScrollIndicator={false}
         // Entries are different heights (an expanded one is much taller), so a jump can miss on the
         // first try. Scrolling to the offset we do know and asking again lands it.
@@ -292,7 +343,12 @@ export function PartyOverviewScreen({ partyId: given }: { /** The DM screen's po
           listRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: true });
           setTimeout(() => listRef.current?.scrollToIndex({ index: info.index, viewPosition: 0, animated: true }), 240);
         }}
-        ListHeaderComponent={
+        ListHeaderComponent={desk ? (
+          // The roster would say the list twice. What is worth a line here is whose numbers these are, when in doubt.
+          // Otherwise who is here, which stands level with the other side's heading.
+          apart ? <Numbers finished={fight!.encounter.status === 'completed'} totals={totals} onPick={(t) => setTotalsIn(t ? fight!.encounter.id : null)} />
+            : memberIds[0] && memberIds[0] !== firstAbsent ? <SectionLabel dm>Present</SectionLabel> : null
+        ) : (
           <PartyRoster
             ids={memberIds}
             files={files}
@@ -300,19 +356,28 @@ export function PartyOverviewScreen({ partyId: given }: { /** The DM screen's po
             onFocus={focusMember}
             onModifiers={(charId) => { playSfx('buttonTap'); tools.openModifiers(charId, true); }}
           />
-        }
+        )}
+        ListEmptyComponent={desk ? <DmEmpty title="No one in the party yet" body="Add characters from your roster." actionLabel="Add characters" onAction={() => setPicking(true)} /> : null}
         renderItem={({ item: charId }) => (
+          <View style={{ gap: 8 }}>
+          {charId === firstAbsent ? <SectionLabel dm style={{ marginTop: 14 }}>Absent</SectionLabel> : null}
           <MemberPanel
             file={files[charId]}
-            vitals={party.global[charId] ?? { hp: 0, stress: 0, hope: 0, armor: 0 }}
-            editable
+            compact={!!desk}
+            note={fight && !inFight(charId) && isPresent(party, charId) ? 'Not in this encounter' : undefined}
+            onPresence={desk ? () => commit(togglePresent(party, charId)) : undefined}
+            vitals={(fight && !totals && inFight(charId) ? memberVitals(fight.encounter, party, charId) : party.global[charId]) ?? { hp: 0, stress: 0, hope: 0, armor: 0 }}
+            editable={!frozen(charId)}
+            onBlocked={() => showToast(fight?.encounter.status === 'completed' ? 'These are the numbers it finished with. Choose Now to change the party' : 'Start the encounter, or choose Campaign to change the party')}
+            maxes={viaFight(charId) || frozen(charId) ? bonusMaxes(memberMaxes(files[charId]), memberBonus(fight!.encounter, party, charId)) : undefined}
             absent={!isPresent(party, charId)}
             flash={landed?.id === charId ? landed.n : undefined}
-            onApply={(key, delta) => onApply(charId, key, delta)}
-            onRequestSet={(key) => setKeypad({ charId, key })}
+            onApply={(key, delta) => { const on = viaFight(charId); if (on) on.move(charId, key, delta); else onApply(charId, key, delta); }}
+            onRequestSet={(key) => requestSet(charId, key)}
             onModifiers={(edit) => tools.openModifiers(charId, edit)}
             onCards={() => tools.openCards(charId)}
           />
+          </View>
         )}
       />
       {keypad ? (

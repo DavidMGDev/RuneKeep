@@ -55,6 +55,8 @@ interface AppScreenProps {
    * everything including the frame and the status bands, so its scrim covers the display.
    */
   overlay?: ReactNode;
+  /** Inside the DM screen (v0.50.2): no frame, title or back of its own. The screen round it has those. */
+  bare?: boolean;
   children: ReactNode;
 }
 
@@ -63,7 +65,7 @@ interface AppScreenProps {
  * within it. Plain flex (dp), NOT DesignStage — these screens scroll and adapt (DESIGN.md).
  * The sheet keeps its own ornamental border; everything else lives in this frame.
  */
-export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, overlay, inertHeader, desktopMaxWidth, navGuard, navReplace, hideNav, sideAnchor = 0, children }: AppScreenProps) {
+export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, overlay, inertHeader, desktopMaxWidth, navGuard, navReplace, hideNav, sideAnchor = 0, bare, children }: AppScreenProps) {
   const { top, bottom } = useScreenInsets();
   // v0.24.1: what the tablet margins copy. Every AppScreen paints ink to its left and right edges.
   useScreenEdge(Rune.ink);
@@ -108,6 +110,14 @@ export function AppScreen({ title, onBack, headerRight, contentAboveFrame, dm, o
     if (!el?.setAttribute) return;
     if (inertHeader) el.setAttribute('inert', ''); else el.removeAttribute('inert');
   }, [inertHeader]);
+  if (bare) {
+    return (
+      <View style={{ flex: 1, overflow: 'hidden', backgroundColor: Rune.ink }}>
+        <View style={{ flex: 1, paddingHorizontal: 12, paddingTop: 12, paddingBottom: 4 }}>{children}</View>
+        {overlay}
+      </View>
+    );
+  }
   return (
     // height/width 100% + overflow hidden belt-and-braces: on web the router wrapper sizes to
     // content — tall content collapsed the flex chain (menu) and a wide min-content child pushed

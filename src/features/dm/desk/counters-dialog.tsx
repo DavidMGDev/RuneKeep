@@ -11,7 +11,7 @@ import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { Body, Display, DmRune } from '@/constants/theme';
 import { SectionDivider } from '@/features/create/create-ui';
-import type { AdversaryCounter } from '@/lib/dm-counters';
+import { type AdversaryCounter, applySettings, type CounterMove, startOf } from '@/lib/dm-counters';
 import type { Combatant } from '@/lib/session';
 import { type CounterSpot, counterKey } from '@/lib/table-counters';
 
@@ -30,7 +30,7 @@ export interface CounterActions {
   add: (cid?: string) => string;
   save: (key: string, next: AdversaryCounter) => void;
   remove: (key: string) => void;
-  step: (key: string, delta: number) => void;
+  step: (key: string, delta: CounterMove) => void;
   spent: (key: string) => void;
   reset: (key: string) => void;
   recover: (cid: string) => void;
@@ -76,13 +76,15 @@ export function CountersDialog({ groups, spots, start, encounterName, act, onClo
   const save = () => { if (here && edit && dirty) act.save(here.key, { ...edit, name: edit.name.trim() || 'Counter' }); setDraft(null); };
   const guard = (go: () => void) => { if (dirty) setLeaving({ go }); else { setDraft(null); go(); } };
   const shown = here ? !!spots[here.key] : false;
+  // The number and its buttons are the settings as edited (v0.50.2): using one saves them.
+  const now = here && edit && dirty ? applySettings(here.c, edit) : here?.c;
 
   return (
     <DeskDialog title="Counters" subtitle={encounterName ? `This campaign's, and the ones in ${encounterName}` : "This campaign's"} width={940} height={700} onClose={() => guard(onClose)}
       footer={here ? (
         <>
           <RuneButton label="Delete" kind="danger" height={42} dm style={{ width: 120 }} onPress={() => setRemoving(here.key)} />
-          <RuneButton label="Back to its start" kind="ghost" height={42} dm style={{ width: 190 }} disabled={here.c.value === here.c.start} onPress={() => act.reset(here.key)} />
+          <RuneButton label="Back to its start" kind="ghost" height={42} dm style={{ width: 190 }} disabled={!now || now.value === startOf(now)} onPress={() => { save(); act.reset(here.key); }} />
           <View style={{ flex: 1 }} />
           <RuneButton label={shown ? 'Take off the table' : 'Put on the table'} kind="secondary" height={42} dm style={{ width: 210 }} onPress={() => act.show(here.key, !shown)} />
           <RuneButton label="Save" kind="primary" height={42} dm style={{ width: 130 }} disabled={!dirty} onPress={save} />
@@ -102,7 +104,7 @@ export function CountersDialog({ groups, spots, start, encounterName, act, onClo
           ))}
         </ScrollView>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 28, gap: 22 }}>
-          {here && edit ? (
+          {here && edit && now ? (
             <>
               <View style={{ alignItems: 'center', gap: 10, paddingVertical: 8 }}>
                 {here.g.fallen && here.g.cid ? (
@@ -111,7 +113,7 @@ export function CountersDialog({ groups, spots, start, encounterName, act, onClo
                     <RuneButton label="Recover" kind="secondary" height={40} dm onPress={() => act.recover(here.g.cid!)} />
                   </>
                 ) : (
-                  <CounterStepper c={here.c} size={58} onStep={(d) => act.step(here.key, d)} onSpent={() => act.spent(here.key)} spentVerb={here.g.cid ? undefined : 'Take it off the table'} />
+                  <CounterStepper c={now} size={58} onStep={(d) => { save(); act.step(here.key, d); }} onSpent={() => { save(); act.spent(here.key); }} spentVerb={here.g.cid ? undefined : 'Take it off the table'} />
                 )}
               </View>
               <CounterEditor key={here.key} c={edit} standalone={!here.g.cid} onChange={(c) => setDraft({ key: here.key, c })} />

@@ -8,7 +8,7 @@ import { useState } from 'react';
 
 import { cue } from '@/features/character-sheet/table/table-sound';
 import { Chamfer, Glyph, T, TButton } from '@/features/character-sheet/table/table-ui';
-import { type AdversaryCounter, counterNote } from '@/lib/dm-counters';
+import { type AdversaryCounter, type CounterMove, counterNote } from '@/lib/dm-counters';
 import { type CounterSpot, SPOT_MAX_SCALE, SPOT_MIN_SCALE } from '@/lib/table-counters';
 
 import { CounterStepper } from '../counter-control';
@@ -26,7 +26,7 @@ export function CounterTile({ c, owner, fallen, spot, width, height, onSpot, onS
   width: number;
   height: number;
   onSpot: (spot: CounterSpot) => void;
-  onStep: (delta: number) => void;
+  onStep: (delta: CounterMove) => void;
   onSpent: () => void;
   onRecover?: () => void;
   onOpen: () => void;

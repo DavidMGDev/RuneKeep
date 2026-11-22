@@ -23,6 +23,8 @@ export interface ControlsEnv {
   records: DmRecords;
   table: DmTable;
   view: DmView;
+  /** Whether that screen is up, on either side. */
+  shown: (view: DmView) => boolean;
   /** The encounter the table is showing. */
   enc: Encounter | null;
   category: string;
@@ -64,8 +66,8 @@ export function controlDice(e: ControlsEnv): TableAction[] {
       menu: () => [
         { key: 'session', label: 'Encounters', glyph: 'log', sub: String(count), on: view === 'session', onPress: () => e.open('session') },
         { key: 'encounter', label: 'This encounter', glyph: 'fight', disabled: noFight, on: view === 'encounter', onPress: () => enc && e.open('encounter', enc.id) },
-        { key: 'party', label: 'Party sheet', glyph: 'party', on: view === 'party', onPress: () => e.open('party') },
-        { key: 'cast', label: 'Cast', glyph: 'edit', on: view === 'cast', onPress: () => e.open('cast') },
+        { key: 'party', label: 'Party sheet', glyph: 'party', on: e.shown('party'), onPress: () => e.open('party') },
+        { key: 'cast', label: 'Cast', glyph: 'edit', on: e.shown('cast'), onPress: () => e.open('cast') },
         { key: 'library', label: 'Adversary library', glyph: 'book', on: view === 'library', onPress: () => e.open('library') },
         { key: 'archive', label: 'Card archive', glyph: 'cards', onPress: e.go.archive },
         { key: 'sessions', label: 'All sessions', glyph: 'move', onPress: e.go.sessions },

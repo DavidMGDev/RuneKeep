@@ -12,7 +12,7 @@ import { embedCharacterImages } from './image-embed';
 import { canShareFiles, webShareFile } from './library-store';
 import { parseRkp, RUNE_EXT, serializeRkp } from './rkp';
 import { forgetNotes } from './table-notes-store';
-import { webGet, webSet } from './web-store';
+import { webAnnounce, webGet, webSet } from './web-store';
 
 const WEB_KEY = 'runekeep.characters';
 
@@ -157,6 +157,8 @@ export async function listCharacters(): Promise<CharacterFile[]> {
 
 export async function saveCharacter(file: CharacterFile): Promise<void> {
   pending.set(file.id, file);
+  // Said now, not when the queue is written: a second screen open on this character would write over it (v0.50.2).
+  if (Platform.OS === 'web') webAnnounce(WEB_KEY);
   if (!flushTimer) {
     flushTimer = setTimeout(() => {
       flushTimer = null;

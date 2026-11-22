@@ -13,7 +13,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { Portrait } from '@/components/portrait';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type AdversaryFeature } from '@/data/adversaries';
-import { detailCounters } from '@/lib/dm-counters';
+import { type CounterMove, detailCounters } from '@/lib/dm-counters';
 import { type Combatant } from '@/lib/session';
 import { useLayout } from '@/hooks/use-layout';
 import { useScreenDim } from '@/lib/screen-dim';
@@ -74,7 +74,7 @@ function StatCell({ label, value }: { label: string; value: string }) {
  * library passes none, because browsing a roster is not playing an encounter, and the same rows then
  * draw their buttons dimmed and inert.
  */
-export function StatBlockDetail({ c, onCounter, onCounterSpent }: { c: Combatant; onCounter?: (counterId: string, delta: number) => void; onCounterSpent?: () => void }) {
+export function StatBlockDetail({ c, onCounter, onCounterSpent }: { c: Combatant; onCounter?: (counterId: string, delta: CounterMove) => void; onCounterSpent?: () => void }) {
   const counters = detailCounters(c.counters);
   const hasHeader = !!(c.tier || c.role);
   const thr = c.thresholds && (c.thresholds.major || c.thresholds.severe) ? `${c.thresholds.major}/${c.thresholds.severe}` : 'None';

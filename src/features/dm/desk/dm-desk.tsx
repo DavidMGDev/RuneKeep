@@ -5,13 +5,18 @@
  * very screens in its port, so nothing the phone can do is missing. Each screen hands the table what its control dice
  * and card menus need (`useDeskApi`), and asks the desk to go places instead of pushing routes (`useDmDesk`).
  * Outside the DM screen both are inert, and the screens are exactly the phone's.
+ *
+ * Two of them can be open at once (v0.50.2: the party beside the encounter), each writing the party and the
+ * characters whole. So on the desk a screen writes those at once, with no debounce, and follows the other's
+ * writes (`useDeskFollow`): neither ever holds a copy old enough to write back over a change.
  */
-import { createContext, type ReactNode, useContext, useLayoutEffect } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useLayoutEffect, useRef } from 'react';
 
 import { DesktopPortal } from '@/components/desktop-portal';
 import { useDesktop } from '@/hooks/use-desktop';
 import type { Combatant, CombatantStat } from '@/lib/session';
 import type { VitalKey } from '@/lib/party';
+import { webWatch } from '@/lib/web-store';
 
 export type DmView = 'session' | 'encounter' | 'party' | 'cast' | 'library';
 export type Side = 'ally' | 'adversary';
@@ -47,6 +52,8 @@ export interface EncounterApi {
   setStat: (cid: string, stat: CombatantStat) => void;
   /** `member`: one of the party's; otherwise a characterized entry of this fight. */
   setVital: (charId: string, key: VitalKey, member: boolean) => void;
+  /** A party member's vital moved, as the fight's own row moves it: logged, and held to the fight's maximum. */
+  moveVital: (charId: string, key: VitalKey, delta: number) => void;
 }
 
 export interface SessionApi {
@@ -76,6 +83,8 @@ export interface DeskApis {
 
 export interface DmDesk {
   open: (view: DmView, encounterId?: string) => void;
+  /** Where Back goes from the cast and the library: the party's list, or the encounter or list last on the screen. */
+  back: () => void;
   register: <K extends keyof DeskApis>(kind: K, api: DeskApis[K] | null) => void;
 }
 
@@ -90,6 +99,31 @@ export function useDeskApi<K extends keyof DeskApis>(kind: K, api: DeskApis[K] |
     desk.register(kind, api);
     return () => desk.register(kind, null);
   });
+}
+
+const SHARED = new Set(['runekeep.parties', 'runekeep.characters']);
+
+/** On the desk, read what the screens share again after every write of it. Inert elsewhere. */
+export function useDeskFollow<T>(read: () => Promise<T>, apply: (value: T) => void): void {
+  const desk = useDmDesk();
+  const latest = useRef({ read, apply });
+  latest.current = { read, apply };
+  useEffect(() => {
+    if (!desk) return;
+    let live = true, queued = false, turn = 0;
+    const off = webWatch((key) => {
+      if (!SHARED.has(key) || queued) return;
+      queued = true;
+      // After the handler that wrote: it may write the party and then each member's file.
+      queueMicrotask(async () => {
+        queued = false;
+        const mine = ++turn;
+        const value = await latest.current.read();
+        if (live && mine === turn) latest.current.apply(value);
+      });
+    });
+    return () => { live = false; off(); };
+  }, [desk]);
 }
 
 /**

@@ -14,7 +14,8 @@
  *    zero puts it back where it started, so a recurring timer is reset by the same button that runs
  *    it down. If it does not loop, reaching zero is the END: the minus becomes an X, and pressing
  *    that X fells the adversary exactly as the X on any other entry does. Recovering it winds every
- *    countdown back to its start, so the same threat can come round again.
+ *    countdown back to its start, so the same threat can come round again. At zero either kind of countdown can
+ *    be restarted (v0.50.2, Koy), and one always has a number to restart from.
  *
  * TAKE OVER is the third idea and the one worth reading twice. A counter marked that way stops being
  * a detail of the adversary and becomes the reason the entry exists: the stats go, and what is left
@@ -23,6 +24,10 @@
  */
 
 export type CounterKind = 'resource' | 'countdown';
+/** What is asked of a counter: so many up or down, or back to its start. */
+export type CounterMove = number | 'restart';
+/** What a countdown nobody gave a number counts from. */
+export const COUNTDOWN_START = 4;
 
 export interface AdversaryCounter {
   id: string;
@@ -53,10 +58,11 @@ export function newCounter(id: string): AdversaryCounter {
  * test and nothing more: anything that lands below zero lands on `start` instead. Counting UP past
  * the start is left alone, because a DM who wants six rounds instead of four should get six.
  */
-export function stepCounter(c: AdversaryCounter, delta: number): AdversaryCounter {
+export function stepCounter(c: AdversaryCounter, delta: CounterMove): AdversaryCounter {
+  if (delta === 'restart') return resetCounter(c);
   if (!canStep(c, delta)) return c;
   const next = c.value + delta;
-  if (c.kind === 'countdown' && c.loop && next < 0) return { ...c, value: c.start };
+  if (c.kind === 'countdown' && c.loop && next < 0) return resetCounter(c);
   return { ...c, value: next };
 }
 
@@ -86,7 +92,7 @@ export function isSpent(c: AdversaryCounter): boolean {
 
 /** Wind every countdown back to its start. What Recover does to a felled counter (v0.41.4, owner). */
 export const restartCountdowns = (list: AdversaryCounter[] | undefined): AdversaryCounter[] | undefined =>
-  list?.map((c) => (c.kind === 'countdown' ? { ...c, value: c.start } : c));
+  list?.map((c) => (c.kind === 'countdown' ? resetCounter(c) : c));
 
 /**
  * Commit an edited START (v0.41.4, owner: the counter "must get reset to that start at value when
@@ -97,12 +103,36 @@ export const restartCountdowns = (list: AdversaryCounter[] | undefined): Adversa
  * deliberate act, so a start that actually changed moves the value with it, no questions.
  */
 export function commitStarts(before: AdversaryCounter[] | undefined, after: AdversaryCounter[]): AdversaryCounter[] {
-  const was = new Map((before ?? []).map((c) => [c.id, c.start]));
-  return after.map((c) => (was.has(c.id) && was.get(c.id) !== c.start ? { ...c, value: c.start } : c));
+  const was = new Map((before ?? []).map((c) => [c.id, c]));
+  return after.map((c) => {
+    const old = was.get(c.id);
+    const startEdited = !!old && old.start !== c.start;
+    const newTimer = c.kind === 'countdown' && old?.kind !== 'countdown';
+    if (c.kind === 'countdown' && c.start <= 0 && (startEdited || newTimer)) return { ...c, start: startOf(c), value: startOf(c) };
+    return startEdited || (newTimer && c.value <= 0) ? resetCounter(c) : c;
+  });
 }
 
+/** Settings edited on a copy, put on the counter as it stands now: only what Save moves moves. */
+export const applySettings = (now: AdversaryCounter, edited: AdversaryCounter): AdversaryCounter =>
+  commitStarts([now], [{ ...edited, value: now.value }])[0];
+
+/** Where it goes back to. A countdown from nothing could never move, so one saved that way has a number anyway. */
+export const startOf = (c: AdversaryCounter): number => (c.kind === 'countdown' && c.start <= 0 ? COUNTDOWN_START : c.start);
+
 /** Put a counter back where it started, without touching anything else about it. */
-export const resetCounter = (c: AdversaryCounter): AdversaryCounter => ({ ...c, value: c.start });
+export const resetCounter = (c: AdversaryCounter): AdversaryCounter => ({ ...c, value: startOf(c) });
+
+/**
+ * Change what kind it is (v0.50.2, Koy: one raised to 5 and made a countdown restarted from 0). A countdown with no
+ * start counts from where the counter is, or from a number that then shows in "Starts at".
+ */
+export function setKind(c: AdversaryCounter, kind: CounterKind): AdversaryCounter {
+  if (kind === c.kind) return c;
+  if (kind === 'resource') return { ...c, kind, loop: undefined };
+  const start = c.start > 0 ? c.start : c.value > 0 ? c.value : COUNTDOWN_START;
+  return { ...c, kind, start, value: c.value > 0 ? c.value : start };
+}
 
 /**
  * Editing a counter's START also moves a counter that has not been used yet.
@@ -147,5 +177,5 @@ export const detailCounters = (counters: AdversaryCounter[] | undefined): Advers
 /** What a counter reads as next to its name: its kind, and whether it comes back round. */
 export function counterNote(c: AdversaryCounter): string {
   if (c.kind === 'resource') return 'Resource';
-  return c.loop ? `Countdown · restarts at ${c.start}` : 'Countdown';
+  return c.loop ? `Countdown · restarts from ${startOf(c)}` : 'Countdown';
 }

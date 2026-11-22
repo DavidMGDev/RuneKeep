@@ -147,7 +147,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     setLookState(loadLook(characterId, dm?.start));
   }, [characterId]); // eslint-disable-line react-hooks/exhaustive-deps -- the starting table never changes
   const port = desktop?.port;
-  const tableW = Math.max(200, winW - (port ? port.left + port.width : 0));
+  const tableW = Math.max(200, desktop ? desktop.table.width : winW);
   const tableH = Math.max(200, winH);
   const pad = WALL[look.walls];
   const spread = look.handMode === 'spread';
@@ -2725,7 +2725,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         ) : null}
       </div>
       {result ? <RollPopup key={result.dice.map((d) => d.id).join()} result={result} top={plaqueTop} minWidth={barOn ? barBox.w : undefined} box={{ left: winW - tableW, top: 0, width: tableW, height: tableH }} onAccept={() => { cue('ui:tap', 'buttonTap'); setResult(null); }} /> : null}
-      {settings ? <LookPanel look={look} onChange={setLook} onClose={() => { cue('ui:close', 'panelClose'); setSettings(false); }} onClearTable={clearAll} boardCount={spread ? 0 : copies.length} pieceCount={looseCount} box={port} pieces={presetPieces} /> : null}
+      {settings ? <LookPanel look={look} onChange={setLook} onClose={() => { cue('ui:close', 'panelClose'); setSettings(false); }} onClearTable={clearAll} boardCount={spread ? 0 : copies.length} pieceCount={looseCount} box={desktop?.screen ?? port} pieces={presetPieces} /> : null}
     </DesktopPortal>
   );
 }

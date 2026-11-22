@@ -7,7 +7,7 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import { MENU_ICON } from '@/features/character-sheet/table/menu-icons';
 import type { OpenMenu } from '@/features/character-sheet/table/table-host';
 import { cue } from '@/features/character-sheet/table/table-sound';
-import { type AdversaryCounter, commitStarts, newCounter, resetCounter, stepCounter } from '@/lib/dm-counters';
+import { type AdversaryCounter, applySettings, newCounter, resetCounter, startOf, stepCounter } from '@/lib/dm-counters';
 import type { DmTable } from '@/lib/dm-table';
 import { type Combatant, type Encounter, fell, fighters, recover } from '@/lib/session';
 import { COUNTER_MAX, counterKey, counterOf, editCounter, freeSpot } from '@/lib/table-counters';
@@ -62,7 +62,7 @@ export function useDeskCounters(table: DmTable, update: (change: (t: DmTable) =>
       return key;
     },
     // Where it is now stays, unless the start itself was changed: the adversary editor's rule.
-    save: (key, next) => write(key, (c) => commitStarts([c], [{ ...next, value: c.value }])[0]),
+    save: (key, next) => write(key, (c) => applySettings(c, next)),
     remove: (key) => { write(key, () => null); lift(key); },
     step: (key, delta) => write(key, (c) => stepCounter(c, delta)),
     spent: (key) => {
@@ -102,7 +102,7 @@ export function useDeskCounters(table: DmTable, update: (change: (t: DmTable) =>
           title: c.name || 'Counter', icon: MENU_ICON.counters, detail: g.cid ? g.name : `At ${c.value}`,
           rows: [
             { label: 'Edit counter', icon: MENU_ICON.edit, onPress: () => open({ key }) },
-            { label: 'Back to its starting value', icon: MENU_ICON.reset, value: String(c.start), disabled: c.value === c.start, onPress: () => act.reset(key) },
+            { label: 'Back to its starting value', icon: MENU_ICON.reset, value: String(startOf(c)), disabled: c.value === startOf(c), onPress: () => act.reset(key) },
             { label: 'Normal size', icon: MENU_ICON.size, hidden: table.spots[key].k === 1, onPress: () => update((t) => ({ ...t, spots: { ...t.spots, [key]: { ...t.spots[key], k: 1 } } })) },
             { label: 'Recover', icon: MENU_ICON.recover, hidden: !g.cid || !g.fallen, onPress: () => act.recover(g.cid!) },
             { label: 'Take it off the table', icon: MENU_ICON.offTable, gap: true, onPress: () => act.show(key, false) },

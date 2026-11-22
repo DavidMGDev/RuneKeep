@@ -1,4 +1,4 @@
-import { type AdversaryCounter, canStep, commitStarts, counterMode, counterNote, detailCounters, isSpent, meaningfulCounters, newCounter, resetCounter, restartCountdowns, setStart, soleCounter, stepCounter } from './dm-counters';
+import { type AdversaryCounter, applySettings, canStep, commitStarts, COUNTDOWN_START, counterMode, counterNote, detailCounters, isSpent, meaningfulCounters, newCounter, resetCounter, restartCountdowns, setKind, setStart, soleCounter, stepCounter } from './dm-counters';
 
 const counter = (over: Partial<AdversaryCounter> = {}): AdversaryCounter => ({ ...newCounter('c1'), ...over });
 
@@ -97,7 +97,7 @@ describe('counterNote', () => {
   it('says what kind it is, and where a looping one comes back to', () => {
     expect(counterNote(counter({ kind: 'resource' }))).toBe('Resource');
     expect(counterNote(counter({ kind: 'countdown' }))).toBe('Countdown');
-    expect(counterNote(counter({ kind: 'countdown', loop: true, start: 4 }))).toBe('Countdown · restarts at 4');
+    expect(counterNote(counter({ kind: 'countdown', loop: true, start: 4 }))).toBe('Countdown · restarts from 4');
   });
 });
 
@@ -178,5 +178,54 @@ describe('commitStarts', () => {
 
   it('leaves a brand new counter at whatever it was built with', () => {
     expect(commitStarts([], [counter({ id: 'new', start: 5, value: 5 })])[0].value).toBe(5);
+  });
+});
+
+// ---------------------------------------------------------------- v0.50.2 (Koy): never stuck at zero
+
+describe('a counter made into a countdown', () => {
+  it('counts down from the number it was raised to, and loops back to it', () => {
+    let c = setKind(counter({ value: 5 }), 'countdown');
+    expect(c).toMatchObject({ start: 5, value: 5 });
+    c = { ...c, loop: true, value: 0 };
+    expect(stepCounter(c, -1).value).toBe(5);
+  });
+
+  it('is given a number when it has none, so it is never born spent', () => {
+    expect(setKind(counter(), 'countdown')).toMatchObject({ start: COUNTDOWN_START, value: COUNTDOWN_START });
+    expect(setKind(counter({ start: 3, value: -2 }), 'countdown')).toMatchObject({ start: 3, value: 3 });
+  });
+
+  it('keeps its count when a resource in play has a start already', () => {
+    expect(setKind(counter({ start: 3, value: 2 }), 'countdown')).toMatchObject({ start: 3, value: 2 });
+  });
+
+  it('is saved with its number, whatever the copy on the table was at', () => {
+    const before = counter({ start: 3, value: 0 });
+    expect(applySettings(before, setKind(before, 'countdown')).value).toBe(3);
+    expect(commitStarts([], [counter({ kind: 'countdown' })])[0]).toMatchObject({ start: COUNTDOWN_START, value: COUNTDOWN_START });
+  });
+
+  it('cannot be saved counting from nothing', () => {
+    const before = counter({ kind: 'countdown', start: 6, value: 2 });
+    expect(applySettings(before, { ...before, start: 0 })).toMatchObject({ start: COUNTDOWN_START, value: COUNTDOWN_START });
+  });
+});
+
+describe('a countdown at zero', () => {
+  it('can be restarted when it does not loop', () => {
+    expect(stepCounter(counter({ kind: 'countdown', start: 6, value: 0 }), 'restart').value).toBe(6);
+  });
+
+  it('has somewhere to go back to when it was saved without a start', () => {
+    const c = counter({ kind: 'countdown', loop: true });
+    expect(stepCounter(c, -1).value).toBe(COUNTDOWN_START);
+    expect(resetCounter(c).value).toBe(COUNTDOWN_START);
+    expect(counterNote(c)).toBe(`Countdown · restarts from ${COUNTDOWN_START}`);
+    expect(restartCountdowns([c])![0].value).toBe(COUNTDOWN_START);
+  });
+
+  it('leaves a resource to start at zero', () => {
+    expect(resetCounter(counter({ value: 3 })).value).toBe(0);
   });
 });

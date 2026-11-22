@@ -5,7 +5,7 @@
  */
 import { type AdversaryFeature, type AdversaryRole } from '@/data/adversaries';
 import { type MemberMaxes, type MemberVitals, type PartyGlobalState, type Party, applyVitalDelta, presentMemberIds, setGlobalEffects, setVital, type VitalKey } from './party';
-import { type AdversaryCounter, resetCounter, restartCountdowns, stepCounter } from './dm-counters';
+import { type AdversaryCounter, type CounterMove, resetCounter, restartCountdowns, stepCounter } from './dm-counters';
 import { type CardEffect } from './modifiers';
 
 export const SESSION_SCHEMA_VERSION = 1;
@@ -337,7 +337,7 @@ export function cloneCombatant(c: Combatant, newName?: string): Combatant {
 }
 
 /** Move one of a combatant's counters (v0.41.3). Unknown ids are left alone rather than throwing. */
-export function counterDelta(c: Combatant, counterId: string, delta: number): Combatant {
+export function counterDelta(c: Combatant, counterId: string, delta: CounterMove): Combatant {
   if (!c.counters) return c;
   return { ...c, counters: c.counters.map((x) => (x.id === counterId ? stepCounter(x, delta) : x)) };
 }

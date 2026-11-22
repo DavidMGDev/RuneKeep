@@ -90,16 +90,37 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const desktopTable = desktopWindow && DESKTOP_TABLES.has(pathname);
   // v0.45.0: full-page desktop screens are drawn at the window's own size, unscaled.
   const desktopPage = desktopWindow && DESKTOP_PAGES.has(pathname);
+  // v0.50.2 (Koy, owner): a session's screen is one frame under one title. Where there is room it has two sides, the
+  // party and what is being run. It is paired until the DM screen says otherwise, so the table is laid out once.
+  const session = pathname === DESKTOP_PAIRED;
+  const [paired, setPaired] = useState(true);
+  const [besideHost, setBesideHost] = useState<HTMLElement | null>(null);
+  const [barHost, setBarHost] = useState<HTMLElement | null>(null);
   const desktop = useMemo<Desktop | null>(() => {
     if (!desktopTable) return null;
     const pad = DESKTOP_PORT_PAD;
-    // Height-fit, but never so wide that the table loses its minimum (a tall, narrow window).
-    const scale = Math.min((scaleH - pad * 2) / DESIGN_H, (width - DESKTOP_TABLE_MIN_W - pad) / DESIGN_W);
-    const port = { left: pad, top: pad, width: DESIGN_W * scale, height: DESIGN_H * scale, scale };
-    const side = { left: port.left + port.width + 10, top: port.top, width: SIDE_W, height: port.height };
-    const table = { left: port.left + port.width, top: 0, width: Math.max(0, width - port.left - port.width), height };
-    return { port, side, table, layers, tableHost, sideHost, win: { left: 0, top: 0, width, height }, windowHost, modalHost };
-  }, [desktopTable, scaleH, width, height, layers, tableHost, sideHost, windowHost, modalHost]);
+    const fitH = (scaleH - pad * 2) / DESIGN_H;
+    const room = width - DESKTOP_TABLE_MIN_W - pad - (session ? SCREEN_EDGE * 2 + SCREEN_GAP : 0);
+    const canPair = session && room / (DESIGN_W * 2) >= PAIR_MIN_SCALE;
+    const pair = canPair && paired;
+    // Never so wide that the table loses its minimum (a tall, narrow window).
+    const fitW = room / (pair ? DESIGN_W * 2 : DESIGN_W);
+    // The sheet is a phone, height-fit. The DM screen's sides are lists: as tall as the window, at a size that reads.
+    const scale = Math.min(fitW, session ? Math.min(SCREEN_MAX_SCALE, Math.max(SCREEN_MIN_SCALE, fitH)) : fitH);
+    const col = DESIGN_W * scale;
+    const screen = session
+      ? { left: pad, top: pad, width: col * (pair ? 2 : 1) + SCREEN_EDGE * 2, height: scaleH - pad * 2 }
+      : { left: pad, top: pad, width: col, height: DESIGN_H * scale };
+    const port = session
+      ? { left: pad + SCREEN_EDGE + (pair ? col : 0), top: pad + SCREEN_HEAD_H, width: col, height: screen.height - SCREEN_HEAD_H - SCREEN_EDGE, scale }
+      : { ...screen, scale };
+    const beside = pair ? { ...port, left: pad + SCREEN_EDGE } : null;
+    const edge = screen.left + screen.width;
+    const side = { left: edge + 10, top: pad, width: SIDE_W, height: screen.height };
+    const tableLeft = edge + (session ? SCREEN_GAP : 0);
+    const table = { left: tableLeft, top: 0, width: Math.max(0, width - tableLeft), height };
+    return { port, screen, beside, besideHost, barHost, canPair, setPaired, side, table, layers, tableHost, sideHost, win: { left: 0, top: 0, width, height }, windowHost, modalHost };
+  }, [desktopTable, session, paired, scaleH, width, height, layers, tableHost, sideHost, besideHost, barHost, windowHost, modalHost]);
   // Desktop sheet (v0.46.0, owner): a press outside the side slot closes the panel on top, as Escape does, and
   // that press does nothing else (it never also hits a heart in the port). A panel with no closer stays open.
   useEffect(() => {
@@ -120,7 +141,7 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const portFrame = useMemo(
     () =>
       desktop
-        ? { width: DESIGN_W, height: DESIGN_H, scale: desktop.port.scale, offsetX: desktop.port.left, offsetY: desktop.port.top }
+        ? { width: DESIGN_W, height: desktop.port.height / desktop.port.scale, scale: desktop.port.scale, offsetX: desktop.port.left, offsetY: desktop.port.top }
         : desktopPage
           ? { width, height, scale: 1, offsetX: 0, offsetY: 0 }
           : frame,
@@ -154,7 +175,7 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
    */
   return (
     <View style={{ flex: 1, backgroundColor: desktop || desktopPage ? Rune.ink : edge, overflow: 'hidden' }}>
-      <View ref={setTableHost as never} style={desktop ? { position: 'absolute', left: vp.left + vp.width, top: 0, right: 0, bottom: 0 } : { display: 'none' }} />
+      <View ref={setTableHost as never} style={desktop ? { position: 'absolute', left: desktop.table.left, top: 0, right: 0, bottom: 0 } : { display: 'none' }} />
       <View style={{ position: 'absolute', left: vp.left, top: vp.top, width: vp.width, height: vp.height, overflow: 'hidden' }}>
         <View style={{ width: portFrame.width, height: portFrame.height, transform: [{ scale: portFrame.scale }], transformOrigin: [0, 0, 0] }}>
           <FrameContext.Provider value={portFrame}>
@@ -164,6 +185,11 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
           </FrameContext.Provider>
         </View>
       </View>
+      {/* Never unmounted, only hidden: the DM screen's portals live in them across a resize. */}
+      <View style={desktop?.beside ? { position: 'absolute', left: desktop.beside.left, top: desktop.beside.top, width: desktop.beside.width, height: desktop.beside.height, overflow: 'hidden' } : { display: 'none' }}>
+        <View ref={setBesideHost as never} style={{ width: DESIGN_W, height: desktop?.beside ? desktop.beside.height / desktop.beside.scale : DESIGN_H, transform: [{ scale: desktop?.beside?.scale ?? 1 }], transformOrigin: [0, 0, 0] }} />
+      </View>
+      <View ref={setBarHost as never} pointerEvents="box-none" style={desktop && session ? { position: 'absolute', left: desktop.screen.left, top: desktop.screen.top, width: desktop.screen.width, height: desktop.screen.height } : { display: 'none' }} />
       {!desktop && !desktopPage && margin > 0 ? (
         <>
           <MarginStrip side="left" width={margin} topBar={topBar} bottomBar={bottomBar} dim={dim} />
@@ -198,5 +224,16 @@ const DESKTOP_PORT_PAD = 14;
 const DESKTOP_PAGES = new Set(['/', '/characters', '/library', '/gallery', '/create', '/onboarding', '/parties', '/sessions', '/party', '/party-overview', '/adversary-library']);
 /** Routes that are a port with the play table beside it. */
 const DESKTOP_TABLES = new Set(['/sheet', '/session']);
+/** The one whose screen has two sides. */
+const DESKTOP_PAIRED = '/session';
+/** Its title and its tabs, in window pixels, as `desk/desk-head` draws them. */
+const SCREEN_HEAD_H = 87;
+/** Inside its frame, round the sides. */
+const SCREEN_EDGE = 3;
+const SCREEN_GAP = 8;
+const SCREEN_MIN_SCALE = 0.8;
+const SCREEN_MAX_SCALE = 1.05;
+/** Below this two sides are hard to read, so the party gets a tab instead of a side. */
+const PAIR_MIN_SCALE = 0.68;
 /** How wide the side slot is that panels open into, in window pixels. A panel is laid out for a phone. */
 const SIDE_W = 440;

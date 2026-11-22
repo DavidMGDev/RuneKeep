@@ -1,18 +1,20 @@
 /**
  * The DM screen (v0.49.0, owner): a session on a desktop window.
  *
- * It has the character sheet's shape. The port on the left holds the DM's screens (the encounters, the running one,
- * the party sheet, the cast, the library), everything right of it is the sheet's own play table with every setting
- * it has, and the DM's controls are its dice. There is no map and nothing here runs the game: it is a screen to run
- * one from behind.
+ * It has the character sheet's shape: a screen on the left and, right of it, the sheet's own play table with every
+ * setting it has, the DM's controls its dice. The screen is one frame under one title (v0.50.2, Koy: "if I go into
+ * the encounter I can't see my party"; owner: "don't just place another mobile port"). The party is its left side,
+ * with the cast as that side's other tab. The right side is what is being run: the encounter, the session's list or
+ * the library. Each is the phone's own screen drawn bare, and everyone is listed once. In a narrow window it is one
+ * column with all five as tabs. There is no map and nothing here runs the game: it is a screen to run one from
+ * behind.
  */
 import { useIsFocused } from '@react-navigation/native';
 import { type Href, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 
-import FullUi from '../../../../assets/art/new/FullUI.svg';
-
+import { DesktopPortal } from '@/components/desktop-portal';
 import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
 import { showToast } from '@/components/toast';
@@ -46,12 +48,13 @@ import { DmDicePanel } from '../dm-dice-panel';
 import { NameDialog } from '../dm-ui';
 import { EncounterScreen } from '../encounter-screen';
 import { PartyEditorScreen } from '../party-editor';
-import { PartyOverviewScreen } from '../party-overview';
+import { type PartyFight, PartyOverviewScreen } from '../party-overview';
 import { SessionScreen } from '../session-screen';
 import { combatantCard, combatantCardId, encounterCard, encounterCardId, memberCard, memberCardId, templateCard, templateCardId } from './dm-cards';
 import { cardHead, cardRows, controlDice, type ControlsEnv, type SortBy } from './dm-controls';
 import { type DeskApis, type DmDesk, DmDeskContext, DmSide, type DmView } from './dm-desk';
 import { FearTrack } from './fear-track';
+import { DeskHead } from './desk-head';
 import { useDeskCounters } from './use-counters';
 import { type DmRecords, useDmRecords } from './use-dm-records';
 
@@ -90,7 +93,16 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
   // ---------------------------------------------------------------- what the port shows
   // A session with a fight running opens on the fight; any other, on its encounters.
   const first = startAt ?? session.activeEncounterId ?? null;
-  const [view, setView] = useState<DmView>(first && encounters.some((e) => e.id === first) ? 'encounter' : 'session');
+  const [asked, setView] = useState<DmView>(first && encounters.some((e) => e.id === first) ? 'encounter' : 'session');
+  /** The encounter or the list, whichever was last in the port. */
+  const [main, setMain] = useState<DmView>(asked);
+  const beside = focused && !!desktop?.beside;
+  /** What the party's side shows. The cast lists the same people, so it takes the party's place. */
+  const [partySide, setPartySide] = useState<'party' | 'cast'>('party');
+  const view = beside && (asked === 'party' || asked === 'cast') ? main : asked;
+  const shown = useCallback((v: DmView) => v === view || (beside && v === partySide), [view, beside, partySide]);
+  const now = useRef({ beside, main });
+  now.current = { beside, main };
   const [encId, setEncId] = useState<string | null>(first);
   /** The encounter the table is about: the one last opened, or the running one, or the newest. */
   const enc = useMemo(
@@ -105,13 +117,19 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
   const desk = useMemo<DmDesk>(() => ({
     open: (next, id) => {
       pending.current = null;
+      if (next === 'party' || next === 'cast') {
+        setPartySide(next);
+        if (now.current.beside) return;
+      }
       const target = id ?? encRef.current?.id;
       if (next === 'encounter') {
         if (!target) return;
         setEncId(target);
       }
+      if (next === 'encounter' || next === 'session') setMain(next);
       setView(next);
     },
+    back: () => { setPartySide('party'); setView(now.current.main); },
     register: (kind, api) => {
       if (!api) { delete apis.current[kind]; return; }
       apis.current[kind] = api;
@@ -184,6 +202,19 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
   const [guide, setGuide] = useState(false);
   const [muted, setMuted] = useState(isUiMuted);
 
+  const setPaired = desktop?.setPaired;
+  useLayoutEffect(() => {
+    if (focused) setPaired?.(table.partyBeside);
+  }, [focused, setPaired, table.partyBeside]);
+  const pair = useCallback((on: boolean) => update((t) => ({ ...t, partyBeside: on })), [update]);
+  const fight = useMemo<PartyFight | undefined>(() => (
+    view === 'encounter' && enc ? {
+      encounter: enc,
+      move: (charId, key, delta) => within('encounter', enc.id, (a) => a.moveVital(charId, key, delta)),
+      set: (charId, key) => within('encounter', enc.id, (a) => a.setVital(charId, key, true)),
+    } : undefined
+  ), [view, enc, within]);
+
   const sort = useCallback((by: SortBy) => {
     if (by === 'own') {
       update((t) => {
@@ -216,6 +247,7 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
   const counters = useDeskCounters(table, update, enc, changeOne);
   const env = useMemo<ControlsEnv>(() => ({
     records, table, view, enc, category, muted, sort, counters,
+    shown,
     open: desk.open,
     inEncounter: (run) => within('encounter', enc?.id, run),
     inSession: (run) => within('session', session.id, run),
@@ -237,7 +269,7 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
     },
     dice: () => setTray(true),
     guide: () => setGuide(true),
-  }), [records, table, view, enc, category, muted, sort, counters, desk, within, session.id, party.id, router, update]);
+  }), [records, table, view, enc, category, muted, sort, counters, shown, desk, within, session.id, party.id, router, update]);
 
   const host = useMemo<TableHost>(() => {
     const custom = table.decks.map((d) => d.key);
@@ -333,14 +365,16 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
 
   const layers = desktop?.layers;
   const panels = useSyncExternalStore(layers?.watch ?? noWatch, () => layers?.count() ?? 0);
-  // Behind a panel the port takes no clicks and no Tab, as the sheet's does.
-  const port = useRef<View>(null);
+  // Behind a panel both sides and their title take no clicks and no Tab, as the sheet's port does.
+  const port = useRef<View>(null), partyPort = useRef<View>(null), bar = useRef<View>(null);
   useLayoutEffect(() => {
-    const el = port.current as unknown as HTMLElement | null;
-    if (!el?.setAttribute) return;
-    if (desktop && panels) el.setAttribute('inert', '');
-    else el.removeAttribute('inert');
-  }, [desktop, panels]);
+    for (const ref of [port, partyPort, bar]) {
+      const el = ref.current as unknown as HTMLElement | null;
+      if (!el?.setAttribute) continue;
+      if (desktop && panels) el.setAttribute('inert', '');
+      else el.removeAttribute('inert');
+    }
+  }, [desktop, beside, panels]);
   useEffect(() => {
     if (!focused || !layers) return;
     const onKey = (e: KeyboardEvent) => {
@@ -359,18 +393,30 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
     <DmDeskContext.Provider value={desk}>
       <View style={{ flex: 1, backgroundColor: DmRune.ink }}>
         <View ref={port} style={{ flex: 1 }}>
-          {view === 'encounter' && shownEnc ? <EncounterScreen key={shownEnc} encounterId={shownEnc} />
+          {view === 'encounter' && shownEnc ? <EncounterScreen key={shownEnc} encounterId={shownEnc} partyBeside={beside} />
             : view === 'party' ? <PartyOverviewScreen partyId={party.id} />
             : view === 'cast' ? <PartyEditorScreen partyId={party.id} />
-            : view === 'library' ? (
-              <>
-                <AdversaryLibrary mode="browse" savedList={saved} onDeleteSaved={deleteSaved} onClose={() => desk.open(enc ? 'encounter' : 'session')} />
-                {/* The library is an overlay on a phone and brings no frame; in the port it is a screen like the rest. */}
-                <View style={[StyleSheet.absoluteFill, { zIndex: 351 }]} pointerEvents="none"><FullUi width="100%" height="100%" preserveAspectRatio="none" /></View>
-              </>
-            )
+            : view === 'library' ? <AdversaryLibrary embedded={!!desktop} mode="browse" savedList={saved} onDeleteSaved={deleteSaved} onClose={desk.back} />
             : <SessionScreen />}
         </View>
+        {beside ? (
+          <DesktopPortal to="beside">
+            <View ref={partyPort} style={{ flex: 1, backgroundColor: DmRune.ink }}>
+              {partySide === 'cast' ? <PartyEditorScreen partyId={party.id} /> : <PartyOverviewScreen partyId={party.id} fight={fight} />}
+            </View>
+          </DesktopPortal>
+        ) : null}
+        {focused && desktop ? (
+          <DesktopPortal to="bar">
+            <View ref={bar} pointerEvents="box-none" style={{ flex: 1 }}>
+              <DeskHead desktop={desktop} shown={shown} hasEncounter={!!enc}
+                title={view === 'encounter' && enc ? enc.name : party.name}
+                encounter={view === 'encounter' ? enc ?? undefined : undefined}
+                onStart={() => within('encounter', enc?.id, (a) => a.start())}
+                onOpen={(next) => desk.open(next)} onPair={pair} />
+            </View>
+          </DesktopPortal>
+        ) : null}
         {focused && desktop ? (
           <TableHostContext.Provider value={host}>
             <PlayTable characterId={dmTableOwner(party.id)} dice={dice} overlay={panels > 0} backRef={backRef} onOpen={(p) => { if (p === 'newCategory') setDialog({ kind: 'newDeck' }); }} />

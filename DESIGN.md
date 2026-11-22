@@ -380,10 +380,10 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
 
 ## v0.49.0: the DM screen and sticky notes
 
-- A session on a desktop window is the DM screen (`/session`, `features/dm/desk`): the sheet's shape, a port and the
-  play table. The port shows the phone's own DM screens (encounters, encounter, party sheet, cast, library); never
-  write a second one of any of them. A screen hands the table its handlers with `useDeskApi`; panels that are full
-  screen on a phone open beside the port through `DmSide`.
+- A session on a desktop window is the DM screen (`/session`, `features/dm/desk`): the sheet's shape, a screen and
+  the play table. The screen is made of the phone's own DM screens (encounters, encounter, party sheet, cast,
+  library), drawn as v0.50.2 says; never write a second one of any of them. A screen hands the table its handlers
+  with `useDeskApi`; panels that are full screen on a phone open beside the screen through `DmSide`.
 - DM controls are seven control dice (Screen, Encounter, Party, Foes, Log, Cards, Tools), each opening the deck die's
   menu. A new DM control is a row in `desk/dm-controls.ts`, not a button in the port.
 - The table takes any host (`table/table-host.ts`) and any number of control dice. The seven find their own room on
@@ -416,3 +416,18 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
 - DM counters are `lib/dm-counters`' own rules and editor: a campaign's are kept with its table, a combatant's in the
   encounter. Sticky notes are 108px until resized, and a pinned one is never torn by anything.
 - Desktop DM screens: a right click does what a hold does on a phone.
+
+## v0.50.2: the DM screen is one screen
+
+- One frame, one title, two sides (`desk/desk-head`, the geometry in `phone-frame`). Left is the party, with the cast
+  as that side's other tab. Right is what is being run: Encounter, Session, Library. Never two phone screens side by
+  side: what is shown inside it is drawn bare (`AppScreen bare`), with no frame, title, back or roster of its own.
+- Everyone is on it once. The party side speaks for an encounter's members (its numbers, its order, its log); the
+  encounter side lists adversaries and the allies that are only the encounter's. Where an encounter keeps numbers of
+  its own, the party side says whose it shows and switches. Rows on both sides are one height, so they read across.
+- Where two sides would fall under 0.68 scale it is one column with five tabs, and the encounter lists its members
+  again. The table always keeps 640px. Hiding the party is the same one column, remembered for the campaign.
+- Both sides are live, so on the desk the party, the characters and the encounter are written at once, and each side
+  follows the other's writes (`useDeskFollow`). A new screen that writes a party or a character whole must too.
+- Counters: a countdown always has a number to go back to (`startOf`, `setKind`), and at 0 the way back is drawn. A
+  countdown still never goes up.

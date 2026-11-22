@@ -178,6 +178,11 @@ export function webWatch(fn: (key: string) => void): () => void {
   return () => { watchers.delete(fn); };
 }
 
+/** A change that reads already see and the disk does not yet (`character-store` queues its writes). */
+export function webAnnounce(key: string): void {
+  changed(key);
+}
+
 function changed(key: string): void {
   for (const fn of watchers) fn(key);
 }

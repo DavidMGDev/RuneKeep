@@ -18,7 +18,7 @@ import { RuneButton } from '@/components/rune-button';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { type CharacterFile } from '@/lib/character-file';
 import { type MemberVitals, type VitalKey } from '@/lib/party';
-import { counterMode, soleCounter } from '@/lib/dm-counters';
+import { type CounterMove, counterMode, soleCounter } from '@/lib/dm-counters';
 import { type Combatant, type CombatantStat } from '@/lib/session';
 import { MemberPanel } from './member-panel';
 import { AdversaryPortrait, BaseGameEmblem, hasStatBlock, StatBlockDetail } from './adversary-detail';
@@ -105,7 +105,7 @@ export function CombatantPanel({
   onToggleSelect?: () => void;
   onOpenImage?: () => void;
   /** Move one of this entry's counters (v0.41.3). Absent draws them read-only. */
-  onCounter?: (counterId: string, delta: number) => void;
+  onCounter?: (counterId: string, delta: CounterMove) => void;
   /** v0.36 (owner): a prepared encounter fades its combatants; expanding one fades it back to full. */
   dimmed?: boolean;
 }) {

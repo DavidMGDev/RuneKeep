@@ -633,7 +633,7 @@ function dmTaken(sup: { x: number; y: number; dir: 'row' | 'column' } | null, ch
 /**
  * Where a long row of control dice is seated (the DM screen's seven): nearest where the look puts it, off the supply,
  * the deck die, the corner buttons and the cards themselves. A felt too small for that takes them in two rows; only
- * one too small for that as well lets them lie over the hand.
+ * one too small for that as well lets them lie over the hand, in whichever shape covers the least of it.
  */
 export function seatControls(l: DeckLook, n: number, gap: number, felt: Box, hand: Box, sup: { x: number; y: number }, cat: { x: number; y: number }): { x: number; y: number; wrap?: number; clear: boolean } {
   const want = { x: l.ctlX * (felt.right + felt.left), y: l.ctlY * (felt.bottom + felt.top) };
@@ -657,13 +657,20 @@ export function seatControls(l: DeckLook, n: number, gap: number, felt: Box, han
   const shapes: { x: number; y: number; wrap?: number }[] = l.ctlDir === 'row'
     ? [{ x: reach(n), y: 52 }, { x: reach(half), y: 52 + 48 * k, wrap: half }]
     : [{ x: 60, y: reach(n) }, { x: reach(n), y: 52, wrap: n }, { x: reach(half), y: 52 + 48 * k, wrap: half }];
-  for (const avoid of [[...taken, cards], taken]) {
-    for (const shape of shapes) {
-      if (shape.x * 2 > felt.right - felt.left || shape.y * 2 > felt.bottom - felt.top) continue;
-      const at = clearSpot(want, shape, felt, avoid);
-      if (at.clear) return { ...at, wrap: shape.wrap };
-    }
+  const fits = shapes.filter((s) => s.x * 2 <= felt.right - felt.left && s.y * 2 <= felt.bottom - felt.top);
+  for (const shape of fits) {
+    const at = clearSpot(want, shape, felt, [...taken, cards]);
+    if (at.clear) return { ...at, wrap: shape.wrap };
   }
+  let over: { x: number; y: number; wrap?: number; clear: boolean } | null = null, least = Infinity;
+  for (const shape of fits) {
+    const at = clearSpot(want, shape, felt, taken);
+    if (!at.clear) continue;
+    const covered = Math.max(0, Math.min(at.x + shape.x, cards.right) - Math.max(at.x - shape.x, cards.left))
+      * Math.max(0, Math.min(at.y + shape.y, cards.bottom) - Math.max(at.y - shape.y, cards.top));
+    if (covered < least) { least = covered; over = { ...at, wrap: shape.wrap }; }
+  }
+  if (over) return over;
   const last = shapes[shapes.length - 1];
   return { ...clearSpot(want, last, felt, taken), wrap: last.wrap };
 }

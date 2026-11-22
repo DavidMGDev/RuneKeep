@@ -12,6 +12,11 @@ describe('the DM table', () => {
     }
   });
 
+  it('keeps the party beside the screen until it is put away', () => {
+    expect(cleanDmTable({}).partyBeside).toBe(true);
+    expect(cleanDmTable({ partyBeside: false }).partyBeside).toBe(false);
+  });
+
   it('holds Fear between none and twelve', () => {
     expect(cleanDmTable({ fear: { n: 40 } }).fear.n).toBe(FEAR_MAX);
     expect(cleanDmTable({ fear: { n: -3 } }).fear.n).toBe(0);

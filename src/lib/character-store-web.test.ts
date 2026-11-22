@@ -22,6 +22,7 @@ jest.mock('./web-store', () => ({
     mockState.writes += 1;
     mockStore.set(k, v);
   },
+  webAnnounce: () => undefined,
 }));
 
 // The share path drags in expo modules this test has no use for.

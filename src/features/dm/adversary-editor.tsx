@@ -18,7 +18,7 @@ import { PopupDialog } from '@/components/popup-dialog';
 import { RuneButton } from '@/components/rune-button';
 import { DmType, Body, Display, DmRune } from '@/constants/theme';
 import { ADVERSARY_ROLES, type AdversaryFeature, type AdversaryRole, type FeatureKind } from '@/data/adversaries';
-import { type AdversaryCounter, commitStarts, type CounterKind, meaningfulCounters, newCounter, setStart } from '@/lib/dm-counters';
+import { type AdversaryCounter, commitStarts, type CounterKind, meaningfulCounters, newCounter, setKind, setStart } from '@/lib/dm-counters';
 import { type Combatant } from '@/lib/session';
 import { AdversaryPortrait } from './adversary-detail';
 import { DmModal, DmPress } from './dm-ui';
@@ -120,7 +120,7 @@ export function CounterEditor({ c, onChange, onRemove, standalone }: { c: Advers
         ) : null}
       </View>
       <View style={{ flexDirection: 'row', gap: 6 }}>
-        {COUNTER_KINDS.map((k) => <Chip key={k.key} label={k.label} on={c.kind === k.key} onPress={() => onChange({ ...c, kind: k.key, loop: k.key === 'countdown' ? c.loop : undefined })} />)}
+        {COUNTER_KINDS.map((k) => <Chip key={k.key} label={k.label} on={c.kind === k.key} onPress={() => onChange(setKind(c, k.key))} />)}
       </View>
       <ChamferBox chamfer={5} fill={INPUT_FILL} stroke={DmRune.line} strokeWidth={1.1} style={{ minHeight: 52, paddingHorizontal: 9, paddingVertical: 7 }}>
         <TextInput value={c.text} onChangeText={(text) => onChange({ ...c, text })} placeholder="What it means…" placeholderTextColor={DmRune.muted} multiline maxLength={600} style={{ color: DmRune.text, fontSize: DmType.body, fontFamily: Body.regular, textAlignVertical: 'top', minHeight: 38 }} />
@@ -130,7 +130,7 @@ export function CounterEditor({ c, onChange, onRemove, standalone }: { c: Advers
         {/* A resource has nowhere to come back to, so the wrap belongs to the countdown alone. */}
         {c.kind === 'countdown' ? (
           <View style={{ flex: 1, paddingBottom: 11 }}>
-            <Toggle label="Restart below zero" on={!!c.loop} onPress={() => onChange({ ...c, loop: !c.loop })} />
+            <Toggle label="Restart after 0" on={!!c.loop} onPress={() => onChange({ ...c, loop: !c.loop })} />
           </View>
         ) : <View style={{ flex: 1 }} />}
       </View>
