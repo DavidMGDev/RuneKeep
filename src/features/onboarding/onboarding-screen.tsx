@@ -361,11 +361,13 @@ export function OnboardingScreen({ tour, onDone }: { tour: TourId; onDone: () =>
       // and Skip is the way out.
       <AppScreen title={TITLE[tour]} hideNav onBack={safeStep === 0 ? undefined : () => go(safeStep - 1)}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 30 }}>
-          <ChamferBox chamfer={18} fill="rgba(14,17,22,0.94)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.4} style={{ width: 1000, maxWidth: '100%', flexDirection: 'row', gap: 44, paddingHorizontal: 44, paddingVertical: 40, minHeight: 460 }}>
-            <Animated.View style={[{ width: 440, alignItems: 'center', justifyContent: 'center' }, fadeStyle]}>
-              {/* The illustrations are drawn for a phone column; a little larger suits the wide card. */}
-              <View style={{ transform: [{ scale: 1.3 }] }}>{page.render?.({ did, markDid }) ?? null}</View>
-            </Animated.View>
+          <ChamferBox chamfer={18} fill="rgba(14,17,22,0.94)" stroke="rgba(218,162,73,0.45)" strokeWidth={1.4} style={{ width: page.render ? 1000 : 640, maxWidth: '100%', flexDirection: 'row', gap: 44, paddingHorizontal: 44, paddingVertical: 40, minHeight: 460 }}>
+            {page.render ? (
+              <Animated.View style={[{ width: 440, alignItems: 'center', justifyContent: 'center' }, fadeStyle]}>
+                {/* The illustrations are drawn for a phone column; a little larger suits the wide card. */}
+                <View style={{ transform: [{ scale: 1.3 }] }}>{page.render({ did, markDid })}</View>
+              </Animated.View>
+            ) : null}
             <View style={{ flex: 1, justifyContent: 'space-between', gap: 24 }}>
               <Animated.View style={fadeStyle}>
                 <Text style={{ color: Rune.goldBright, fontSize: 30, fontFamily: Display.black, letterSpacing: 1, textTransform: 'uppercase' }}>{page.title}</Text>

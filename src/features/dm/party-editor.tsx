@@ -176,7 +176,7 @@ export function PartyEditorScreen() {
       }>
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <SectionLabel dm>{party.memberIds.length} {party.memberIds.length === 1 ? 'Character' : 'Character'}</SectionLabel>
+          <SectionLabel dm>{party.memberIds.length} {party.memberIds.length === 1 ? 'Character' : 'Characters'}</SectionLabel>
           <DmPress onPress={() => setEditingIdentity(true)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Edit campaign details">
             <Text style={{ color: DmRune.accentDim, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Details</Text>
           </DmPress>

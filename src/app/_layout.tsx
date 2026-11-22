@@ -1,13 +1,4 @@
-import {
-  Archivo_400Regular,
-  Archivo_400Regular_Italic,
-  Archivo_500Medium,
-  Archivo_600SemiBold,
-  Archivo_700Bold,
-  Archivo_800ExtraBold,
-  Archivo_900Black,
-  useFonts,
-} from '@expo-google-fonts/archivo';
+import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { AppState, Platform } from 'react-native';
@@ -21,6 +12,18 @@ import { PhoneFrame } from '@/components/phone-frame';
 import { ToastHost } from '@/components/toast';
 import { IncomingFileGate } from '@/features/share/incoming-file';
 import { hydrateWebStore } from '@/lib/web-store';
+
+// The fonts are the repo's own files: Cloudflare Pages drops any folder named node_modules, so a font imported from
+// the package shipped to dev and 404'd (as the app's page) on the site.
+const FONTS = {
+  Archivo_400Regular: require('../../assets/fonts/Archivo_400Regular.ttf'),
+  Archivo_400Regular_Italic: require('../../assets/fonts/Archivo_400Regular_Italic.ttf'),
+  Archivo_500Medium: require('../../assets/fonts/Archivo_500Medium.ttf'),
+  Archivo_600SemiBold: require('../../assets/fonts/Archivo_600SemiBold.ttf'),
+  Archivo_700Bold: require('../../assets/fonts/Archivo_700Bold.ttf'),
+  Archivo_800ExtraBold: require('../../assets/fonts/Archivo_800ExtraBold.ttf'),
+  Archivo_900Black: require('../../assets/fonts/Archivo_900Black.ttf'),
+};
 
 /**
  * Root layout. Establishes the three providers every screen relies on:
@@ -48,15 +51,7 @@ export default function RootLayout() {
     return () => sub.remove();
   }, []);
 
-  const [fontsLoaded, fontError] = useFonts({
-    Archivo_400Regular,
-    Archivo_400Regular_Italic,
-    Archivo_500Medium,
-    Archivo_600SemiBold,
-    Archivo_700Bold,
-    Archivo_800ExtraBold,
-    Archivo_900Black,
-  });
+  const [fontsLoaded, fontError] = useFonts(FONTS);
 
   if ((!fontsLoaded && !fontError) || !stored) return null;
 

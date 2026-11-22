@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import Svg, { Line, Polyline } from 'react-native-svg';
 
@@ -40,25 +40,34 @@ export function CampaignDossier({ party, roster, sessions, encounters, onOpenSes
   const byId = new Map(roster.map((f) => [f.id, f]));
   const cast = party.memberIds.map((id) => byId.get(id)).filter((f): f is CharacterFile => !!f);
   const newest = sessions ? [...sessions].sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : null;
+  // Under this the buttons do not fit beside the badge: they take a row of their own, and the badge keeps to the name.
+  const narrow = useWindowDimensions().width < 1500;
+  const nameSize = narrow && party.name.length > 22 ? 27 : 36;
+  const actions = (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: narrow ? 0 : 10 }}>
+      <RuneButton label="Open sessions" kind="primary" height={42} dense={narrow} dm style={narrow ? undefined : { minWidth: 170 }} onPress={onOpenSessions} />
+      <RuneButton label="New session" kind="secondary" height={42} dense={narrow} dm onPress={onNewSession} />
+      <RuneButton label="Edit cast" kind="secondary" height={42} dense={narrow} dm onPress={onEditCast} />
+      <RuneButton label="Edit details" kind="secondary" height={42} dense={narrow} dm onPress={onEditDetails} />
+      <RuneButton label="Delete" kind="ghost" height={42} dense={narrow} dm onPress={onDelete} />
+    </View>
+  );
   return (
     <Animated.View key={party.id} entering={FadeIn.duration(180)} style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 34, paddingTop: 26, paddingBottom: 30, gap: 28 }} showsVerticalScrollIndicator={false}>
-        <View style={{ flexDirection: 'row', gap: 24, alignItems: 'flex-end' }}>
-          <IdentityBadge id={party} size={132} />
-          <View style={{ flex: 1, gap: 8, paddingBottom: 4 }}>
-            {/* Two lines: a campaign's name runs longer than a hero's ("The Sunken Crown" was cut at 1100px). */}
-            <Text numberOfLines={2} style={{ color: DmRune.ivory, fontSize: 36, lineHeight: 40, fontFamily: Display.black, letterSpacing: 1.2, textTransform: 'uppercase' }}>{party.name}</Text>
-            {party.description?.trim() ? (
-              <Text numberOfLines={2} style={{ color: DmRune.muted, fontSize: 14, fontFamily: Body.medium, lineHeight: 20 }}>{party.description.trim()}</Text>
-            ) : null}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
-              <RuneButton label="Open sessions" kind="primary" height={42} dm style={{ minWidth: 170 }} onPress={onOpenSessions} />
-              <RuneButton label="New session" kind="secondary" height={42} dm onPress={onNewSession} />
-              <RuneButton label="Edit cast" kind="secondary" height={42} dm onPress={onEditCast} />
-              <RuneButton label="Edit details" kind="secondary" height={42} dm onPress={onEditDetails} />
-              <RuneButton label="Delete" kind="ghost" height={42} dm onPress={onDelete} />
+        <View style={{ gap: 16 }}>
+          <View style={{ flexDirection: 'row', gap: narrow ? 18 : 24, alignItems: 'center' }}>
+            <IdentityBadge id={party} size={narrow ? 96 : 132} />
+            <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
+              {/* Whole, however long: the editor stops a name at 48 characters, which is three lines at 1100px. */}
+              <Text style={{ color: DmRune.ivory, fontSize: nameSize, lineHeight: nameSize + 4, fontFamily: Display.black, letterSpacing: 1.2, textTransform: 'uppercase', overflowWrap: 'anywhere' } as object}>{party.name}</Text>
+              {party.description?.trim() ? (
+                <Text numberOfLines={2} style={{ color: DmRune.muted, fontSize: 14, fontFamily: Body.medium, lineHeight: 20 }}>{party.description.trim()}</Text>
+              ) : null}
+              {narrow ? null : actions}
             </View>
           </View>
+          {narrow ? actions : null}
         </View>
 
         <View style={{ gap: 12 }}>

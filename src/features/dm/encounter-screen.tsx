@@ -706,10 +706,10 @@ export function EncounterScreen() {
               combatant expanded and this row teleported, which is what made the expand feel broken. */}
           <Animated.View layout={ROW_SPRING} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: DmGap.section }}>
             <View style={{ opacity: notStarted ? DIM : 1 }}><SectionLabel dm>Adversaries</SectionLabel></View>
-            <View style={{ flexDirection: 'row', gap: 14 }}>
+            <View style={{ flexDirection: 'row', flexShrink: 1, flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 }}>
               {enc.adversaries.length > 1 ? <RuneButton label={reordering === 'adversaries' ? 'Done' : 'Reorder'} kind="ghost" height={28} dense dm onPress={() => { playSfx('buttonTap'); advSel.clear(); setReordering((r) => (r === 'adversaries' ? null : 'adversaries')); }} /> : null}
               {reordering !== 'adversaries' ? <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('adversary')} /> : null}
-              {reordering !== 'adversaries' ? <RuneButton label="+ Adversary" kind="secondary" height={28} dense dm onPress={addAdversary} /> : null}
+              {reordering !== 'adversaries' ? <RuneButton label="+ Add" accessibilityLabel="Add an adversary" kind="secondary" height={28} dense dm onPress={addAdversary} /> : null}
             </View>
           </Animated.View>
           {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic', opacity: notStarted ? DIM : 1 }}>None yet, add one, or spawn a whole group from the library.</Text> : null}

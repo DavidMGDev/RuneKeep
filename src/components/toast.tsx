@@ -9,9 +9,13 @@ import Animated, { FadeInUp, FadeOut } from 'react-native-reanimated';
 
 import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Rune } from '@/constants/theme';
+import { useDesktopPage } from '@/hooks/use-desktop';
 
 export type ToastTone = 'info' | 'error' | 'success';
 interface ToastMsg { id: number; text: string; tone: ToastTone }
+
+/** A desktop page's top bar ends here; a toast drops in under it, off the menu's links. */
+const DESKTOP_BAR_H = 92;
 
 let seq = 1;
 const listeners = new Set<(m: ToastMsg) => void>();
@@ -25,6 +29,7 @@ const TONE_COLOR: Record<ToastTone, string> = { info: Rune.goldEdge, error: '#7A
 
 export function ToastHost() {
   const [items, setItems] = useState<ToastMsg[]>([]);
+  const page = useDesktopPage();
   useEffect(() => {
     const on = (m: ToastMsg) => {
       setItems((cur) => [...cur, m]);
@@ -38,7 +43,7 @@ export function ToastHost() {
   return (
     // v0.23.0: matched to the sheet's StatToastHost -- pinned just below the top border, compact
     // pill, tone on the stroke. There is now ONE toast look in the app.
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'flex-start', paddingTop: 46, zIndex: 9999 }]}>
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'flex-start', paddingTop: page ? DESKTOP_BAR_H : 46, zIndex: 9999 }]}>
       <View style={{ gap: 6, alignItems: 'center' }}>
         {items.map((m) => (
           <Animated.View key={m.id} entering={FadeInUp.springify().damping(18)} exiting={FadeOut}>

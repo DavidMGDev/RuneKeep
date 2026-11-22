@@ -371,3 +371,9 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   cast, Edit details, Delete with its two asks; the cast with who is away; the sessions newest first, each saying how
   many encounters and which is running). A click selects and a second click opens; Up, Down and Enter as on the roster.
   Sessions, a session, the cast editor and encounters still open in the phone frame.
+
+## v0.48.1: fonts on the live site, and the campaign screens' loose ends
+
+- Fonts are the repo's own files in `assets/fonts`. Never import a bundled asset from a package: Cloudflare Pages drops `node_modules` folders from the upload, and the site answers with the app's page (cached for a year by `/assets/*`).
+- A desktop page's toast drops in under the top bar. A tour page with no illustration is one column.
+- Under 1500px the campaign pane's buttons take their own row under the badge and name; the name is never cut.
