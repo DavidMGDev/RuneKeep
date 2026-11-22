@@ -5,13 +5,15 @@
  * handler the phone's button runs, through the screen in the port, so there is one implementation of each.
  */
 import { FAVORITES_CATEGORY } from '@/lib/favorites';
-import type { TableRow } from '@/features/character-sheet/table/table-host';
+import type { MenuSpec, TableRow } from '@/features/character-sheet/table/context-menu';
+import { MENU_ICON } from '@/features/character-sheet/table/menu-icons';
 import type { TableAction, TableOption } from '@/features/character-sheet/table/table-dice';
 import type { DmTable } from '@/lib/dm-table';
-import type { Encounter } from '@/lib/session';
+import { initialVitals, memberMaxes } from '@/lib/dm-vitals';
+import { type Encounter, fighters } from '@/lib/session';
 import { isPresent, type VitalKey } from '@/lib/party';
 
-import { combatantCardId, encounterCardId, memberCardId, templateCardId } from './dm-cards';
+import { combatantCardId, encounterCardId, memberCardId, memberNow, templateCardId, vitalStats } from './dm-cards';
 import type { DmView, EncounterApi, PartyApi, SessionApi, Side } from './dm-desk';
 import type { DmRecords } from './use-dm-records';
 
@@ -135,7 +137,7 @@ export function controlDice(e: ControlsEnv): TableAction[] {
         { key: 'counters', label: 'Counters', glyph: 'counter', sub: String(e.counters.out), onPress: () => e.counters.open() },
         { key: 'newCounter', label: 'New counter', glyph: 'add', onPress: () => e.counters.add() },
         { key: 'fear', label: 'Fear tracker', glyph: 'fear', sub: onOff(table.fear.on), onPress: e.toggleFear },
-        { key: 'dice', label: 'Dice tray', glyph: 'roll', onPress: e.dice },
+        { key: 'dice', gap: true, label: 'Dice tray', glyph: 'roll', onPress: e.dice },
         { key: 'archive', label: 'Card archive', glyph: 'cards', onPress: e.go.archive },
         { key: 'mute', label: 'Mute UI sounds', glyph: 'mute', sub: onOff(e.muted), onPress: e.toggleMute },
       ],
@@ -143,7 +145,32 @@ export function controlDice(e: ControlsEnv): TableAction[] {
   ];
 }
 
-const VITALS: [VitalKey, string][] = [['hp', 'Set Hit Points'], ['armor', 'Set Armor'], ['stress', 'Set Stress'], ['hope', 'Set Hope']];
+const VITALS: [key: VitalKey, label: string, short: string, icon: string][] = [
+  ['hp', 'Set Hit Points', 'HP', MENU_ICON.hp], ['armor', 'Set Armor', 'Armor', MENU_ICON.armor],
+  ['stress', 'Set Stress', 'Stress', MENU_ICON.stress], ['hope', 'Set Hope', 'Hope', MENU_ICON.hope],
+];
+/** Four buttons, each showing where it stands. `now` is in the order of VITALS, as the card prints them. */
+const vitalRows = (now: [string, string][], set: (key: VitalKey) => void): TableRow[] =>
+  VITALS.map(([key, label, short, icon], i) => ({ label, short, icon, quick: true, value: now[i]?.[1], onPress: () => set(key) }));
+
+const STATUS: Record<Encounter['status'], string> = { prepared: 'Prepared', active: 'Running', completed: 'Finished' };
+
+/** Whose menu it is: the card's own name, and what it is. */
+export function cardHead(e: ControlsEnv, id: string): Omit<MenuSpec, 'rows'> {
+  const { records, enc } = e;
+  const fight = records.encounters.find((x) => encounterCardId(x.id) === id);
+  if (fight) return { title: fight.name, detail: STATUS[fight.status], icon: MENU_ICON.fight };
+  const template = records.saved.find((x) => templateCardId(x.id) === id);
+  if (template) return { title: template.name, detail: 'Saved', icon: MENU_ICON.save };
+  const member = records.party?.memberIds.find((m) => memberCardId(m) === id);
+  if (records.party && member) {
+    return { title: records.files[member]?.name ?? 'Character', detail: isPresent(records.party, member) ? 'Party' : 'Away', icon: MENU_ICON.cards };
+  }
+  const c = enc ? fighters(enc).find((x) => combatantCardId(x.id) === id) : undefined;
+  if (!c) return { title: 'Card', icon: MENU_ICON.cards };
+  const foe = enc!.adversaries.some((x) => x.id === c.id);
+  return { title: c.name, detail: c.fallen ? 'Fallen' : foe ? 'Adversary' : 'Ally', icon: foe ? MENU_ICON.fight : MENU_ICON.addAlly };
+}
 
 /** What a card in the hand or on the felt can have done to it. */
 export function cardRows(e: ControlsEnv, id: string): TableRow[] {
@@ -152,20 +179,20 @@ export function cardRows(e: ControlsEnv, id: string): TableRow[] {
   const fight = records.encounters.find((x) => encounterCardId(x.id) === id);
   if (fight) {
     return [
-      { label: 'Open it', gap: true, onPress: () => e.open('encounter', fight.id) },
-      { label: 'Edit its details', onPress: () => e.inSession((a) => a.edit(fight.id)) },
-      { label: 'Duplicate it', onPress: () => e.inSession((a) => a.duplicate(fight.id)) },
-      { label: 'Move or copy it', onPress: () => e.inSession((a) => a.move(fight.id)) },
-      { label: 'Delete encounter', danger: true, onPress: () => e.inSession((a) => a.remove(fight.id)) },
+      { label: 'Open encounter', icon: MENU_ICON.open, gap: true, onPress: () => e.open('encounter', fight.id) },
+      { label: 'Edit its details', icon: MENU_ICON.edit, onPress: () => e.inSession((a) => a.edit(fight.id)) },
+      { label: 'Duplicate it', icon: MENU_ICON.duplicate, onPress: () => e.inSession((a) => a.duplicate(fight.id)) },
+      { label: 'Move or copy to a session', icon: MENU_ICON.toSession, onPress: () => e.inSession((a) => a.move(fight.id)) },
+      { label: 'Delete encounter', icon: MENU_ICON.bin, danger: true, onPress: () => e.inSession((a) => a.remove(fight.id)) },
     ];
   }
 
   const template = records.saved.find((x) => templateCardId(x.id) === id);
   if (template) {
     return [
-      { label: 'Add as an adversary', gap: true, hidden: !enc, onPress: () => e.inEncounter((a) => a.spawn(template.id, 'adversary')) },
-      { label: 'Add as an ally', hidden: !enc, onPress: () => e.inEncounter((a) => a.spawn(template.id, 'ally')) },
-    ].filter((r) => !r.hidden);
+      { label: 'Add as an adversary', icon: MENU_ICON.addFoe, gap: true, disabled: !enc, onPress: () => e.inEncounter((a) => a.spawn(template.id, 'adversary')) },
+      { label: 'Add as an ally', icon: MENU_ICON.addAlly, disabled: !enc, onPress: () => e.inEncounter((a) => a.spawn(template.id, 'ally')) },
+    ];
   }
 
   const party = records.party;
@@ -174,10 +201,13 @@ export function cardRows(e: ControlsEnv, id: string): TableRow[] {
     // Only the running encounter and the party sheet may change a member's vitals.
     const inFight = enc?.status === 'active' && enc.allies.some((a) => a.kind === 'member' && a.charId === member);
     return [
-      ...VITALS.map(([key, label], i) => ({ label, gap: i === 0, onPress: () => (inFight ? e.inEncounter((a) => a.setVital(member, key, true)) : e.inParty((a) => a.setVital(member, key))) })),
-      { label: 'Their modifiers', onPress: () => (inFight ? e.inEncounter((a) => a.modifiers(member)) : e.inParty((a) => a.modifiers(member))) },
-      { label: 'Their cards', onPress: () => (inFight ? e.inEncounter((a) => a.cards(member)) : e.inParty((a) => a.cards(member))) },
-      { label: isPresent(party, member) ? 'Mark as away' : 'Mark as present', onPress: () => (inFight ? e.inEncounter((a) => a.presence(member)) : e.inParty((a) => a.presence(member))) },
+      ...(records.files[member]
+        ? vitalRows((({ vitals, maxes }) => vitalStats(vitals, maxes))(memberNow(records.files[member], party, enc)),
+            (key) => (inFight ? e.inEncounter((a) => a.setVital(member, key, true)) : e.inParty((a) => a.setVital(member, key))))
+        : []),
+      { label: 'Their modifiers', icon: MENU_ICON.modifiers, gap: true, onPress: () => (inFight ? e.inEncounter((a) => a.modifiers(member)) : e.inParty((a) => a.modifiers(member))) },
+      { label: 'Their cards', icon: MENU_ICON.cards, onPress: () => (inFight ? e.inEncounter((a) => a.cards(member)) : e.inParty((a) => a.cards(member))) },
+      { label: isPresent(party, member) ? 'Mark as away' : 'Mark as present', icon: isPresent(party, member) ? MENU_ICON.away : MENU_ICON.present, onPress: () => (inFight ? e.inEncounter((a) => a.presence(member)) : e.inParty((a) => a.presence(member))) },
     ];
   }
 
@@ -188,32 +218,33 @@ export function cardRows(e: ControlsEnv, id: string): TableRow[] {
   if (!c) return [];
   const side: Side = foe ? 'adversary' : 'ally';
   const file = c.charId ? records.files[c.charId] : undefined;
-  const move: TableRow = { label: foe ? 'Make it an ally' : 'Make it an adversary', onPress: () => e.inEncounter((a) => a.convert(c.id, side)) };
-  const remove: TableRow = { label: 'Remove from encounter', danger: true, onPress: () => e.inEncounter((a) => a.remove(c.id, side)) };
-  const save: TableRow = { label: 'Save to my library', onPress: () => e.inEncounter((a) => a.saveTemplate(c.id)) };
+  const move: TableRow = { label: foe ? 'Make it an ally' : 'Make it an adversary', icon: MENU_ICON.swap, gap: true, onPress: () => e.inEncounter((a) => a.convert(c.id, side)) };
+  const remove: TableRow = { label: 'Remove from encounter', icon: MENU_ICON.remove, danger: true, onPress: () => e.inEncounter((a) => a.remove(c.id, side)) };
+  const save: TableRow = { label: 'Save to my library', icon: MENU_ICON.save, onPress: () => e.inEncounter((a) => a.saveTemplate(c.id)) };
   if (file) {
     return [
-      ...VITALS.map(([key, label], i) => ({ label, gap: i === 0, onPress: () => e.inEncounter((a) => a.setVital(file.id, key, false)) })),
-      { label: 'Their modifiers', onPress: () => e.inEncounter((a) => a.modifiers(file.id)) },
-      { label: 'Their cards', onPress: () => e.inEncounter((a) => a.cards(file.id)) },
-      ...(foe ? [save] : []),
+      ...vitalRows(vitalStats(enc.charVitals?.[file.id] ?? initialVitals(file), memberMaxes(file)), (key) => e.inEncounter((a) => a.setVital(file.id, key, false))),
+      { label: 'Their modifiers', icon: MENU_ICON.modifiers, gap: true, onPress: () => e.inEncounter((a) => a.modifiers(file.id)) },
+      { label: 'Their cards', icon: MENU_ICON.cards, onPress: () => e.inEncounter((a) => a.cards(file.id)) },
       move,
+      ...(foe ? [save] : []),
       remove,
     ];
   }
+  const tracked = c.counters?.length ?? 0;
   return [
-    ...(c.maxHp ? [{ label: 'Set Hit Points', gap: true, onPress: () => e.inEncounter((a) => a.setStat(c.id, 'hp')) }] : []),
-    ...(c.maxStress ? [{ label: 'Set Stress', onPress: () => e.inEncounter((a) => a.setStat(c.id, 'stress')) }] : []),
-    { label: 'Edit stat block', onPress: () => e.inEncounter((a) => a.edit(c.id)) },
-    { label: 'Counters', onPress: () => e.counters.open({ cid: c.id }) },
-    ...(c.counters?.length ? [{ label: 'Put its counters on the table', onPress: () => e.counters.showAll(c.id) }] : []),
-    ...(c.portraitUri ? [{ label: 'See the picture', onPress: () => e.inEncounter((a) => a.image(c.id)) }] : []),
+    ...(c.maxHp ? [{ label: 'Set Hit Points', short: 'HP', icon: MENU_ICON.hp, quick: true, value: `${c.hp ?? 0}/${c.maxHp}`, onPress: () => e.inEncounter((a) => a.setStat(c.id, 'hp')) }] : []),
+    ...(c.maxStress ? [{ label: 'Set Stress', short: 'Stress', icon: MENU_ICON.stress, quick: true, value: `${c.stress ?? 0}/${c.maxStress}`, onPress: () => e.inEncounter((a) => a.setStat(c.id, 'stress')) }] : []),
     c.fallen
-      ? { label: 'Recover', onPress: () => e.inEncounter((a) => a.recover(c.id)) }
-      : { label: 'Mark as fallen', onPress: () => e.inEncounter((a) => a.fell(c.id)) },
-    save,
+      ? { label: 'Recover', icon: MENU_ICON.recover, quick: true, onPress: () => e.inEncounter((a) => a.recover(c.id)) }
+      : { label: 'Mark as fallen', short: 'Mark fallen', icon: MENU_ICON.fallen, quick: true, onPress: () => e.inEncounter((a) => a.fell(c.id)) },
+    { label: 'Edit stat block', icon: MENU_ICON.edit, gap: true, onPress: () => e.inEncounter((a) => a.edit(c.id)) },
+    { label: 'Counters', icon: MENU_ICON.counters, value: tracked ? String(tracked) : undefined, onPress: () => e.counters.open({ cid: c.id }) },
+    ...(tracked ? [{ label: 'Put its counters on the table', icon: MENU_ICON.counter, onPress: () => e.counters.showAll(c.id) }] : []),
+    ...(c.portraitUri ? [{ label: 'See the picture', icon: MENU_ICON.picture, onPress: () => e.inEncounter((a) => a.image(c.id)) }] : []),
     move,
-    ...(c.charId ? [] : [{ label: 'Characterize', onPress: () => e.inEncounter((a) => a.characterize(c.id, side)) }]),
+    save,
+    ...(c.charId ? [] : [{ label: 'Characterize', icon: MENU_ICON.characterize, value: 'Full sheet', onPress: () => e.inEncounter((a) => a.characterize(c.id, side)) }]),
     remove,
   ];
 }

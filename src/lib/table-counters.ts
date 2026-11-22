@@ -35,12 +35,12 @@ export const editCounter = (list: AdversaryCounter[], id: string, next: (c: Adve
 export function freeSpot(spots: Record<string, CounterSpot>): CounterSpot {
   const taken = Object.values(spots);
   for (let row = 0; row < 4; row++) {
-    for (const x of [0.5, 0.3, 0.7]) {
-      const y = 0.42 + row * 0.15;
+    for (const x of [0.5, 0.3, 0.7, 0.12]) {
+      const y = 0.45 + row * 0.15;
       if (!taken.some((s) => Math.abs(s.x - x) < 0.15 && Math.abs(s.y - y) < 0.12)) return { x, y, k: 1 };
     }
   }
-  return { x: 0.5 + (taken.length % 7) * 0.02, y: 0.42 + (taken.length % 7) * 0.02, k: 1 };
+  return { x: 0.5 + (taken.length % 7) * 0.02, y: 0.45 + (taken.length % 7) * 0.02, k: 1 };
 }
 
 const num = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);

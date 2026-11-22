@@ -1,4 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
+import { useDesktop } from '@/hooks/use-desktop';
+import { DeskModifiers, NumberBox } from '@/components/desk-modifiers';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import Svg, { Path, Polyline } from 'react-native-svg';
 
@@ -16,6 +18,8 @@ import { type CharacterFile, numberInputFor } from '@/lib/character-file';
 
 import type { Character } from '../character';
 import { FullScreenPanel } from './full-screen-panel';
+import type { CardItem } from '../card-data';
+import { DeskCardPic } from './desk-move';
 
 /** Resolve an effect's signed amount as it applies to this character right now (tier/dynamic/formula).
  *  v0.32.0: `stress` reads the marked Stress and `input` the number typed on THIS card, so the panel
@@ -83,6 +87,7 @@ export function CardModifiersSheet({
   onSaveEffects,
   onCollapseGroups,
   onClose,
+  desk,
 }: {
   cardId: string;
   file: CharacterFile;
@@ -94,6 +99,16 @@ export function CardModifiersSheet({
   /** v0.35: remember which of this card's modifier groups are folded shut. */
   onCollapseGroups?: (keys: string[]) => void;
   onClose: () => void;
+  /** Desktop (v0.50.0): what its dialog shows beside the modifiers, the phone's row of buttons under a card. */
+  desk?: {
+    card?: CardItem;
+    permanent: boolean;
+    live: boolean;
+    toggleable: boolean;
+    takesNumber: boolean;
+    onToggleModifiers: () => void;
+    onNumber: (n: number) => void;
+  };
 }) {
   const effects = effectsForCardId(cardId, file);
   const label = sourceLabelForCardId(cardId, file);
@@ -140,6 +155,39 @@ export function CardModifiersSheet({
   // live "= N" preview for the dynamic shapes (formula / per-tier) at the current character.
   const previewFn = (e: CardEffect) => (e.dynamic === 'formula' || e.byTier ? resolvedDelta(e, character, character.level, numberInput, functionValues) : null);
 
+  const desktop = useDesktop();
+  if (desktop && desk) {
+    const applying = enabled || desk.permanent;
+    return (
+      <DeskModifiers
+        title={label}
+        subtitle={!applying ? 'Not equipped, so none of this applies yet' : !desk.live ? 'Its modifiers are switched off' : enabled ? 'Equipped, applying to your sheet' : 'Permanent, applying to your sheet'}
+        effects={effects}
+        level={character.level}
+        canEdit={canEdit && !!onSaveEffects}
+        experiences={file.experiences}
+        functionVars={functionVars}
+        resolve={(e) => resolvedDelta(e, character, character.level, numberInput, functionValues)}
+        collapsed={shut}
+        onCollapsed={setShut}
+        onSave={(next) => onSaveEffects?.(cardId, next)}
+        onClose={onClose}
+        aside={(guard) => (
+          <>
+            {desk.card ? <DeskCardPic card={desk.card} width={218} /> : null}
+            {desk.permanent && !enabled ? null : <RuneButton label={enabled ? 'Unequip' : 'Equip'} kind={enabled ? 'ghost' : 'secondary'} height={42} onPress={() => guard(() => { onToggle(cardId); onClose(); })} />}
+            {desk.toggleable && applying ? <RuneButton label={desk.live ? 'Switch modifiers off' : 'Switch modifiers on'} kind={desk.live ? 'ghost' : 'secondary'} height={42} onPress={desk.onToggleModifiers} /> : null}
+            {desk.takesNumber ? <NumberBox label="This card's number" value={numberInput} limit={[0, 99]} onChange={desk.onNumber} /> : null}
+            {mirror.role !== 'single' ? (
+              <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.medium, lineHeight: 18 }}>
+                {`${mirror.role === 'original' ? 'This is the original.' : 'This is a copy.'} The card is in ${mirror.total} places. They are all the same card, so equipping, editing or marking one does it to every one of them, and the modifier counts once.`}
+              </Text>
+            ) : null}
+          </>
+        )}
+      />
+    );
+  }
   return (
     <FullScreenPanel
       title={label}

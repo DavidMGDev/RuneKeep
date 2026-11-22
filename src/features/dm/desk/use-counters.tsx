@@ -4,6 +4,8 @@
  */
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 
+import { MENU_ICON } from '@/features/character-sheet/table/menu-icons';
+import type { OpenMenu } from '@/features/character-sheet/table/table-host';
 import { cue } from '@/features/character-sheet/table/table-sound';
 import { type AdversaryCounter, commitStarts, newCounter, resetCounter, stepCounter } from '@/lib/dm-counters';
 import type { DmTable } from '@/lib/dm-table';
@@ -23,7 +25,7 @@ export interface DeskCounters {
   showAll: (cid: string) => void;
   /** How many lie on the felt. */
   out: number;
-  layer: (w: number, h: number) => ReactNode;
+  layer: (w: number, h: number, openMenu: OpenMenu) => ReactNode;
   dialog: ReactNode;
 }
 
@@ -91,11 +93,21 @@ export function useDeskCounters(table: DmTable, update: (change: (t: DmTable) =>
     add,
     showAll,
     out: out.length,
-    layer: (w, h) => out.map(({ g, c, key }) => (
+    layer: (w, h, openMenu) => out.map(({ g, c, key }) => (
       <CounterTile key={key} c={c} owner={g.cid ? g.name : undefined} fallen={g.fallen} spot={table.spots[key]} width={w} height={h}
         onSpot={(spot) => update((t) => ({ ...t, spots: { ...t.spots, [key]: spot } }))}
         onStep={(d) => act.step(key, d)} onSpent={() => act.spent(key)} onRecover={g.cid ? () => act.recover(g.cid!) : undefined}
-        onOpen={() => open({ key })} onRemove={() => act.show(key, false)} />
+        onOpen={() => open({ key })} onRemove={() => act.show(key, false)}
+        onMenu={(x, y) => openMenu(x, y, {
+          title: c.name || 'Counter', icon: MENU_ICON.counters, detail: g.cid ? g.name : `At ${c.value}`,
+          rows: [
+            { label: 'Edit counter', icon: MENU_ICON.edit, onPress: () => open({ key }) },
+            { label: 'Back to its starting value', icon: MENU_ICON.reset, value: String(c.start), disabled: c.value === c.start, onPress: () => act.reset(key) },
+            { label: 'Normal size', icon: MENU_ICON.size, hidden: table.spots[key].k === 1, onPress: () => update((t) => ({ ...t, spots: { ...t.spots, [key]: { ...t.spots[key], k: 1 } } })) },
+            { label: 'Recover', icon: MENU_ICON.recover, hidden: !g.cid || !g.fallen, onPress: () => act.recover(g.cid!) },
+            { label: 'Take it off the table', icon: MENU_ICON.offTable, gap: true, onPress: () => act.show(key, false) },
+          ],
+        })} />
     )),
     dialog: opened ? <CountersDialog groups={groups} spots={table.spots} start={opened} encounterName={enc?.name} act={act} onClose={() => setOpened(null)} /> : null,
   };

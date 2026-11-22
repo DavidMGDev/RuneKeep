@@ -49,7 +49,6 @@ export function useDmCharacterTools(files: Record<string, CharacterFile>, onFile
   const node = (
     <>
       {modFile ? (
-        <DmSide>
         <DmModifiersPanel
           title={modFile.name}
           subtitle="Your changes to this character"
@@ -59,7 +58,6 @@ export function useDmCharacterTools(files: Record<string, CharacterFile>, onFile
           onSave={saveMods}
           onClose={() => setMods(null)}
         />
-        </DmSide>
       ) : null}
       {cardFile && cards && !cards.category ? (
         <DmSide onClose={() => setCards(null)}><DmCategoryPrompt file={cardFile} onPick={(key) => setCards({ id: cards.id, category: key })} onCancel={() => setCards(null)} /></DmSide>

@@ -338,7 +338,6 @@ export function PartyOverviewScreen({ partyId: given }: { /** The DM screen's po
       ) : null}
       {tools.node}
       {globalOpen ? (
-        <DmSide>
         <DmModifiersPanel
           title={party.name}
           subtitle="Everyone in the party"
@@ -346,7 +345,6 @@ export function PartyOverviewScreen({ partyId: given }: { /** The DM screen's po
           onSave={saveGlobal}
           onClose={() => setGlobalOpen(false)}
         />
-        </DmSide>
       ) : null}
     </AppScreen>
     </StatRadialProvider>

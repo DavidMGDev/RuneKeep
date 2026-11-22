@@ -20,11 +20,11 @@ import { StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { DesktopPortal } from '@/components/desktop-portal';
 import { useDesktop } from '@/hooks/use-desktop';
-import { catalogIdOf } from '@/features/cards/card-effects';
+import { catalogIdOf, sourceLabelForCardId } from '@/features/cards/card-effects';
 import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
-import type { CharacterFile } from '@/lib/character-file';
+import { type CharacterFile, numberInputFor } from '@/lib/character-file';
 import { addDie, dualityVerdict, type PoolDie, poolTotal } from '@/lib/dice-pool';
-import { addFunctionKey, addVariable, type DicePreset, hasModifier, modifierFunctionKeys, modifierVariables, PRESET_VARS, type PresetModifier, removeFunctionKey, removeVariable } from '@/lib/dice-presets';
+import { addFunctionKey, addVariable, hasModifier, modifierFunctionKeys, modifierVariables, PRESET_VARS, type PresetModifier, removeFunctionKey, removeVariable } from '@/lib/dice-presets';
 import type { FunctionVar } from '@/lib/function-vars';
 import { FAVORITES_CATEGORY } from '@/lib/favorites';
 import { shouldShow } from '@/lib/onboarding-store';
@@ -39,22 +39,26 @@ import type { DicePresetSlots } from '../sheet/dice-preset-slots';
 import { SortPanel } from '../sheet/sort-panel';
 import { BoardCards, maxW, MIN_W } from './board-cards';
 import { type DeckLook, seatControls } from './deck-look';
+import { ContextMenu, type MenuSpec, type TableRow } from './context-menu';
+import { DIE_ICON, MENU_ICON } from './menu-icons';
+import { CategoryGlyph } from '../sheet/deck-toggle-icon';
 import { CardFace, DeskCarousel, type DeskCarouselHandle, type TableCard } from './desk-carousel';
 import type { Bounds, Impact } from './dice-physics';
 import { type DomatCard, DOMAT, DOMAT_MAX, DOMAT_START, type DomatStock, domatStock, drawDomat, type Element, ELEMENTS, elementWinner, takeDomat } from './domat';
 import { LookPanel } from './look-panel';
 import { RollPopup, type RollResult, rollSound } from './roll-dock';
-import { type CardPose, type CardTok, DOMAT_KEY, type LoosePiece, type PlaceGroup, type Places, type SupplyPiece, SUPPLY_HALF, type TableAction, type CritStage, ctlGap, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
+import { type CardPose, type CardTok, DOMAT_KEY, type LoosePiece, type PieceHit, type PlaceGroup, type Places, type SupplyPiece, SUPPLY_HALF, type TableAction, type CritStage, ctlGap, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
 import { breakPieces, CardBreak, type CardBreakMode, CardScrap, clipHalf, shardPolys, DomatCardView, type Fx, FX_CSS, FxLayer, localDir, type Pt, scrapShape, shake } from './table-fx';
 import { type BoardCard, loadBoard, loadLook, loadSpread, saveBoard, saveLook, saveSpread, type SavedPiece, type SpreadPlace } from './table-store';
 import { Chamfer, DIE_GLYPHS, Glyph, T, TButton } from './table-ui';
 import { cue } from './table-sound';
 import { naturalH, noteCard, NoteEditor, useTableNotes } from './sticky-note';
-import { type TableRow, useTableHost } from './table-host';
+import { type OpenMenu, useTableHost } from './table-host';
 import { editNote, isNoteId, mendNotes, newNote, NOTE_MAX, NOTE_W, tearNote, type TableNote } from '@/lib/table-notes';
 
 /** The sheet's dice state and its handle to the table (the traits and the presets roll through it). */
 export type DeskDice = { up: boolean; onToggle: () => void; handleRef: { current: DiceTrayHandle | null }; presets: Omit<Parameters<typeof DicePresetSlots>[0], 'belt'> & { /** What a modifier comes to for this character now (v0.47.17). */ resolve?: (mod?: PresetModifier) => number } };
+type CardEditing = { can: (id: string) => boolean; open: (id: string) => void };
 export type TablePanel = 'modifiers' | 'cards' | 'newCategory';
 
 const NO_CARDS: CardItem[] = [];
@@ -105,7 +109,7 @@ function TokenSpots({ cardRef, tokens }: { cardRef: string; tokens: PlacedToken[
   );
 }
 
-export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: overlayProp, backRef, onOpen, onReady }: {
+export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: overlayProp, backRef, onOpen, onReady, editCard }: {
   characterId: string;
   /** The table has everything it needs on screen (its 3D models, the deck die's icons): the sheet's veil may lift. */
   onReady?: () => void;
@@ -115,6 +119,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   overlay: boolean;
   backRef: React.MutableRefObject<(() => boolean) | null>;
   onOpen: (p: TablePanel) => void;
+  /** A character's own cards can be edited. */
+  editCard?: CardEditing;
 }) {
   const desktop = useDesktop();
   const { width: winW, height: winH } = useWindowDimensions();
@@ -186,8 +192,9 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
 
 
   // ---------------------------------------------------------------- the hand
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number; board?: string; /** A note's Delete, asking. */ sure?: boolean } | null>(null);
-  const [tableMenu, setTableMenu] = useState<{ x: number; y: number; piece?: { key: string; label: string; own?: boolean } } | null>(null);
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number; board?: string } | null>(null);
+  /** The felt's menu, a piece's, or one given whole (a scrap's, a drawn card's, a counter's). */
+  const [tableMenu, setTableMenu] = useState<{ x: number; y: number; piece?: PieceHit; given?: MenuSpec } | null>(null);
   /** A token or die on a card right clicked (v0.47.18): its menu, then perhaps its modifiers. */
   const [tokMenu, setTokMenu] = useState<{ ref: string; id: string; x: number; y: number; mods?: boolean } | null>(null);
   const [sorting, setSorting] = useState(false);
@@ -1525,6 +1532,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     setScraps(scrapsRef.current.filter((c) => !back.has(c.id)));
     setNotes(mendNotes(noteNow.current));
   };
+  const openMenu: OpenMenu = (clientX, clientY, given) => { cue('ui:open', 'floatMenuOpen'); setTableMenu({ ...local(clientX, clientY), given }); };
   const tableDecks = useMemo<TableDeck[]>(() => {
     const keys: CardCategory[] = [...ctx.ring.filter((c) => c !== FAVORITES_CATEGORY), FAVORITES_CATEGORY];
     return keys.map((k) => ({ key: k, label: ctx.categoryMeta[k]?.label ?? k, count: ctx.decks[k]?.length ?? 0, meta: ctx.categoryMeta[k] }));
@@ -1899,6 +1907,24 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   putBackRef.current = putBack;
   const addNoteRef = useRef(addNote);
   addNoteRef.current = addNote;
+  const openMenuKey = () => {
+    const held = document.activeElement as HTMLElement | null;
+    if (held && held !== document.body && tableRef.current?.contains(held)) {
+      const r = held.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      // What has a menu of its own (a die by its label, a counter, Fear) is right clicked where it is.
+      if (held.closest('.rk-die-label[data-piece], [data-counter], [data-fear]')) { held.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y })); return; }
+    }
+    cue('ui:open', 'floatMenuOpen');
+    const id = deck[carRef.current?.centerIndex() ?? -1]?.id;
+    const el = id ? handRef.current?.querySelector(`[data-card-id="${CSS.escape(id)}"]`) : null;
+    if (id && el) {
+      const r = el.getBoundingClientRect();
+      setMenu({ id, ...local(r.left + r.width / 2, r.top + r.height * 0.3) });
+    } else setTableMenu({ x: tableW / 2, y: (openTop + openBottom) / 2 });
+  };
+  const openMenuKeyRef = useRef(openMenuKey);
+  openMenuKeyRef.current = openMenuKey;
   const keyRef = useRef({ deck, overlay, ring: ctx.ring, ctx, canReorder, category, selection });
   keyRef.current = { deck, overlay, ring: ctx.ring, ctx, canReorder, category, selection };
   useEffect(() => {
@@ -1952,6 +1978,12 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         return;
       }
       if (key === 'n' && !e.repeat) { e.preventDefault(); addNoteRef.current(); return; }
+      // The Menu key and Shift+F10: the middle card's menu, or on an empty hand the felt's.
+      if (key === 'contextmenu' || (e.shiftKey && key === 'f10')) {
+        e.preventDefault();
+        openMenuKeyRef.current();
+        return;
+      }
       if (key === 'q' || key === 'e') { k.ctx.cycleCategory(key === 'q' ? -1 : 1); return; }
       if (/^[1-9]$/.test(key)) { const c = k.ring[+key - 1]; if (c) k.ctx.setCategory(c); return; }
       if (key === ' ') {
@@ -2000,6 +2032,120 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const barOn = selection.length > 0 && barBox.h > 0;
   const plaqueTop = barOn ? openTop + 12 + barBox.h + 14 : 12;
   const lastingTop = result && plaqueH ? Math.max(openTop + 12, plaqueTop + plaqueH + 12) : barOn ? openTop + 12 + barBox.h + 12 : openTop + 12;
+  const rollSelection = (power?: number, burning?: boolean) => {
+    void diceRef.current?.rollPieces(selection, power, burning).then((landed) => {
+      if (!landed.length) return;
+      rollSound(landed);
+      const { mod, label } = modNow();
+      showResult({ total: poolTotal(landed, mod), verdict: dualityVerdict(landed), dice: landed, label, mod });
+    });
+  };
+
+  // ---------------------------------------------------------------- a menu for each thing (owner, v0.50.0)
+  const scrapMenu = (uid: string, id: string): MenuSpec => {
+    const note = isNoteId(id);
+    const others = scraps.filter((s) => !s.fading && s.uid !== uid).length;
+    return {
+      title: note ? 'Torn note' : 'Torn card', icon: note ? MENU_ICON.note : MENU_ICON.cards,
+      rows: [
+        { label: 'Make the note whole', icon: MENU_ICON.mend, hidden: !note, onPress: () => {
+          livePoses.delete(id);
+          setScraps(scrapsRef.current.filter((c) => c.id !== id));
+          setNotes(noteNow.current.map((n) => (n.id === id ? mendNotes([n])[0] : n)));
+        } },
+        { label: 'Put this scrap away', icon: MENU_ICON.putAway, onPress: () => fadeScraps([uid]) },
+        { label: 'Put every scrap away', icon: MENU_ICON.clear, value: String(others + 1), hidden: !others, onPress: () => fadeScraps(scrapsRef.current.map((s) => s.uid)) },
+      ],
+    };
+  };
+  const drawnMenu = (d: (typeof drawn)[number]): MenuSpec => ({
+    title: d.card.name, icon: MENU_ICON.decks, say: d.card.table,
+    rows: [
+      { label: 'Use it here', icon: MENU_ICON.useHere, onPress: () => playDrawn(d.uid, d.x, d.y) },
+      { label: 'Discard it', icon: MENU_ICON.bin, danger: true, gap: true, onPress: () => {
+        cue('card:cancel', 'cardDeselect', { volume: 0.6 });
+        setDrawn((l) => l.filter((c) => c.uid !== d.uid));
+        if (d.card.once) setGone((g) => { const n = new Set(g); n.delete(d.card.id); return n; });
+      } },
+    ],
+  });
+  /** Bare felt: what is the table's, and nothing that is one piece's. */
+  const feltMenu = (at: { x: number; y: number }): MenuSpec => {
+    const full = noteList.length >= NOTE_MAX;
+    const from = () => { rollFrom.current = { x: at.x, y: at.y }; };
+    const saved = presets.flatMap((p, slot) => (p ? [{ p, slot }] : []));
+    return { rows: [
+      { label: 'Roll dice', icon: MENU_ICON.roll, say: saved.length ? undefined : 'No presets yet. Drag on the table to select dice, then Save as preset.', rows: [
+        { label: 'Hope and Fear', icon: DIE_ICON.duality, onPress: () => { from(); dice.handleRef.current?.rollDuality('Hope and Fear', 0); } },
+        ...saved.map(({ p, slot }, i): TableRow => ({
+          label: p.name, icon: p.dice.length === 1 ? DIE_ICON[p.dice[0] as DieType] ?? MENU_ICON.roll : MENU_ICON.roll, value: summarise(p.dice), gap: i === 0,
+          onPress: () => { from(); dice.presets.onPlay(p); },
+          remove: {
+            label: `Delete ${p.name}`, confirm: { title: `Delete ${p.name}?`, body: 'The preset is removed. The dice on the table stay.', verb: 'Delete preset' },
+            onPress: () => { dice.presets.onWrite(slot, null); cue('ui:delete', 'tokenRemove', { volume: 0.6 }); },
+          },
+        })),
+      ] },
+      { label: 'New sticky note', icon: MENU_ICON.note, gap: true, value: full ? 'Table is full' : 'N', disabled: full, onPress: () => addNote(at) },
+      ...(dm ? [
+        { label: 'New counter', icon: MENU_ICON.counter, disabled: dm.counters.full, value: dm.counters.full ? 'Table is full' : undefined, onPress: () => dm.counters.add({ x: at.x / tableW, y: at.y / tableH }) },
+        { label: 'All counters', icon: MENU_ICON.counters, onPress: () => dm.counters.open() },
+      ] : []),
+      { label: 'Choose a deck', icon: MENU_ICON.decks, value: ctx.categoryMeta[category]?.label, hidden: playground, onPress: () => diceRef.current?.openDecks(at) },
+      // The DM's dice by name, for a table that hides them.
+      ...(dm && !playground && look.controls !== 'dice'
+        ? dm.controls.map((c, i): TableRow => ({ label: c.verb, icon: DIE_GLYPHS[c.glyph], gap: i === 0, onPress: () => diceRef.current?.useControl(c.key, at) }))
+        : []),
+      { label: 'Bring back torn notes', icon: MENU_ICON.mend, gap: true, value: String(tornNotes), hidden: !tornNotes, onPress: mendTorn },
+      { label: 'Reset the table', icon: MENU_ICON.reset, gap: !tornNotes, onPress: resetAll },
+      { label: 'Clear the whole table', icon: MENU_ICON.clear, danger: true, onPress: clearAll, confirm: { title: 'Clear the whole table?', body: 'Every loose die, token, scrap, drawn card and card copy comes off, and effects end. Your decks, notes and counters stay.', verb: 'Clear the table' } },
+      { label: 'Table settings', icon: MENU_ICON.settings, gap: true, hidden: playground, onPress: () => setSettings(true) },
+    ] };
+  };
+  const pieceSpec = (piece: PieceHit, at: { x: number; y: number }): MenuSpec => {
+    if (piece.kind === 'deck') {
+      return { title: 'Decks', icon: MENU_ICON.decks, rows: [
+        ...tableDecks.map((d): TableRow => ({
+          label: d.label, value: String(d.count), checked: d.key === category,
+          icon: <span style={{ display: 'flex', transform: 'scale(0.4)' }}><CategoryGlyph category={d.key} meta={d.meta} /></span>,
+          onPress: () => pickDeck(d.key),
+        })),
+        { label: 'New category', icon: MENU_ICON.newDeck, gap: true, onPress: () => { cue('ui:open', 'panelOpen'); onOpen('newCategory'); } },
+      ] };
+    }
+    if (piece.kind === 'control') {
+      const a = piece.action, options = a.menu?.();
+      return { title: a.label, icon: DIE_GLYPHS[a.glyph], rows: options
+        // A die with a menu: its own options are its menu.
+        ? options.map((o): TableRow => ({ label: o.label, gap: o.gap, icon: DIE_GLYPHS[o.glyph], value: o.sub || undefined, checked: o.on || undefined, disabled: o.disabled, onPress: o.onPress }))
+        : [{ label: a.verb, icon: DIE_GLYPHS[a.glyph], disabled: a.disabled, onPress: () => diceRef.current?.useControl(piece.key, at) }] };
+    }
+    if (piece.kind === 'toy') return { title: 'Loose piece', icon: MENU_ICON.roll, rows: [{ label: 'Roll it', icon: MENU_ICON.roll, onPress: () => diceRef.current?.rollPiece(piece.key) }] };
+
+    const base = baseOf(piece.key);
+    // A die rolls itself and nothing else (owner): rolling the selection is the selection bar's.
+    const picked = [...new Set(selection.filter((k) => PUT_BACK.test(k)).map(baseOf))];
+    const many: TableRow[] = picked.length > 1 && picked.includes(base) ? [
+      { label: 'Put all selected away', icon: MENU_ICON.putAll, gap: true, value: `${picked.length} pieces`, onPress: () => {
+        putBack(selection);
+        const rest = selection.filter((k) => !PUT_BACK.test(k));
+        diceRef.current?.select(rest);
+        setSelection(rest);
+      } },
+    ] : [];
+    const away: TableRow = { label: 'Put it away', icon: MENU_ICON.putAway, onPress: () => putBack([piece.key]) };
+    if (piece.kind === 'token') {
+      const { kind } = piece.token;
+      const name = kind === 'color' ? 'Colour' : kind === 'die' ? 'Die' : TOKEN_LABEL[kind];
+      return { title: `${name} token`, icon: MENU_ICON.token, rows: [away, ...many] };
+    }
+    const duality = piece.die === 'duality';
+    return {
+      title: duality ? 'Hope and Fear' : piece.die, icon: DIE_ICON[piece.die],
+      detail: piece.value === undefined ? undefined : `Shows ${duality && piece.value2 !== undefined ? `${piece.value} and ${piece.value2}` : piece.value}`,
+      rows: [{ label: duality ? 'Roll these dice' : `Roll this ${piece.die}`, icon: DIE_ICON[piece.die], onPress: () => diceRef.current?.rollPiece(piece.key) }, away, ...many],
+    };
+  };
   /** The corner buttons folded away (owner, v0.47.17), remembered in this browser. */
   const [tucked, setTuckedState] = useState(() => { try { return localStorage.getItem('runekeep.table.cornerTucked') === '1'; } catch { return false; } });
   const setTucked = (v: boolean) => { setTuckedState(v); try { localStorage.setItem('runekeep.table.cornerTucked', v ? '1' : '0'); } catch { /* private window */ } };
@@ -2047,7 +2193,11 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       livePoses.clear();
       setSpread({});
       glide(from);
-    } else if (copiesRef.current.length) flyBack(copiesRef.current.map((b) => b.uid), () => setCopies([]));
+    } else if (copiesRef.current.length) {
+      const gone = new Set(copiesRef.current.map((b) => b.uid));
+      // Only those that flew back: one thrown while they were on their way stays.
+      flyBack([...gone], () => setCopies(copiesRef.current.filter((b) => !gone.has(b.uid))));
+    }
   };
   /** Where each card is drawn now (table px), to glide it from there once it has moved. */
   const posesOf = (uids: string[]) => {
@@ -2221,7 +2371,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             />
           </div>
           {shattering.map((s) => <CardBreak key={s.uid} card={s.card} cx={s.cx} cy={s.cy} w={s.w} rot={s.rot} mode={s.mode} dir={s.dir} fxOnly={s.fxOnly} clip={s.clip} onDone={() => setShattering((l) => l.filter((x) => x.uid !== s.uid))} />)}
-          {scraps.map((c) => { const card = lookup(c.id); return card ? <CardScrap key={c.uid} uid={c.uid} card={card} poly={c.poly} w={c.w} x={c.x} y={c.y} rot={c.rot} fading={c.fading} onDrag={(u, px, py, r, end) => {
+          {scraps.map((c) => { const card = lookup(c.id); return card ? <CardScrap key={c.uid} uid={c.uid} card={card} poly={c.poly} w={c.w} x={c.x} y={c.y} rot={c.rot} fading={c.fading} onMenu={(cx, cy) => openMenu(cx, cy, scrapMenu(c.uid, c.id))} onDrag={(u, px, py, r, end) => {
             const eng = diceRef.current?.engine();
             if (!eng) return;
             const key = `card:${u}`;
@@ -2252,7 +2402,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             {deck.length === 0 ? (
               <div style={{ position: 'absolute', left: 0, right: 0, top: '45%', textAlign: 'center', color: T.muted, fontFamily: T.medium, fontSize: 14 }}>{dm?.emptyDeck ?? 'Nothing in this deck yet. Add a card from the sheet.'}</div>
             ) : (
-              <DeskCarousel key={category} ref={carRef} cards={cards} look={look} initialIndex={middle} onCentre={onCentre} onCentreClick={onCentreClick} takenId={copy?.card.id} />
+              <DeskCarousel key={category} ref={carRef} cards={cards} look={look} initialIndex={middle} onCentre={onCentre} onCentreClick={onCentreClick} takenId={copy?.card.id} heldId={menu && !menu.board ? menu.id : undefined} />
             )}
           </div>
         )}
@@ -2263,7 +2413,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             onMove={(x, y) => setDrawn((l) => l.map((c) => (c.uid === d.uid ? { ...c, x, y } : c)))}
             onPlace={(x, y) => setDrawn((l) => l.map((c) => (c.uid === d.uid ? { ...c, x, y, held: false } : c)))}
             onPlay={(x, y) => playDrawn(d.uid, x, y)}
-            onRemove={() => { cue('card:cancel', 'cardDeselect', { volume: 0.6 }); setDrawn((l) => l.filter((c) => c.uid !== d.uid)); if (d.card.once) setGone((g) => { const n = new Set(g); n.delete(d.card.id); return n; }); }} />
+            onMenu={(cx, cy) => openMenu(cx, cy, drawnMenu(d))} />
         ))}
 
         {showHint ? (
@@ -2381,20 +2531,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           onMovePiece={(k, x, y) => setLook({ ...lookRef.current, apart: { ...lookRef.current.apart, [k]: [Math.min(1, Math.max(0, x / tableW)), Math.min(1, Math.max(0, y / tableH))] } })}
           inert={overlay || settings || !!writing}
         />
-        {dm?.layer?.(tableW, tableH)}
+        {dm?.layer?.(tableW, tableH, openMenu)}
         <FxLayer fx={fx} />
 
         {/* What can be done with the pieces selected. */}
         {selection.length ? (
           <SelectionBar x={(play.left + play.right) / 2} y={openTop + 12} count={new Set(selection.map(baseOf)).size} types={selTypes}
-            onRoll={(power, burning) => {
-              void diceRef.current?.rollPieces(selection, power, burning).then((landed) => {
-                if (!landed.length) return;
-                rollSound(landed);
-                const { mod, label } = modNow();
-                showResult({ total: poolTotal(landed, mod), verdict: dualityVerdict(landed), dice: landed, label, mod });
-              });
-            }}
+            onRoll={rollSelection}
             mod={selMod}
             onMod={setSelMod}
             resolve={dice.presets.resolve}
@@ -2481,32 +2624,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         ) : null}
         {overlay ? <div style={{ position: 'absolute', inset: 0, zIndex: 800, background: 'rgba(6,8,13,0.45)' }} /> : null}
         {tableMenu && !overlay ? (
-          <TableMenu x={tableMenu.x} y={tableMenu.y} tableW={tableW} tableH={tableH} onClose={() => setTableMenu(null)}
-            presets={presets} noRolls={!!tableMenu.piece?.own}
-            onRollPreset={(p) => { rollFrom.current = { x: tableMenu.x, y: tableMenu.y }; dice.presets.onPlay(p); }}
-            onRollPair={() => { rollFrom.current = { x: tableMenu.x, y: tableMenu.y }; dice.handleRef.current?.rollDuality('Hope and Fear', 0); }}
-            onDeletePreset={(slot) => { dice.presets.onWrite(slot, null); cue('ui:delete', 'tokenRemove', { volume: 0.6 }); }}
-            rows={[
-              // In the playground the controls are only dice and decks do nothing (owner, v0.47.17): neither is offered.
-              ...(tableMenu.piece && !(playground && tableMenu.piece.own) ? [{ label: tableMenu.piece.label, onPress: () => {
-                const k = tableMenu.piece!.key;
-                if (!tableMenu.piece!.own) { diceRef.current?.rollPiece(k); return; }
-                if (k === 'cat') { diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }); return; }
-                diceRef.current?.useControl(k, { x: tableMenu.x, y: tableMenu.y });
-              } }] : []),
-              // The DM's dice by name, for a table that hides them.
-              ...(dm && !playground && !tableMenu.piece && look.controls !== 'dice' ? dm.controls.map((c) => ({ label: c.verb, onPress: () => diceRef.current?.useControl(c.key, { x: tableMenu.x, y: tableMenu.y }) })) : []),
-              { label: 'New sticky note', gap: !!tableMenu.piece, onPress: () => addNote({ x: tableMenu.x, y: tableMenu.y }) },
-              ...(dm ? [
-                { label: 'New counter', onPress: () => dm.counters.add({ x: tableMenu.x / tableW, y: tableMenu.y / tableH }) },
-                { label: 'Counters', onPress: () => dm.counters.open() },
-              ] : []),
-              { label: 'Bring back torn notes', hidden: !tornNotes, onPress: mendTorn },
-              { label: 'Choose a deck', hidden: playground || tableMenu.piece?.key === 'cat', onPress: () => diceRef.current?.openDecks({ x: tableMenu.x, y: tableMenu.y }) },
-              { label: 'Reset the table', onPress: resetAll, gap: true },
-              { label: 'Clear the whole table', onPress: clearAll, danger: true },
-              { label: 'Table settings', onPress: () => setSettings(true), gap: true, hidden: playground },
-            ]} />
+          <ContextMenu key={`${tableMenu.x},${tableMenu.y}`} x={tableMenu.x} y={tableMenu.y} tableW={tableW} tableH={tableH} onClose={() => setTableMenu(null)}
+            menu={tableMenu.given ?? (tableMenu.piece ? pieceSpec(tableMenu.piece, { x: tableMenu.x, y: tableMenu.y }) : feltMenu({ x: tableMenu.x, y: tableMenu.y }))} />
         ) : null}
         {tokMenu && !overlay ? (() => {
           const tok = (ctx.cardTokens[tokMenu.ref] ?? []).find((x) => x.id === tokMenu.id);
@@ -2520,29 +2639,32 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             const W = 600, left = Math.max(8, Math.min(tokMenu.x, tableW - W - 16)), top = Math.max(8, Math.min(tokMenu.y, tableH - 470));
             return (
               <>
-                <div data-ui="" aria-label="Close the modifiers" onPointerDown={(e) => { e.stopPropagation(); cue('ui:close', 'panelClose', { volume: 0.5 }); close(); }} onContextMenu={(e) => { e.preventDefault(); close(); }} style={{ position: 'absolute', inset: 0, zIndex: 900 }} />
-                <div data-ui="" role="dialog" aria-label="This die's modifiers" onPointerDown={(e) => e.stopPropagation()} style={{ position: 'absolute', zIndex: 901, left, top, width: W }}>
+                <div data-ui="" aria-label="Close the modifiers" onPointerDown={(e) => { e.stopPropagation(); cue('ui:close', 'panelClose', { volume: 0.5 }); close(); }} onContextMenu={(e) => { e.preventDefault(); close(); }} style={{ position: 'absolute', inset: 0, zIndex: 1290 }} />
+                <div data-ui="" role="dialog" aria-label="This die's modifiers" onPointerDown={(e) => e.stopPropagation()} style={{ position: 'absolute', zIndex: 1291, left, top, width: W }}>
                   <ModifierPanel mod={m} onMod={(next) => ctx.updateToken(t.ref, t.id, { mod: next ?? undefined })} total={m ? dice.presets.resolve?.(m) ?? m.value : 0} resolve={dice.presets.resolve} cardVars={dice.presets.cardVars ?? []} />
                 </div>
               </>
             );
           }
-          const die = tok.kind === 'die';
+          const die = tok.kind === 'die', type = tok.dieType ?? 'd6';
+          const name = tok.kind === 'die' ? (type === 'duality' ? 'Hope and Fear' : type) : `${tok.kind === 'color' ? 'Colour' : TOKEN_LABEL[tok.kind]} token`;
           return (
-            <MenuShell x={tokMenu.x} y={tokMenu.y} tableW={tableW} tableH={tableH} onClose={close}
-              rows={[
+            <ContextMenu key={`${t.id},${tokMenu.x},${tokMenu.y}`} x={tokMenu.x} y={tokMenu.y} tableW={tableW} tableH={tableH} onClose={close} menu={{
+              title: name, detail: 'On a card', icon: die ? DIE_ICON[type] : MENU_ICON.token,
+              rows: [
                 ...(die ? [
-                  { label: 'Roll it', onPress: () => rollTok(t, at.x, at.y) },
-                  { label: tok.mod && hasModifier(tok.mod) ? `Modifiers (${signed(dice.presets.resolve?.(tok.mod) ?? tok.mod.value)})` : 'Modifiers', onPress: () => { cue('ui:open', 'panelOpen', { volume: 0.5 }); setTimeout(() => setTokMenu({ ...tokMenu, mods: true })); } },
+                  { label: type === 'duality' ? 'Roll these dice' : `Roll this ${type}`, icon: DIE_ICON[type], onPress: () => rollTok(t, at.x, at.y) },
+                  { label: 'Modifiers', icon: MENU_ICON.modifiers, value: tok.mod && hasModifier(tok.mod) ? signed(dice.presets.resolve?.(tok.mod) ?? tok.mod.value) : undefined, onPress: () => { cue('ui:open', 'panelOpen', { volume: 0.5 }); setTimeout(() => setTokMenu({ ...tokMenu, mods: true })); } },
                 ] : []),
-                { label: 'Take it off', gap: die, onPress: () => {
+                { label: 'Take it off the card', icon: MENU_ICON.lift, gap: die, onPress: () => {
                   const info = popToken(t.ref, t.id);
                   if (!info) return;
                   setLoose([...looseRef.current, { key: `free:${newTokenId()}`, token: info, x: tokMenu.x, y: tokMenu.y }]);
                   cue('piece:offCard', 'cardDragEnd', { volume: 0.5 });
                 } },
-                { label: 'Break it', danger: true, onPress: () => breakTok(t, at.x, at.y) },
-              ]} />
+                { label: 'Break it', icon: MENU_ICON.breakIt, danger: true, onPress: () => breakTok(t, at.x, at.y) },
+              ],
+            }} />
           );
         })() : null}
         {viewing ? <CardViewer key={viewing.id} card={lookup(viewing.id)} live={allById.get(viewing.id)?.interactive ? allById.get(viewing.id)?.live : undefined} from={viewing.from} closing={viewing.closing} onClose={closeView} onGone={() => setViewing(null)} /> : null}
@@ -2554,23 +2676,27 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         {menu && !overlay && isNoteId(menu.id) ? (() => {
           const note = noteList.find((n) => n.id === menu.id);
           if (!note) return null;
-          const at = { x: menu.x, y: menu.y };
+          const words = note.text.trim().replace(/\s+/g, ' ');
           return (
-            <MenuShell key={menu.sure ? 'sure' : 'note'} x={at.x} y={at.y} tableW={tableW} tableH={tableH} onClose={() => setMenu(null)}
-              rows={menu.sure ? [
-                { label: 'Keep it', onPress: () => undefined },
-                { label: 'Delete it and what it says', danger: true, onPress: () => deleteNote(note.id) },
-              ] : [
-                { label: 'Write on it', onPress: () => setWriting(note.id) },
-                { label: note.phys ? 'Pin' : 'Unpin', onPress: () => pinNote(note.id, note.phys) },
-                { label: 'Normal size', hidden: note.w === NOTE_W, onPress: () => setNotes(editNote(noteNow.current, note.id, { w: NOTE_W })) },
-                { label: 'Delete', danger: true, gap: true, onPress: () => setMenu({ ...menu, sure: true }) },
-              ].filter((r) => !('hidden' in r && r.hidden))} />
+            <ContextMenu key={`${note.id},${menu.x},${menu.y}`} x={menu.x} y={menu.y} tableW={tableW} tableH={tableH} onClose={() => setMenu(null)} menu={{
+              title: 'Sticky note', icon: MENU_ICON.note, detail: note.phys ? undefined : 'Pinned',
+              rows: [
+                { label: 'Edit note', icon: MENU_ICON.edit, onPress: () => setWriting(note.id) },
+                { label: note.phys ? 'Pin' : 'Unpin', icon: note.phys ? MENU_ICON.pin : MENU_ICON.unpin, value: note.phys ? "Can't tear" : undefined, onPress: () => pinNote(note.id, note.phys) },
+                { label: 'Normal size', icon: MENU_ICON.size, hidden: note.w === NOTE_W, onPress: () => setNotes(editNote(noteNow.current, note.id, { w: NOTE_W })) },
+                { label: 'Delete note', icon: MENU_ICON.bin, danger: true, gap: true, onPress: () => deleteNote(note.id), confirm: {
+                  title: 'Delete this note?', verb: 'Delete note',
+                  body: words ? `"${words.length > 70 ? `${words.slice(0, 70)}...` : words}" is gone for good.` : "It's blank.",
+                } },
+              ],
+            }} />
           );
         })() : null}
         {menu && !overlay && !isNoteId(menu.id) ? (
-          <CardMenu id={menu.id} x={menu.x} y={menu.y} tableW={tableW} tableH={tableH} onClose={() => setMenu(null)}
+          <CardMenu key={`${menu.id},${menu.x},${menu.y}`} id={menu.id} x={menu.x} y={menu.y} tableW={tableW} tableH={tableH} onClose={() => setMenu(null)}
             spread={spread}
+            file={sortFile}
+            editCard={editCard}
             view={() => {
               cue('ui:open', 'cardFullscreenEnter', { volume: 0.6 });
               // Where the card is drawn now: on the table, or in the hand.
@@ -2932,78 +3058,6 @@ function summarise(types: DieType[]): string {
   return [...counts].map(([t, n]) => `${n > 1 ? `${n} ` : ''}${t === 'duality' ? 'Hope & Fear' : t}`).join(', ');
 }
 
-type Row = TableRow;
-
-function MenuShell({ x, y, tableW, tableH, rows, onClose, head, side }: { x: number; y: number; tableW: number; tableH: number; rows: Row[]; onClose: () => void; head?: React.ReactNode; side?: (at: { left: number; top: number; W: number }) => React.ReactNode }) {
-  const W = 340, H = rows.length * 38 + rows.filter((r) => r.gap).length * 9 + 16 + (head ? 40 : 0);
-  const left = Math.max(8, Math.min(x, tableW - W - 24)), top = Math.max(8, Math.min(y, tableH - H - 24));
-  return (
-    <>
-      <div data-ui="" onPointerDown={(e) => { e.stopPropagation(); cue('ui:close', 'floatMenuClose'); onClose(); }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }} style={{ position: 'absolute', inset: 0, zIndex: 900 }} aria-label="Close the menu" />
-      <div role="menu" onPointerDown={(e) => e.stopPropagation()} style={{ position: 'absolute', zIndex: 901, left, top, width: W }}>
-        <Chamfer c={9} fill={T.panelLit} line={T.gold} width={1.3} inner={{ padding: 7 }}>
-          {head}
-          {rows.map((r) => (
-            <div key={r.label}>
-              {r.gap ? <div style={{ height: 1, background: 'rgba(218,162,73,0.22)', margin: '4px 6px' }} /> : null}
-              <MenuRow label={r.label} danger={r.danger} onPress={() => { onClose(); r.onPress(); }} />
-            </div>
-          ))}
-        </Chamfer>
-        {side?.({ left, top, W })}
-      </div>
-    </>
-  );
-}
-
-/**
- * The table's right-click menu (owner, v0.47.3): Roll dice first, opening a panel of the presets beside it (each
- * with a delete that asks first), then every control, whether the dice are showing or not.
- */
-function TableMenu({ rows, presets, onRollPreset, onRollPair, onDeletePreset, noRolls, ...rest }: { x: number; y: number; tableW: number; tableH: number; onClose: () => void; rows: Row[]; noRolls?: boolean; presets: (DicePreset | null)[]; onRollPreset: (p: DicePreset) => void; onRollPair: () => void; onDeletePreset: (slot: number) => void }) {
-  const [open, setOpen] = useState(false);
-  const [confirm, setConfirm] = useState<number | null>(null);
-  const [hover, setHover] = useState(false);
-  const list = presets.map((p, slot) => ({ p, slot })).filter((x): x is { p: DicePreset; slot: number } => !!x.p);
-  const head = (
-    <button type="button" role="menuitem" aria-haspopup="menu" aria-expanded={open} onClick={() => { cue('ui:hover', 'floatMenuHighlight', { volume: 0.4 }); setOpen((o) => !o); }} onPointerEnter={() => { setHover(true); setOpen(true); }} onPointerLeave={() => setHover(false)}
-      style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', display: 'flex', alignItems: 'center', width: '100%', height: 38, padding: '0 12px', marginBottom: 2, background: hover || open ? 'rgba(200,27,24,0.85)' : 'transparent', color: T.ivory, fontFamily: T.bold, fontSize: 13.5 }}>
-      <span style={{ flex: 1 }}>Roll dice</span>
-      <Glyph d='<path d="M9 6l6 6-6 6"/>' size={14} color={T.ivory} />
-    </button>
-  );
-  return (
-    <MenuShell {...rest} rows={rows.filter((r) => !r.hidden)} head={noRolls ? undefined : head} side={open && !noRolls ? ({ left, W }) => (
-      <div role="menu" aria-label="Dice presets" style={{ position: 'absolute', top: 0, ...(left + W + 310 > rest.tableW ? { right: W + 4 } : { left: W + 4 }), width: 306 }}>
-        <Chamfer c={9} fill={T.panelLit} line={T.gold} width={1.3} inner={{ padding: 7, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <MenuRow label="Hope and Fear" onPress={() => { rest.onClose(); onRollPair(); }} />
-          {list.length ? <div style={{ height: 1, background: 'rgba(218,162,73,0.22)', margin: '4px 6px' }} /> : null}
-          {list.map(({ p, slot }) => confirm === slot ? (
-            <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 6px 0 12px' }}>
-              <span style={{ flex: 1, color: '#E2705A', fontFamily: T.bold, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Delete {p.name}?</span>
-              <TButton label="Delete" h={28} onPress={() => { onDeletePreset(slot); setConfirm(null); }} />
-              <TButton label="Keep" h={28} onPress={() => setConfirm(null)} />
-            </div>
-          ) : (
-            <div key={p.id} style={{ display: 'flex', alignItems: 'center' }}>
-              <div style={{ flex: 1, minWidth: 0 }}><MenuRow label={p.name} sub={summarise(p.dice)} onPress={() => { rest.onClose(); onRollPreset(p); }} /></div>
-              <button type="button" title={`Delete ${p.name}`} aria-label={`Delete ${p.name}`} onClick={() => { cue('ui:tap', 'buttonTap', { volume: 0.4 }); setConfirm(slot); }} style={{ all: 'unset', cursor: 'pointer', display: 'flex', padding: 9 }}>
-                <Glyph d='<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>' size={14} color={T.muted} />
-              </button>
-            </div>
-          ))}
-          {list.length === 0 ? <span style={{ color: T.muted, fontFamily: T.medium, fontSize: 12.5, lineHeight: '17px', padding: '4px 12px 6px' }}>No presets yet. Drag on the table to select dice, then Save as preset.</span> : null}
-        </Chamfer>
-      </div>
-    ) : undefined} />
-  );
-}
-
-/**
- * What holding a card does on the phone, at the pointer; every row runs the same handler the wheel runs. A card laid
- * on the table is a copy, so its menu is short: make it physical (knocked about by dice) or take it off the table.
- * In the laid-out hand a card is the card itself, so it gets the whole menu and the physics switch.
- */
 /**
  * A card read large (owner, v0.47.17): over the whole window, with room round it, at full quality, the rest dimmed
  * behind. A click anywhere or Escape puts it away.
@@ -3058,53 +3112,69 @@ function CardViewer({ card, live, from, closing, onClose, onGone }: { card: Tabl
   );
 }
 
-function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, throwIt, spread, physical, onPhysical, view }: { id: string; x: number; y: number; tableW: number; tableH: number; onClose: () => void; board?: () => void; place?: () => void; throwIt?: () => void; /** Read it large, the table dimmed behind it (v0.47.17). */ view?: () => void; spread: boolean; physical?: boolean; onPhysical?: () => void }) {
+/**
+ * A card's menu: the phone's hold wheel and the row of buttons under a focused card, each running the same handler.
+ * A card on the felt is a copy of one, so it has all but what files or deletes the original; in the laid-out hand a
+ * card is the card itself and has everything.
+ */
+function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, throwIt, spread, physical, onPhysical, view, editCard, file }: { id: string; x: number; y: number; tableW: number; tableH: number; onClose: () => void; board?: () => void; place?: () => void; throwIt?: () => void; /** Read it large, the table dimmed behind it (v0.47.17). */ view?: () => void; spread: boolean; physical?: boolean; onPhysical?: () => void; editCard?: CardEditing; file?: CharacterFile }) {
   const ctx = useTableHost();
   const item = Object.values(ctx.decks).flat().find((c) => c?.id === id);
   if (!item) return null;
-  const phys: Row[] = onPhysical ? [{ label: physical ? 'Stop its physics' : 'Make it physical', onPress: onPhysical }] : [];
-  const read: Row[] = view ? [{ label: 'View', onPress: view }] : [];
-  const dmRows = ctx.dm?.cardRows(id) ?? [];
-  if (board) return <MenuShell x={x} y={y} tableW={tableW} tableH={tableH} onClose={onClose} rows={[...read, ...phys, ...dmRows.filter((r) => !r.hidden && !r.danger), { label: 'Take off the table', onPress: board, gap: dmRows.length > 0 }]} />;
   const ref = item.ref ?? item.id;
+  const states = ctx.cardStates, on = ctx.enabledIds.has(ref), always = states.permanent.has(ref), live = !states.modsOff.has(ref);
   const fav = ctx.isFavorited(id);
   const mirror = ctx.category === FAVORITES_CATEGORY;
-  const rows: Row[] = [
-    // Throw, take a copy in the hand, read it (owner, v0.47.17), then the rest.
-    ...(throwIt ? [{ label: 'Throw on the table', onPress: throwIt }] : []),
-    ...(place ? [{ label: 'Take a copy', onPress: place }] : []),
-    ...read,
-    ...(spread ? phys : []),
-    ...(ctx.dm
-      ? [
-          ...dmRows.filter((r) => !r.danger),
-          { label: ctx.enabledIds.has(ref) ? 'Unmark' : 'Mark', gap: true, onPress: () => ctx.toggleCard(id) },
-          { label: fav ? 'Remove from Favorites' : 'Add to Favorites', onPress: () => ctx.cardAction(fav ? 'unfavorite' : 'favorite', [id]) },
-          { label: 'Move to deck', hidden: mirror, onPress: () => ctx.cardAction('move', [id]) },
-          ...dmRows.filter((r) => r.danger).map((r, i) => ({ ...r, gap: i === 0 })),
-        ]
-      : mirror
-      ? [{ label: 'Remove from Favorites', onPress: () => ctx.cardAction('unfavorite', [id]) }]
-      : [
-          { label: ctx.enabledIds.has(ref) ? 'Unequip' : 'Equip', onPress: () => ctx.toggleCard(id), hidden: ctx.cardStates.permanent.has(ref) },
-          { label: fav ? 'Remove from Favorites' : 'Add to Favorites', onPress: () => ctx.cardAction('favorite', [id]) },
-          { label: 'Move to deck', onPress: () => ctx.cardAction('move', [id]) },
-          { label: ctx.nfcAvailable ? 'Share' : 'Export', onPress: () => ctx.cardAction('nfc', [id]) },
-          { label: 'Delete', onPress: () => ctx.cardAction('delete', [id]), danger: true, gap: true },
-        ]),
-  ];
-  return <MenuShell x={x} y={y} tableW={tableW} tableH={tableH} onClose={onClose} rows={rows.filter((r) => !r.hidden)} />;
-}
+  const dmRows = ctx.dm?.cardRows(id) ?? [];
 
-function MenuRow({ label, sub, danger, onPress }: { label: string; sub?: string; danger?: boolean; onPress: () => void }) {
-  const [hover, setHover] = useState(false);
-  return (
-    <button type="button" role="menuitem" onClick={onPress} onPointerEnter={() => { setHover(true); cue('ui:hover', 'floatMenuHighlight', { volume: 0.4 }); }} onPointerLeave={() => setHover(false)}
-      style={{ all: 'unset', boxSizing: 'border-box', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, width: '100%', height: 38, padding: '0 12px', background: hover ? (danger ? T.red : 'rgba(200,27,24,0.85)') : 'transparent', color: danger && !hover ? '#E2705A' : T.ivory, fontFamily: T.bold, fontSize: 13.5 }}>
-      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
-      {sub ? <span style={{ marginLeft: 'auto', color: hover ? 'rgba(253,252,247,0.8)' : T.muted, fontFamily: T.medium, fontSize: 12.5, whiteSpace: 'nowrap' }}>{sub}</span> : null}
-    </button>
-  );
+  // Across the top: what is done with the card as an object.
+  const top: TableRow[] = [
+    ...(view ? [{ label: 'View', icon: MENU_ICON.view, quick: true, gap: true, onPress: view }] : []),
+    ...(place ? [{ label: 'Place a copy', short: 'Place copy', icon: MENU_ICON.layCopy, quick: true, onPress: place }] : []),
+    ...(throwIt ? [{ label: 'Throw a copy', short: 'Throw', icon: MENU_ICON.throwCopy, quick: true, onPress: throwIt }] : []),
+    ...(onPhysical && (board || spread) ? [physical
+      ? { label: 'Stop its physics', short: 'Stop physics', icon: MENU_ICON.still, quick: true, onPress: onPhysical }
+      : { label: 'Make it physical', short: 'Make physical', icon: MENU_ICON.physics, quick: true, onPress: onPhysical }] : []),
+    ...(board ? [{ label: 'Take off the table', short: 'Take off', icon: MENU_ICON.offTable, quick: true, onPress: board }] : []),
+  ];
+
+  let head: Omit<MenuSpec, 'rows'>, rows: TableRow[];
+  if (ctx.dm) {
+    head = ctx.dm.cardHead(id);
+    const keep: TableRow[] = board ? [] : [
+      { label: on ? 'Unmark' : 'Mark', icon: on ? MENU_ICON.unmark : MENU_ICON.mark, gap: true, onPress: () => ctx.toggleCard(id) },
+      { label: fav ? 'Remove from Favorites' : 'Add to Favorites', icon: fav ? MENU_ICON.unfavorite : MENU_ICON.favorite, onPress: () => ctx.cardAction(fav ? 'unfavorite' : 'favorite', [id]) },
+      { label: 'Move card to deck', icon: MENU_ICON.moveDeck, hidden: mirror, onPress: () => ctx.cardAction('move', [id]) },
+    ];
+    // What changes in a fight leads, whichever card it is.
+    rows = [
+      ...dmRows.filter((r) => r.quick),
+      ...top,
+      ...dmRows.filter((r) => !r.quick && !r.danger),
+      ...keep,
+      ...(board ? [] : dmRows.filter((r) => r.danger).map((r, i) => ({ ...r, gap: i === 0 }))),
+    ];
+  } else {
+    const named = sourceLabelForCardId(id, file);
+    head = { title: named === id || named === ref ? 'Card' : named, icon: MENU_ICON.cards, detail: always ? 'Always on' : on ? 'Equipped' : undefined };
+    rows = [
+      ...top,
+      { label: 'Modifiers', icon: MENU_ICON.modifiers, gap: true, onPress: () => ctx.showCardInfo?.(id) },
+      { label: live ? 'Switch modifiers off' : 'Switch modifiers on', icon: live ? MENU_ICON.switchOff : MENU_ICON.switchOn, hidden: !states.toggleable.has(ref) || !(on || always), onPress: () => ctx.toggleCardModifiers?.(id) },
+      { label: 'Set its number', icon: MENU_ICON.number, value: file && states.numberInput.has(ref) ? String(numberInputFor(file, id)) : undefined, hidden: !states.numberInput.has(ref), onPress: () => ctx.editNumberInput?.(id) },
+      { label: 'Edit card', icon: MENU_ICON.edit, hidden: !editCard?.can(id), onPress: () => editCard?.open(id) },
+      { label: on ? 'Unequip' : 'Equip', icon: on ? MENU_ICON.unequip : MENU_ICON.equip, gap: true, hidden: always, onPress: () => ctx.toggleCard(id) },
+      ...(board ? [] : mirror ? [
+        { label: 'Remove from Favorites', icon: MENU_ICON.unfavorite, gap: always, onPress: () => ctx.cardAction('unfavorite', [id]) },
+      ] : [
+        { label: fav ? 'Remove from Favorites' : 'Add to Favorites', icon: fav ? MENU_ICON.unfavorite : MENU_ICON.favorite, gap: always, onPress: () => ctx.cardAction('favorite', [id]) },
+        { label: 'Move to deck', icon: MENU_ICON.moveDeck, onPress: () => ctx.cardAction('move', [id]) },
+        { label: ctx.nfcAvailable ? 'Share' : 'Export', icon: ctx.nfcAvailable ? MENU_ICON.share : MENU_ICON.export, onPress: () => ctx.cardAction('nfc', [id]) },
+        { label: 'Delete card', icon: MENU_ICON.bin, danger: true, gap: true, onPress: () => ctx.cardAction('delete', [id]) },
+      ]),
+    ];
+  }
+  return <ContextMenu x={x} y={y} tableW={tableW} tableH={tableH} onClose={onClose} menu={{ ...head, rows }} />;
 }
 
 /** The browser's own parts, in the table's colours: sliders, scrollbars, focus, selection, placeholders. */

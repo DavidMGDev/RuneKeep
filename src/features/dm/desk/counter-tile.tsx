@@ -17,7 +17,7 @@ const W = 212;
 /** Its height is the writing's, so it is kept on the felt by about this much. */
 const HALF_H = 62;
 
-export function CounterTile({ c, owner, fallen, spot, width, height, onSpot, onStep, onSpent, onRecover, onOpen, onRemove }: {
+export function CounterTile({ c, owner, fallen, spot, width, height, onSpot, onStep, onSpent, onRecover, onOpen, onRemove, onMenu }: {
   c: AdversaryCounter;
   /** Whose it is, when it is a combatant's. */
   owner?: string;
@@ -31,6 +31,7 @@ export function CounterTile({ c, owner, fallen, spot, width, height, onSpot, onS
   onRecover?: () => void;
   onOpen: () => void;
   onRemove: () => void;
+  onMenu: (clientX: number, clientY: number) => void;
 }) {
   const [live, setLive] = useState<CounterSpot | null>(null);
   const [hover, setHover] = useState(false);
@@ -70,7 +71,7 @@ export function CounterTile({ c, owner, fallen, spot, width, height, onSpot, onS
   return (
     <div data-ui="" data-counter={c.id} role="group" aria-label={owner ? `${name}, ${owner}` : name}
       onPointerDown={(e) => e.stopPropagation()} onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onOpen(); }}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onMenu(e.clientX, e.clientY); }}
       style={{ position: 'absolute', left: x, top: y, width: W, transform: `translate(-50%, -50%) scale(${now.k})`, zIndex: live ? 26 : 24 }}>
       <Chamfer c={9} line={hover ? T.gold : T.goldSoft} fill="rgba(11,14,19,0.94)" inner={{ padding: '9px 11px 10px' }}>
         <button type="button" title="Drag to move it, click to change it" aria-label={`Change ${name}`}

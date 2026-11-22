@@ -11,6 +11,7 @@ import type { FunctionVar } from '@/lib/function-vars';
 import { deleteGroup, groupEffects, groupNames, isGroupOn, moveToGroup, renameGroup, setGroupOn } from '@/lib/modifier-groups';
 import { type CardEffect, type EffectFormula, type EffectTarget, TARGET_LABEL } from '@/lib/modifiers';
 import { DimScreen } from '@/lib/screen-dim';
+import { type EffectShape, LIMIT, shapeOf, withShape, within } from '@/lib/effect-shape';
 
 /**
  * The shared "Effects when enabled" editor (#278) — used by the card create/edit dialog AND the per-card
@@ -85,6 +86,11 @@ export const DM_EFFECT_GROUP: { label: string; options: EffectOption[] } = {
   label: 'DM',
   options: [{ key: 'level', label: 'Level', target: 'level' }],
 };
+/** Everything a modifier may be aimed at here, under its headings. */
+export function effectGroups(experiences?: ExperienceRef[], dm?: boolean): { label: string; options: EffectOption[] }[] {
+  const exp = experienceOptions(experiences);
+  return [...EFFECT_GROUPS, ...(exp.length ? [{ label: 'Experiences', options: exp }] : []), ...(dm ? [DM_EFFECT_GROUP] : [])];
+}
 const ALL_EFFECT_OPTIONS = [...EFFECT_GROUPS.flatMap((g) => g.options), ...DM_EFFECT_GROUP.options];
 export const isThresholdTarget = (t: EffectTarget) => t === 'majorThreshold' || t === 'severeThreshold';
 export const isSetEffect = (e: CardEffect) => isThresholdTarget(e.target) && e.mode === 'set' && e.dynamic !== 'formula';
@@ -113,8 +119,8 @@ export function applyPickedOption(e: CardEffect, o: EffectOption): CardEffect {
 /** Formula variables a player can scale (#278). v0.21.0: `spellcast` = your subclass's Spellcast trait.
  *  v0.32.0 adds two that are not sheet stats: the Stress currently marked, and a NUMBER INPUT the
  *  card asks its owner for (per card, never shared). */
-const FORMULA_VARS: EffectFormula['variable'][] = ['level', 'tier', 'proficiency', 'spellcast', 'stress', 'input', 'attackRoll', 'spellcastRoll', 'damageRoll', 'currentHp', 'missingHp', 'currentHope', 'missingHope', 'currentArmor', 'missingArmor', 'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
-const VAR_LABEL: Record<EffectFormula['variable'], string> = {
+export const FORMULA_VARS: EffectFormula['variable'][] = ['level', 'tier', 'proficiency', 'spellcast', 'stress', 'input', 'attackRoll', 'spellcastRoll', 'damageRoll', 'currentHp', 'missingHp', 'currentHope', 'missingHope', 'currentArmor', 'missingArmor', 'agility', 'strength', 'finesse', 'instinct', 'presence', 'knowledge'];
+export const VAR_LABEL: Record<EffectFormula['variable'], string> = {
   level: 'Level', tier: 'Tier', proficiency: 'Proficiency', spellcast: 'Spellcast', stress: 'Current Stress', input: 'Number Input',
   attackRoll: 'Attack Rolls', spellcastRoll: 'Spellcast Rolls', damageRoll: 'Damage Rolls',
   // v0.42.5: the live vitals, each against the character's OWN maximum.
@@ -127,7 +133,7 @@ const VAR_LABEL: Record<EffectFormula['variable'], string> = {
   function: 'Card element',
 };
 /** What a variable means, for the ones a player cannot guess from the name alone. */
-const VAR_HINT: Partial<Record<EffectFormula['variable'], string>> = {
+export const VAR_HINT: Partial<Record<EffectFormula['variable'], string>> = {
   stress: 'How much Stress is marked right now. Changes as you play.',
   input: 'A number you type on this card. Tap # under the card to set it.',
   attackRoll: 'Everything your cards add to an attack roll. Used by dice tray presets.',
@@ -210,12 +216,7 @@ function FormulaVarPickerBody({ current, currentKey, functionVars, onPick, onClo
 }
 
 function EffectPickerBody({ current, onPick, onClose, experiences, dm }: { current?: EffectOption; onPick: (o: EffectOption) => void; onClose: () => void; experiences?: ExperienceRef[]; dm?: boolean }) {
-  const expOpts = experienceOptions(experiences);
-  const groups = [
-    ...EFFECT_GROUPS,
-    ...(expOpts.length ? [{ label: 'Experiences', options: expOpts }] : []),
-    ...(dm ? [DM_EFFECT_GROUP] : []),
-  ];
+  const groups = effectGroups(experiences, dm);
   return (
     <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10002, alignItems: 'center', justifyContent: 'center' }}>
       <Pressable style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.9)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" />
@@ -272,11 +273,6 @@ function ModeBtn({ label, on, onPress, a11y }: { label: string; on: boolean; onP
       </View>
     </Pressable>
   );
-}
-
-type EffectMode = 'flat' | 'formula' | 'byTier';
-function modeOf(e: CardEffect): EffectMode {
-  return e.dynamic === 'formula' ? 'formula' : e.byTier ? 'byTier' : 'flat';
 }
 
 /** A small square check box, the one shape used for every modifier and group switch (v0.35). */
@@ -389,29 +385,22 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
   const setAt = (i: number, patch: Partial<CardEffect>) => onChange(effects.map((e, j) => (j === i ? { ...e, ...patch } : e)));
   const bump = (i: number, d: number) => {
     const e = effects[i];
-    const [lo, hi] = isSetEffect(e) ? [0, 40] : [-9, 12];
-    setAt(i, { delta: Math.max(lo, Math.min(hi, (e.delta ?? 0) + d)) });
+    setAt(i, { delta: within((e.delta ?? 0) + d, isSetEffect(e) ? LIMIT.set : LIMIT.bonus) });
   };
-  // #325: three modes — a flat amount, a scaling formula, or a per-tier value. Switching seeds sensible
-  // defaults and clears the other shapes so the saved effect is unambiguous.
-  const setMode = (i: number, mode: EffectMode) => {
-    const e = effects[i];
-    if (mode === 'flat') setAt(i, { delta: e.delta ?? 1, dynamic: undefined, formula: undefined, byTier: undefined });
-    else if (mode === 'formula') setAt(i, { dynamic: 'formula', formula: e.formula ?? { variable: 'level', multiply: 1, divide: 1 }, delta: undefined, byTier: undefined });
-    else setAt(i, { byTier: e.byTier ?? [1, 1, 1, 1], delta: undefined, dynamic: undefined, formula: undefined });
-  };
+  // #325: three shapes, a flat amount, a scaling formula or a per-tier value.
+  const setMode = (i: number, mode: EffectShape) => setAt(i, withShape(effects[i], mode));
   const bumpFormula = (i: number, key: 'multiply' | 'divide', d: number) => {
     const f = effects[i].formula ?? { variable: 'level' as const };
     const cur = f[key] ?? 1;
-    setAt(i, { formula: { ...f, [key]: Math.max(1, Math.min(9, cur + d)) } });
+    setAt(i, { formula: { ...f, [key]: within(cur + d, LIMIT.times) } });
   };
   const bumpPlus = (i: number, d: number) => {
     const f = effects[i].formula ?? { variable: 'level' as const };
-    setAt(i, { formula: { ...f, plus: Math.max(-20, Math.min(40, (f.plus ?? 0) + d)) } });
+    setAt(i, { formula: { ...f, plus: within((f.plus ?? 0) + d, LIMIT.plus) } });
   };
   const bumpTier = (i: number, t: number, d: number) => {
     const bt = [...(effects[i].byTier ?? [1, 1, 1, 1])] as [number, number, number, number];
-    bt[t] = Math.max(-9, Math.min(40, (bt[t] ?? 0) + d));
+    bt[t] = within((bt[t] ?? 0) + d, LIMIT.tier);
     setAt(i, { byTier: bt });
   };
 
@@ -419,7 +408,7 @@ export function EffectsField({ effects, onChange, onRequestPick, onRequestPickVa
   const allGroups = [...existingGroups, ...draftGroups.filter((g) => !existingGroups.includes(g))];
 
   const row = (e: CardEffect, i: number) => {
-    const mode = modeOf(e);
+    const mode = shapeOf(e);
     const set = isSetEffect(e);
     const v = e.delta ?? 0;
     const amount = set ? `${v}` : v >= 0 ? `+${v}` : `${v}`;

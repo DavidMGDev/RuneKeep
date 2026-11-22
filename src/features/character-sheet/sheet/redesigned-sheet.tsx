@@ -119,6 +119,7 @@ import type { DomainCardInfo } from './domain-card-info';
 import { StatePanel } from './state-panel';
 import { CardDestination } from './card-destination';
 import { CardManagementPanel, Confirm, MoveSheet } from './card-management-panel';
+import { movedFirst } from '../gallery-select';
 import { type CardMenuKind } from '../card-menu';
 import { diffStatToasts, type StatToast, StatToastHost } from './stat-toasts';
 import { CardModifiersSheet } from './card-modifiers-sheet';
@@ -2018,16 +2019,6 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   const onReorderCategories = useCallback((order: string[]) => mutateFile({ categoryOrder: order }), [mutateFile]);
   // Move a card to a different category (#246): a per-card override (built-in or custom key).
   // Move one or more cards to a category (#246/#248): per-card override (built-in or custom key).
-  const onMoveCards = useCallback((ids: string[], categoryKey: string) => {
-    setFile((f) => {
-      if (!f) return f;
-      const map = { ...(f.cardCategory ?? {}) };
-      for (const id of ids) map[id] = categoryKey;
-      const next = { ...f, cardCategory: map };
-      saveFileRef.current(next);
-      return next;
-    });
-  }, []);
   // File several cards into `toCat` with an explicit order (#311). v0.37: the Cards panel's Move is
   // the only caller left (the gallery drag that used to raise it is gone), which is why the
   // single-card variant went with it. Re-file each moved id, write the target's order, and drop them
@@ -3235,7 +3226,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               {/* #276 item 4: stay mounted while editing a card from fullscreen so it remains fullscreen
                   behind the editor — only the full-screen INTERFACES (level/cards/New Card) unload it. */}
               {desktop ? (
-                <PlayTable onReady={onTableReady} characterId={file?.id ?? 'local'} dice={{ up: diceUp, onToggle: toggleDice, handleRef: trayRef, presets: { presets: deskPresets, trayDice, cardVars: presetCardVars, onWrite: writePreset, onPlay: playPreset, onOpenChange: setPresetModal, resolve: resolvePreset } }} sortFile={file ?? undefined} onSortOpen={setDeskSortOpen} overlay={desktopModal} backRef={desktopBackRef} onOpen={openFromTable} />
+                <PlayTable onReady={onTableReady} characterId={file?.id ?? 'local'} dice={{ up: diceUp, onToggle: toggleDice, handleRef: trayRef, presets: { presets: deskPresets, trayDice, cardVars: presetCardVars, onWrite: writePreset, onPlay: playPreset, onOpenChange: setPresetModal, resolve: resolvePreset } }} sortFile={file ?? undefined} onSortOpen={setDeskSortOpen} overlay={desktopModal} backRef={desktopBackRef} onOpen={openFromTable} editCard={{ can: (id) => editableIds.has(id), open: setEditCardId }} />
               ) : floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : <CardCarousel />}
               {desktop || floatKind === 'level' || floatKind === 'cards' || floatKind === 'custom' ? null : (
                 <CarouselTokenBoard onEditCard={setEditCardId} onDeleteCard={(id) => onDeleteCards([id])} editableIds={editableIds} />
@@ -3279,7 +3270,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
             {/* v0.12.1 item 10: the radial-menu pop-ups fade in (they used to POP). */}
             {moveReq ? (
               <Animated.View style={StyleSheet.absoluteFill} pointerEvents="box-none" entering={FadeIn.duration(170)}>
-                <MoveSheet count={moveReq.length} ordered={moveTargets} customCategories={customCategories} onMove={(key) => { onMoveCards(moveReq, key); setMoveReq(null); }} onCopy={(key) => { onDuplicateCards(moveReq, key); setMoveReq(null); }} onClose={() => setMoveReq(null)} />
+                <MoveSheet count={moveReq.length} ids={moveReq} decks={carouselDecks ?? {}} ordered={moveTargets} customCategories={customCategories} onMove={(key) => { onReorderCards(moveReq, key, movedFirst(moveReq, (carouselDecks?.[key] ?? []).map((c) => c.id))); setMoveReq(null); }} onCopy={(key) => { onDuplicateCards(moveReq, key); setMoveReq(null); }} onClose={() => setMoveReq(null)} />
               </Animated.View>
             ) : null}
             {deleteReq ? (
@@ -3489,6 +3480,15 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onSaveEffects={onEditCardEffects}
               onCollapseGroups={(keys) => setFile((f) => { if (!f) return f; const next = { ...f, collapsedModifierGroups: keys }; saveFileRef.current(next); return next; })}
               onClose={() => setCardInfoId(null)}
+              desk={desktop ? {
+                card: Object.values(carouselDecks ?? {}).flat().find((c) => c.id === cardInfoId),
+                permanent: cardStates.permanent.has(refOf(cardInfoId, file)),
+                live: !cardStates.modsOff.has(refOf(cardInfoId, file)),
+                toggleable: cardStates.toggleable.has(refOf(cardInfoId, file)),
+                takesNumber: cardStates.numberInput.has(refOf(cardInfoId, file)),
+                onToggleModifiers: () => onToggleCardModifiers(cardInfoId),
+                onNumber: (n) => setNumberInput(cardInfoId, n),
+              } : undefined}
             />
           ) : null}
           {/* v0.13.0 item 10: empty-category panel — appears SILENTLY (mute, and SheetDim isn't gated

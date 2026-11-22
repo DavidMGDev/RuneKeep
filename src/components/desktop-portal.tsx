@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeInLeft } from 'react-native-reanimated';
 import { createPortal } from 'react-dom';
 
@@ -49,7 +49,9 @@ export function DesktopPortal({ to: asked, children, priority = 'panel', onDismi
     return { width: box.width, height: box.height, scale: 1, offsetX: box.left, offsetY: box.top };
   }, [desktop, to]);
   const host = desktop ? (to === 'table' ? desktop.tableHost : to === 'window' ? desktop.windowHost : to === 'modal' ? desktop.modalHost : desktop.sideHost) : null;
-  if (!desktop && (to === 'side' || to === 'modal') && pageSide?.host) {
+  // A full-window page has no hosts and needs none: a dialog that takes the whole screen is drawn over the page.
+  if (!desktop && to === 'modal' && typeof document !== 'undefined') return createPortal(<InModal.Provider value><PageModal>{children}</PageModal></InModal.Provider>, document.body);
+  if (!desktop && to === 'side' && pageSide?.host) {
     return createPortal(<SideLayer page layers={pageSide.layers} frame={pageSide.frame} priority={priority} onDismiss={onDismiss}>{children}</SideLayer>, pageSide.host);
   }
   if (!desktop || !frame) return <>{children}</>;
@@ -64,6 +66,18 @@ export function DesktopPortal({ to: asked, children, priority = 'panel', onDismi
         host,
       )
     : null;
+}
+
+function PageModal({ children }: { children: ReactNode }) {
+  const { width, height } = useWindowDimensions();
+  const frame = useMemo(() => ({ width, height, scale: 1, offsetX: 0, offsetY: 0 }), [width, height]);
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 4000, display: 'flex', flexDirection: 'column' }}>
+      <FrameContext.Provider value={frame}>
+        <StageScaleReset>{children}</StageScaleReset>
+      </FrameContext.Provider>
+    </div>
+  );
 }
 
 /**

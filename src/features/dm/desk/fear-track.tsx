@@ -8,14 +8,14 @@ import { useState } from 'react';
 import { FearTint } from '@/constants/table-tints';
 import { cue } from '@/features/character-sheet/table/table-sound';
 import { Chamfer, Glyph, T, TButton } from '@/features/character-sheet/table/table-ui';
-import { clampFear, type DmFear, FEAR_MAX } from '@/lib/dm-table';
+import { clampFear, type DmFear, FEAR_MAX, FEAR_Y } from '@/lib/dm-table';
 
 const HALF_H = 26;
 const ROW_W = 560;
 /** Under this much table the pips take two rows of six. */
 const NARROW = 720;
 
-export function FearTrack({ fear, width, height, onChange }: { fear: DmFear; width: number; height: number; onChange: (patch: Partial<DmFear>) => void }) {
+export function FearTrack({ fear, width, height, onChange, onMenu }: { fear: DmFear; width: number; height: number; onChange: (patch: Partial<DmFear>) => void; onMenu: (clientX: number, clientY: number) => void }) {
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
   const narrow = width < NARROW;
   const halfW = (narrow ? 360 : ROW_W) / 2, halfH = narrow ? HALF_H + 12 : HALF_H;
@@ -23,7 +23,8 @@ export function FearTrack({ fear, width, height, onChange }: { fear: DmFear; wid
     x: Math.min(width - halfW - 12, Math.max(halfW + 12, x)),
     y: Math.min(height - halfH - 12, Math.max(halfH + 12, y)),
   });
-  const at = drag ?? place(fear.x * width, fear.y * height);
+  // Never moved, it starts under the control dice, whose row is as deep on a short table as on a tall one.
+  const at = drag ?? place(fear.x * width, fear.y === FEAR_Y ? Math.max(256, fear.y * height) : fear.y * height);
 
   const set = (n: number) => {
     const next = clampFear(n);
@@ -56,6 +57,7 @@ export function FearTrack({ fear, width, height, onChange }: { fear: DmFear; wid
 
   return (
     <div data-ui="" data-fear="" role="group" aria-label={`Fear, ${fear.n} of ${FEAR_MAX}`} onPointerDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onMenu(e.clientX, e.clientY); }}
       style={{ position: 'absolute', left: at.x, top: at.y, transform: 'translate(-50%, -50%)', zIndex: 24, width: halfW * 2 }}>
       <Chamfer c={10} line={FearTint.edge} fill="rgba(11,14,19,0.92)" inner={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px 8px 14px' }}>
         <div onPointerDown={start} title="Drag to move it" style={{ cursor: drag ? 'grabbing' : 'grab', touchAction: 'none', display: 'flex', alignItems: 'baseline', gap: 8, width: 76, flexShrink: 0 }}>

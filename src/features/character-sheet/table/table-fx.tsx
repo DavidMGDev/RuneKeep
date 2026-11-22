@@ -340,7 +340,7 @@ export function scrapShape(poly: Pt[]) {
  * A scrap of a torn or cut card (owner, v0.47.16): a real piece on the table, knocked about like any other, drawn as
  * its part of the card. `w` is the whole card's width; the element is the scrap's own box, centred on (x, y).
  */
-export function CardScrap({ uid, card, poly, w, x, y, rot, fading, onDrag }: { uid: string; card: TableCard; poly: Pt[]; w: number; x: number; y: number; rot: number; fading?: boolean; /** Carried by hand (table px), and let go (`end`). */ onDrag?: (uid: string, x: number, y: number, rot: number, end: boolean) => void }) {
+export function CardScrap({ uid, card, poly, w, x, y, rot, fading, onDrag, onMenu }: { uid: string; card: TableCard; poly: Pt[]; w: number; x: number; y: number; rot: number; fading?: boolean; /** Carried by hand (table px), and let go (`end`). */ onDrag?: (uid: string, x: number, y: number, rot: number, end: boolean) => void; onMenu?: (clientX: number, clientY: number) => void }) {
   const h = (w * (card.h ?? FORGED_H)) / FORGED_W;
   const b = scrapShape(poly);
   const bx = (b.x0 / 100) * w, by = (b.y0 / 100) * h, bw = ((b.x1 - b.x0) / 100) * w, bh = ((b.y1 - b.y0) / 100) * h;
@@ -370,6 +370,7 @@ export function CardScrap({ uid, card, poly, w, x, y, rot, fading, onDrag }: { u
   };
   return (
     <div data-board-card={uid} aria-hidden="true" onPointerDown={down}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onMenu?.(e.clientX, e.clientY); }}
       style={{ position: 'absolute', left: x - bw / 2, top: y - bh / 2, width: bw, height: bh, transform: `rotate(${rot}deg)`, pointerEvents: fading ? 'none' : 'auto', cursor: 'grab', zIndex: 13, filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.5))', transition: 'opacity 450ms', opacity: fading ? 0 : 1 }}>
       <div style={{ position: 'absolute', inset: 0, clipPath: `polygon(${poly.map(([px, py]) => `${((px / 100) * w - bx).toFixed(1)}px ${((py / 100) * h - by).toFixed(1)}px`).join(', ')})` }}>
         <div style={{ position: 'absolute', left: -bx, top: -by, width: FORGED_W, height: card.h ?? FORGED_H, transform: `scale(${w / FORGED_W})`, transformOrigin: '0 0' }}><CardFace card={card} hiRes={false} /></div>
@@ -384,11 +385,11 @@ export function CardScrap({ uid, card, poly, w, x, y, rot, fading, onDrag }: { u
  * seconds (small wobbles allowed) it calms, and then it is set down where it is let go, without striking. What it does
  * shows over it while it is pointed at or carried, above every piece. Right click gets rid of it.
  */
-export function DomatCardView({ card, x, y, from, held, onMove, onPlay, onPlace, onRemove }: {
+export function DomatCardView({ card, x, y, from, held, onMove, onPlay, onPlace, onMenu }: {
   card: DomatCard; x: number; y: number; from: { x: number; y: number };
   /** Pulled straight off the deck by a drag: it is in the hand from the start. */
   held?: boolean;
-  onMove: (x: number, y: number) => void; onPlay: (x: number, y: number) => void; onPlace: (x: number, y: number) => void; onRemove: () => void;
+  onMove: (x: number, y: number) => void; onPlay: (x: number, y: number) => void; onPlace: (x: number, y: number) => void; onMenu: (clientX: number, clientY: number) => void;
 }) {
   const [born, setBorn] = useState(!!held);
   const [hover, setHover] = useState(false);
@@ -457,8 +458,8 @@ export function DomatCardView({ card, x, y, from, held, onMove, onPlay, onPlace,
   const below = ty - (DOMAT_H * 1.06) / 2 < 170;
   return (
     <div data-domat={card.id} onPointerDown={start} onPointerEnter={() => setHover(true)} onPointerLeave={() => setHover(false)}
-      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
-      role="img" aria-label={`${card.name}. ${card.table} Drag it and let go to use it; hold it still to set it down instead; right click to get rid of it.`}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onMenu(e.clientX, e.clientY); }}
+      role="img" aria-label={`${card.name}. ${card.table} Drag it and let go to use it; hold it still to set it down instead; right click to use it or get rid of it.`}
       style={{
         position: 'absolute', left: tx - DOMAT_W / 2, top: ty - DOMAT_H / 2, width: DOMAT_W, height: DOMAT_H, zIndex: up ? 1240 : 15, cursor: drag ? 'grabbing' : 'grab', touchAction: 'none',
         transform: born ? `rotate(${drag ? -4 : 2}deg) scale(${drag ? 1.06 : hover ? 0.84 : 0.76})` : 'rotate(-30deg) scale(0.3)',

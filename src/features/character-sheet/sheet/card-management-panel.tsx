@@ -13,6 +13,8 @@ import { playSfx } from '@/lib/sfx';
 
 import { type CardCategory, type CardItem, isBuiltinCategory } from '../card-data';
 import { availableCategories, categoryLabel, type CustomCategory } from '../carousel-categories';
+import { useDesktop } from '@/hooks/use-desktop';
+import { DeskMoveDialog } from './desk-move';
 import { type GallerySelection, NO_SELECTION, clearSelection, holdTile, movedFirst, tapTile } from '../gallery-select';
 import { BUILTIN_TYPE_GROUPS } from '../card-types';
 import { useCarousel } from '../carousel-context';
@@ -384,7 +386,7 @@ export function CardManagementPanel(props: Props) {
       {createOpen ? <CategoryForm title="New category" onCancel={() => setCreateOpen(false)} onSave={(label, icon) => { onCreateCategory(label, icon); setCreateOpen(false); }} /> : null}
       {editing ? <CategoryForm title="Edit category" initialLabel={editing.label} initialIcon={editing.icon} onCancel={() => setEditing(null)} onSave={(label, icon) => { onUpdateCategory(editing.id, { label, icon }); setEditing(null); }} /> : null}
       {confirmDelCat ? <Confirm title={`Delete "${confirmDelCat.label}"?`} body="The category is removed; its cards return to their default category." confirmLabel="Delete" onCancel={() => setConfirmDelCat(null)} onConfirm={() => { onDeleteCategory(confirmDelCat.id); setConfirmDelCat(null); }} /> : null}
-      {moveOpen ? <MoveSheet count={selected.size} ordered={ordered} customCategories={customCategories} onMove={(key) => { moveSelected(key); clearSelect(); setMoveOpen(false); }} onCopy={onDuplicate ? (key) => { onDuplicate(dupIds, key); clearSelect(); setMoveOpen(false); } : undefined} onClose={() => setMoveOpen(false)} /> : null}
+      {moveOpen ? <MoveSheet count={selected.size} ids={[...selected]} decks={decks} ordered={ordered} customCategories={customCategories} onMove={(key) => { moveSelected(key); clearSelect(); setMoveOpen(false); }} onCopy={onDuplicate ? (key) => { onDuplicate(dupIds, key); clearSelect(); setMoveOpen(false); } : undefined} onClose={() => setMoveOpen(false)} /> : null}
       {confirmDel ? <Confirm title={selected.size > 1 ? `Delete ${selected.size} cards?` : 'Delete this card?'} body="The selected cards are permanently removed. This can't be undone." confirmLabel="Delete" onCancel={() => setConfirmDel(false)} onConfirm={() => { onDeleteCards([...selected]); clearSelect(); setConfirmDel(false); }} /> : null}
     </>
   );
@@ -638,11 +640,26 @@ function CategoryForm({ title, initialLabel = '', initialIcon = DEFAULT_CATEGORY
   );
 }
 
-export function MoveSheet({ count, ordered, customCategories, onMove, onCopy, onClose }: { count: number; ordered: string[]; customCategories: CustomCategory[]; onMove: (key: string) => void; onCopy?: (key: string) => void; onClose: () => void }) {
+export function MoveSheet({ count, ids, decks, ordered, customCategories, onMove, onCopy, onClose }: { count: number; /** The cards going, and the decks they can be seen in (desktop draws both). */ ids: string[]; decks: Record<string, CardItem[]>; ordered: string[]; customCategories: CustomCategory[]; onMove: (key: string) => void; onCopy?: (key: string) => void; onClose: () => void }) {
   // v0.19.1 item 8: when the copy toggle is on, choosing a category COPIES the cards into it instead of
   // moving them (the smoother "duplicate into another category" flow). Only offered when onCopy is wired.
   const [copy, setCopy] = useState(false);
+  const desktop = useDesktop();
   const verb = copy ? 'Copy' : 'Move';
+  // Desktop (v0.50.0, owner): the whole screen, not the sidebar.
+  if (desktop) {
+    const all = new Map(Object.values(decks).flat().map((c) => [c.id, c]));
+    return (
+      <DeskMoveDialog
+        count={count}
+        cards={ids.flatMap((id) => all.get(id) ?? [])}
+        decks={ordered.filter((key) => key !== 'favorites').map((key) => {
+          const deck = decks[key] ?? [];
+          return { key, label: categoryLabel(key, customCategories), count: deck.length, glyph: <CategoryGlyph category={key} />, here: !!ids.length && ids.every((id) => deck.some((c) => c.id === id)) };
+        })}
+        onMove={onMove} onCopy={onCopy} onClose={onClose} />
+    );
+  }
   return (
     <CenterDialog onClose={onClose} zIndex={10004}>
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, paddingHorizontal: 16, paddingVertical: 16 }}>
@@ -652,7 +669,7 @@ export function MoveSheet({ count, ordered, customCategories, onMove, onCopy, on
             cards you picked go to the front and whatever was already there follows them. */}
         <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16, marginTop: 3, marginBottom: 12 }}>
           {copy
-            ? `Choose a category to copy into. The ${count > 1 ? 'copies go' : 'copy goes'} to the front of it.`
+            ? `Choose a category to copy into. The ${count > 1 ? 'copies go' : 'copy goes'} to the end of it.`
             : `Choose a category, including the one ${count > 1 ? 'they are' : 'it is'} in now. ${count > 1 ? 'They go' : 'It goes'} to the front of it and the cards already there follow.`}
         </Text>
         {onCopy ? (

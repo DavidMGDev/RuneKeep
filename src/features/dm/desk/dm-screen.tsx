@@ -15,18 +15,21 @@ import FullUi from '../../../../assets/art/new/FullUI.svg';
 
 import { LoadingScreen } from '@/components/loading-screen';
 import { PopupDialog } from '@/components/popup-dialog';
-import { RuneButton } from '@/components/rune-button';
 import { showToast } from '@/components/toast';
 import { DmRune } from '@/constants/theme';
 import { useDesktop } from '@/hooks/use-desktop';
 import type { CardItem } from '@/features/character-sheet/card-data';
+import { movedFirst } from '@/features/character-sheet/gallery-select';
+import { CategoryIconSvg } from '@/features/character-sheet/sheet/category-icons';
+import { DeskMoveDialog } from '@/features/character-sheet/sheet/desk-move';
 import type { PlacedToken } from '@/features/character-sheet/components/card-tokens';
 import type { DiceTrayHandle } from '@/features/character-sheet/sheet/dice-tray';
 import { DM_STARTING_LOOK } from '@/features/character-sheet/table/deck-look';
+import { MENU_ICON } from '@/features/character-sheet/table/menu-icons';
 import { type DeskDice, PlayTable } from '@/features/character-sheet/table/play-table';
 import { type TableHost, TableHostContext } from '@/features/character-sheet/table/table-host';
 import { removeTemplates, saveAdversaries } from '@/lib/adversary-library';
-import { arrangeDecks, DM_DECKS, type DmDeckKey, type DmTable, removeDeck } from '@/lib/dm-table';
+import { arrangeDecks, clampFear, DM_DECKS, type DmDeckKey, type DmTable, FEAR_MAX, removeDeck } from '@/lib/dm-table';
 import { dmTableOwner, loadDmTable, saveDmTable } from '@/lib/dm-table-store';
 import { applyOrder } from '@/lib/encounter-order';
 import { FAVORITES_CATEGORY } from '@/lib/favorites';
@@ -34,6 +37,7 @@ import type { Party } from '@/lib/party';
 import { changeCombatant, type Combatant, type Session, sortedEncounters } from '@/lib/session';
 import { getEncounter, saveEncounter } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
+import { COUNTER_MAX } from '@/lib/table-counters';
 import { isUiMuted, setUiMuted } from '@/lib/sfx-prefs';
 
 import { AdversaryInfoPanel } from '../adversary-info';
@@ -45,7 +49,7 @@ import { PartyEditorScreen } from '../party-editor';
 import { PartyOverviewScreen } from '../party-overview';
 import { SessionScreen } from '../session-screen';
 import { combatantCard, combatantCardId, encounterCard, encounterCardId, memberCard, memberCardId, templateCard, templateCardId } from './dm-cards';
-import { cardRows, controlDice, type ControlsEnv, type SortBy } from './dm-controls';
+import { cardHead, cardRows, controlDice, type ControlsEnv, type SortBy } from './dm-controls';
 import { type DeskApis, type DmDesk, DmDeskContext, DmSide, type DmView } from './dm-desk';
 import { FearTrack } from './fear-track';
 import { useDeskCounters } from './use-counters';
@@ -286,12 +290,24 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
         start: DM_STARTING_LOOK,
         controls: controlDice(env),
         cardRows: (id) => cardRows(env, id),
+        cardHead: (id) => cardHead(env, id),
         emptyDeck: !enc && (category === 'dm-foes' || category === 'dm-npcs') ? 'No encounter yet. Click the Encounter die to make one.' : EMPTY_DECK[category as DmDeckKey] ?? (category === FAVORITES_CATEGORY ? 'No favorites yet. Right click a card to add it.' : 'Nothing in this category yet. Right click a card and move it here.'),
-        counters: { open: () => counters.open(), add: counters.add },
-        layer: (w, h) => (
+        counters: { open: () => counters.open(), add: counters.add, full: table.counters.length >= COUNTER_MAX },
+        layer: (w, h, openMenu) => (
           <>
-            {table.fear.on ? <FearTrack fear={table.fear} width={w} height={h} onChange={(patch) => update((t) => ({ ...t, fear: { ...t.fear, ...patch } }))} /> : null}
-            {counters.layer(w, h)}
+            {table.fear.on ? (
+              <FearTrack fear={table.fear} width={w} height={h} onChange={(patch) => update((t) => ({ ...t, fear: { ...t.fear, ...patch } }))}
+                onMenu={(x, y) => openMenu(x, y, {
+                  title: 'Fear', icon: MENU_ICON.fear, detail: `${table.fear.n} of ${FEAR_MAX}`,
+                  rows: [
+                    { label: 'Gain a Fear', short: 'Gain', icon: MENU_ICON.plus, quick: true, disabled: table.fear.n >= FEAR_MAX, onPress: () => update((t) => ({ ...t, fear: { ...t.fear, n: clampFear(t.fear.n + 1) } })) },
+                    { label: 'Spend a Fear', short: 'Spend', icon: MENU_ICON.minus, quick: true, disabled: !table.fear.n, onPress: () => update((t) => ({ ...t, fear: { ...t.fear, n: clampFear(t.fear.n - 1) } })) },
+                    { label: 'Set Fear to 0', icon: MENU_ICON.reset, disabled: !table.fear.n, onPress: () => update((t) => ({ ...t, fear: { ...t.fear, n: 0 } })) },
+                    { label: 'Hide the tracker', icon: MENU_ICON.hide, value: 'Back in Tools', gap: true, onPress: () => update((t) => ({ ...t, fear: { ...t.fear, on: false } })) },
+                  ],
+                })} />
+            ) : null}
+            {counters.layer(w, h, openMenu)}
           </>
         ),
       },
@@ -381,18 +397,24 @@ function Desk({ records, session, party, startAt }: { records: DmRecords; sessio
           <PopupDialog dm destructive title="Delete this category?" body="Its cards go back to the decks they came from." confirmLabel="Delete" onCancel={() => setDialog(null)}
             onConfirm={() => { setDialog(null); update((t) => removeDeck(t, dialog.key)); }} />
         ) : dialog?.kind === 'move' ? (
-          <PopupDialog dm title="Move to deck" body={table.decks.length ? undefined : 'Make a category first: click the Cards die, then New category.'} confirmLabel="Cancel" cancelLabel="Cancel" onConfirm={() => setDialog(null)} onCancel={() => setDialog(null)}>
-            <View style={{ gap: 10, marginTop: 14 }}>
-              {table.decks.filter((d) => d.key !== category).map((d) => (
-                <RuneButton key={d.key} label={d.label} kind="secondary" height={40} dm
-                  onPress={() => { setDialog(null); update((t) => ({ ...t, moved: { ...t.moved, ...Object.fromEntries(dialog.ids.map((id) => [id, d.key])) } })); }} />
-              ))}
-              {dialog.ids.some((id) => table.moved[id]) ? (
-                <RuneButton label="Back to its own deck" kind="ghost" height={40} dm
-                  onPress={() => { setDialog(null); update((t) => ({ ...t, moved: Object.fromEntries(Object.entries(t.moved).filter(([id]) => !dialog.ids.includes(id))) })); }} />
-              ) : null}
-            </View>
-          </PopupDialog>
+          <DeskMoveDialog
+            count={dialog.ids.length}
+            cards={dialog.ids.flatMap((id) => Object.values(decks).flat().find((c) => c.id === id) ?? [])}
+            decks={[...DM_DECKS.map((d) => ({ key: d.key as string, label: d.label, icon: d.icon as string })), ...table.decks.map((d) => ({ ...d, icon: 'gem' }))].map((d) => ({
+              key: d.key, label: d.label, count: decks[d.key]?.length ?? 0, glyph: <CategoryIconSvg iconKey={d.icon} />,
+              here: dialog.ids.every((id) => decks[d.key]?.some((c) => c.id === id)),
+            }))}
+            onMove={(to) => {
+              const { ids } = dialog;
+              setDialog(null);
+              update((t) => {
+                const moved = { ...t.moved };
+                // Into the deck it comes in is no move at all.
+                for (const id of ids) if (base[to as DmDeckKey]?.some((c) => c.id === id)) delete moved[id]; else moved[id] = to;
+                return { ...t, moved, order: { ...t.order, [to]: movedFirst(ids, (decks[to] ?? []).map((c) => c.id)) } };
+              });
+            }}
+            onClose={() => setDialog(null)} />
         ) : null}
       </View>
     </DmDeskContext.Provider>

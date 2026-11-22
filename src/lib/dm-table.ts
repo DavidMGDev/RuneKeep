@@ -12,6 +12,8 @@ import type { AdversaryCounter } from './dm-counters';
 import { cleanCounters, cleanSpots, type CounterSpot } from './table-counters';
 
 export const FEAR_MAX = 12;
+/** How far down the felt the tracker starts, until it is moved. */
+export const FEAR_Y = 0.34;
 
 export interface DmFear {
   on: boolean;
@@ -70,7 +72,7 @@ export function cleanDmTable(raw: unknown): DmTable {
     moved: Object.fromEntries(Object.entries(obj(r.moved)).filter(([, v]) => typeof v === 'string')) as Record<string, string>,
     order: Object.fromEntries(Object.entries(obj(r.order)).map(([k, v]) => [k, strings(v)])),
     presets: slotsOf(Array.isArray(r.presets) ? (r.presets as (DicePreset | null)[]) : undefined, DESK_PRESET_SLOTS),
-    fear: { on: f.on === true, n: clampFear(num(f.n, 0)), x: Math.min(1, Math.max(0, num(f.x, 0.5))), y: Math.min(1, Math.max(0, num(f.y, 0.34))) },
+    fear: { on: f.on === true, n: clampFear(num(f.n, 0)), x: Math.min(1, Math.max(0, num(f.x, 0.5))), y: Math.min(1, Math.max(0, num(f.y, FEAR_Y))) },
     counters: cleanCounters(r.counters),
     spots: cleanSpots(r.spots),
   };

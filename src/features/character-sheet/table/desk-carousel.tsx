@@ -83,11 +83,13 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
   initialIndex: number;
   /** The card a copy of which is in your hand: it dims, and no card lights up while you carry it. */
   takenId?: string;
+  /** Its menu is open: it stays lit, wherever the pointer goes, until the menu closes. */
+  heldId?: string;
   /** Each time a new card reaches the centre. */
   onCentre: (i: number) => void;
   /** The centre card was clicked: where it is on screen and where the pointer is. */
   onCentreClick: (card: TableCard, rect: DOMRect, pointer: { x: number; y: number }) => void;
-}>(function DeskCarousel({ cards, look, initialIndex, onCentre, onCentreClick, takenId }, ref) {
+}>(function DeskCarousel({ cards, look, initialIndex, onCentre, onCentreClick, takenId, heldId }, ref) {
   const count = cards.length;
   const root = useRef<HTMLDivElement>(null);
   const size = useRef({ w: 0, h: 0 });
@@ -109,6 +111,47 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
   const takenRef = useRef(takenId);
   takenRef.current = takenId;
   useEffect(() => { if (takenId) setHover(-1); }, [takenId]);
+  // A card whose menu is open stays lit (owner, v0.50.0). When the menu goes it stays so while the pointer is still on
+  // it as it is drawn, lifted: the menu's backdrop took the pointer, so the browser will send no leave for it.
+  const heldRef = useRef(heldId);
+  heldRef.current = heldId;
+  const pointer = useRef({ x: -1, y: -1 });
+  const stopWatch = useRef<(() => void) | null>(null);
+  useEffect(() => () => stopWatch.current?.(), []);
+  useEffect(() => {
+    if (!heldId) return;
+    stopWatch.current?.();
+    setHover(cardsRef.current.findIndex((c) => c.id === heldId));
+    const track = (e: PointerEvent) => { pointer.current = { x: e.clientX, y: e.clientY }; };
+    window.addEventListener('pointermove', track, true);
+    window.addEventListener('pointerdown', track, true);
+    return () => {
+      window.removeEventListener('pointermove', track, true);
+      window.removeEventListener('pointerdown', track, true);
+      const settle = () => {
+        if (heldRef.current) return;
+        const { x, y } = pointer.current;
+        const top = document.elementFromPoint(x, y) as HTMLElement | null;
+        const slot = top?.closest<HTMLElement>('[data-slot]');
+        // Back on a card: from here the hand's own enter and leave see to it.
+        if (slot && root.current?.contains(slot)) { setHover(Number(slot.dataset.slot)); stopWatch.current?.(); return; }
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- as the hand is when the menu has gone, on purpose
+        const felt = root.current?.closest('[data-table-root]');
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- as the hand is when the menu has gone, on purpose
+        const r = els.current.get(hoverRef.current)?.el.firstElementChild?.getBoundingClientRect();
+        const still = !!r && !!top && !!felt?.contains(top) && !top.closest('[data-ui], [role="menu"]') && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+        if (!still) { setHover(-1); stopWatch.current?.(); }
+      };
+      const moved = (e: PointerEvent) => { track(e); settle(); };
+      window.addEventListener('pointermove', moved, true);
+      const frame = requestAnimationFrame(settle);
+      stopWatch.current = () => {
+        cancelAnimationFrame(frame);
+        window.removeEventListener('pointermove', moved, true);
+        stopWatch.current = null;
+      };
+    };
+  }, [heldId]);
   const cbs = useRef({ onCentre, onCentreClick });
   cbs.current = { onCentre, onCentreClick };
 
@@ -417,13 +460,16 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       const n = countRef.current;
       goTo(lookRef.current.loop ? s.target + cardOffset(i, s.target, n, true) : i);
     };
+    const onContext = (e: MouseEvent) => { pointer.current = { x: e.clientX, y: e.clientY }; };
     const onCancel = () => { if (down?.moved) { st.current.dragging = false; goTo(Math.round(st.current.pos)); } down = null; el.style.cursor = ''; };
     const onOver = (e: PointerEvent) => {
-      if (down?.moved || takenRef.current) return;
+      pointer.current = { x: e.clientX, y: e.clientY };
+      if (down?.moved || takenRef.current || heldRef.current) return;
       const hit = (e.target as HTMLElement).closest?.('[data-slot]') as HTMLElement | null;
       setHover(hit ? Number(hit.dataset.slot) : -1);
     };
     const onLeave = () => {
+      if (heldRef.current) return;
       setHover(-1);
       if (lookRef.current.scroll === 'follow' && !lookRef.current.loop) goTo(Math.round(st.current.target));
     };
@@ -435,6 +481,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
     el.addEventListener('pointercancel', onCancel);
     el.addEventListener('pointerover', onOver);
     el.addEventListener('pointerleave', onLeave);
+    el.addEventListener('contextmenu', onContext);
     return () => {
       wheelEl.removeEventListener('wheel', onWheel);
       el.removeEventListener('pointerdown', onDown);
@@ -443,6 +490,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       el.removeEventListener('pointercancel', onCancel);
       el.removeEventListener('pointerover', onOver);
       el.removeEventListener('pointerleave', onLeave);
+      el.removeEventListener('contextmenu', onContext);
     };
      
   }, [goTo, kick]);

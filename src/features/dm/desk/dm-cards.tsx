@@ -110,7 +110,7 @@ export const memberCardId = (charId: string) => `pc-${charId}`;
 export const encounterCardId = (id: string) => `enc-${id}`;
 export const templateCardId = (id: string) => `saved-${id}`;
 
-function vitalStats(v: MemberVitals, m: MemberMaxes): Stat[] {
+export function vitalStats(v: MemberVitals, m: MemberMaxes): Stat[] {
   return [['Hit points', `${v.hp}/${m.maxHp}`], ['Armor', `${v.armor}/${m.armorMax}`], ['Stress', `${v.stress}/${m.stressMax}`], ['Hope', `${v.hope}/${m.hopeMax}`]];
 }
 
@@ -131,11 +131,17 @@ function characterFace(file: CharacterFile, kind: string, band: string, vitals: 
   };
 }
 
-export function memberCard(file: CharacterFile, party: Party, enc: Encounter | null): CardItem {
+/** A member's vitals as they stand: the running fight's, or outside one the party's. */
+export function memberNow(file: CharacterFile, party: Party, enc: Encounter | null): { vitals: MemberVitals; maxes: MemberMaxes } {
   // Outside a running fight it is the party's live vitals that change, so those are the ones shown.
   const inFight = enc?.status === 'active' && enc.allies.some((a) => a.kind === 'member' && a.charId === file.id);
   const vitals = (inFight && enc ? memberVitals(enc, party, file.id) : party.global[file.id]) ?? initialVitals(file);
   const maxes = inFight && enc ? bonusMaxes(memberMaxes(file), memberBonus(enc, party, file.id)) : memberMaxes(file);
+  return { vitals, maxes };
+}
+
+export function memberCard(file: CharacterFile, party: Party, enc: Encounter | null): CardItem {
+  const { vitals, maxes } = memberNow(file, party, enc);
   return cardOf(memberCardId(file.id), characterFace(file, 'Party', classColor(file.className).bright, vitals, maxes, isPresent(party, file.id) ? undefined : 'Away'));
 }
 

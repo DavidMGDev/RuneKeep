@@ -397,3 +397,22 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
 - Sessions, the cast, the party sheet and the adversary library are desktop pages. Nothing DM is left in the phone
   frame on a desktop window.
 - Colours used only by the table go in `constants/table-tints.ts`: editing `theme.ts` re-forges every card on every device.
+
+## v0.50.0: counters, full-screen card panels, and a menu for each thing
+
+- A task about one card that needs more than a menu (moving it, its modifiers) is a `DeskDialog`: the whole screen
+  dimmed and blurred, big controls, Escape and a click outside asking before unsaved work goes. Not the side slot.
+  Inside one, anything that would open beside the port opens over it (`InModal` in `desktop-portal`).
+- Every right-click menu is `table/context-menu.tsx`, and belongs to what was clicked: its name across the top, the
+  object's main actions as icon buttons, then one 30px row to each action. Every row has an icon (`menu-icons.ts`:
+  Lucide paths copied in, dice drawn here). A new menu is rows for that component, never a second shell.
+- A piece's menu never has the felt's rows. A die rolls only itself; presets are the felt's. The menu of a control die
+  is that die's options, the deck die's is the decks. A supply spawner's right click still spawns. Only bare felt
+  inside the table opens the felt's menu.
+- Red in a menu is only what destroys. What a pointer is on lights in gold. What cannot be undone asks in the menu,
+  beside the click and never under it.
+- A card whose menu is open stays lit, and after it closes stays lit while the pointer is still on it.
+- The hand's band takes no pointer, only its cards do: what lies on the felt under it stays in reach.
+- DM counters are `lib/dm-counters`' own rules and editor: a campaign's are kept with its table, a combatant's in the
+  encounter. Sticky notes are 108px until resized, and a pinned one is never torn by anything.
+- Desktop DM screens: a right click does what a hold does on a phone.

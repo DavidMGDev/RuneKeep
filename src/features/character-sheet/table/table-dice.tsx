@@ -34,7 +34,7 @@ import { Glyph, DIE_GLYPHS, glyphImage, type GlyphKey, T, TButton, tinted } from
 import { cue, knockCue } from './table-sound';
 
 /** One thing a control die's menu offers (v0.49.0, the DM screen's dice). */
-export interface TableOption { key: string; label: string; glyph: GlyphKey; /** At its right, where a deck shows its count. */ sub?: string; /** Lit, as the open deck is. */ on?: boolean; disabled?: boolean; onPress: () => void }
+export interface TableOption { key: string; label: string; glyph: GlyphKey; /** Starts a group, in its right-click menu. */ gap?: boolean; /** At its right, where a deck shows its count. */ sub?: string; /** Lit, as the open deck is. */ on?: boolean; disabled?: boolean; onPress: () => void }
 export interface TableAction {
   key: string;
   label: string;
@@ -48,6 +48,14 @@ export interface TableAction {
   sides?: GlyphKey[];
   disabled?: boolean;
 }
+/** What a right click landed on, for its own menu (v0.50.0). Bare felt is none of these. */
+export type PieceHit =
+  | { kind: 'die'; key: string; die: DieType; value?: number; value2?: number }
+  | { kind: 'token'; key: string; token: TokenInfo }
+  | { kind: 'control'; key: string; action: TableAction }
+  | { kind: 'deck'; key: string }
+  /** The playground's control dice, and whatever is only a piece: it can only be rolled. */
+  | { kind: 'toy'; key: string };
 export interface TableDeck { key: CardCategory; label: string; count: number; meta?: { icon?: string; builtin: boolean }; /** An option's, when the menu is a control die's. */ glyph?: GlyphKey; sub?: string; disabled?: boolean }
 
 /** What a token is: a sewing-button token (wood, bone, iron, a colour) or a token die and its value. */
@@ -278,7 +286,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
   onTokenRemove?: (t: CardTok, clientX: number, clientY: number) => void;
   onTokenMenu?: (t: CardTok, clientX: number, clientY: number) => void;
   /** Right click on the table (and on a piece: what can be done to it, here rolling a die). */
-  onTableMenu: (clientX: number, clientY: number, piece?: { key: string; label: string; /** A control die: the row is its own action, and the menu has no rolls. */ own?: boolean }) => void;
+  onTableMenu: (clientX: number, clientY: number, piece?: PieceHit) => void;
   /** The marquee picked these pieces (empty: nothing selected). */
   onSelect: (keys: string[]) => void;
   /** Something hit a wall hard (px/s): shake the table. */
@@ -987,16 +995,21 @@ export const TableDice = forwardRef<TableDiceHandle, {
     e.rollInPlace(key);
   }, [numberFinish]);
 
-  /** What the table menu offers for a piece right-clicked: rolling it, when it is a die. */
-  const pieceMenu = useCallback((key: string): { key: string; label: string; own?: boolean } | undefined => {
-    // A control die offers only what it does (owner, v0.47.11), never a roll.
-    if (key === CAT) return { key, label: 'Choose a deck', own: true };
+  /** Whose menu a right click on a piece opens. Never the felt's: a piece has its own (owner, v0.50.0). */
+  const pieceMenu = useCallback((key: string): PieceHit | undefined => {
+    if (live.current.toys && (key === CAT || isCtl(key))) return { kind: 'toy', key };
+    if (key === CAT) return { kind: 'deck', key };
     const own = live.current.actions.find((a) => a.key === key);
-    if (own) return { key, label: own.verb, own: true };
-    if (key.startsWith('roll:')) return { key, label: 'Roll this die' };
-    const base = baseOf(key);
-    if (key.startsWith('free:') && live.current.loose.find((l) => l.key === base)?.token.kind === 'die') return { key, label: 'Roll this die' };
-    return undefined;
+    // A control die offers only what it does (owner, v0.47.11), never a roll.
+    if (own) return { kind: 'control', key, action: own };
+    if (key.startsWith('roll:')) {
+      const die = rolled.current.get(key);
+      return die ? { kind: 'die', key, die: die.type as DieType } : { kind: 'toy', key };
+    }
+    if (!key.startsWith('free:')) return undefined;
+    const token = live.current.loose.find((l) => l.key === baseOf(key))?.token;
+    if (!token) return undefined;
+    return token.kind === 'die' ? { kind: 'die', key, die: token.dieType ?? 'd6', value: token.dieValue, value2: token.dieValue2 } : { kind: 'token', key, token };
   }, []);
 
   // ---------------------------------------------------------------- the pointer: buttons, then pieces, then cards
@@ -1031,7 +1044,11 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const nailed = (k: string) => !live.current.editing && (live.current.locked ?? []).includes(baseOf(k));
     const chargeable = (k: string) => (k.startsWith('free:') || k.startsWith('roll:') || k === CAT || isCtl(k)) && !nailed(k);
     /** The spawner under a point, with a few px to spare round each one (a right click there spawns, never a menu). */
-    const spawnerAt = (x: number, y: number): string | null => {
+    const spawnerAt = (x: number, y: number, under: EventTarget | null): string | null => {
+      // A piece lying by a spawner is itself: a right click on it is for its menu, not for more pieces. So is a card,
+      // a note or what is stuck on one: the room round a spawner is only bare felt's.
+      const on = engine.hit(x, y);
+      if (on ? !on.startsWith('src:') : (under as HTMLElement | null)?.closest?.('[data-card-id], [data-board-card], [data-card-token], [data-domat]')) return null;
       let best: string | null = null, bd = Infinity;
       for (const k of engine.keys()) {
         if (!k.startsWith('src:')) continue;
@@ -1411,11 +1428,13 @@ export const TableDice = forwardRef<TableDiceHandle, {
       cue('spawner:toss', 'placeToken', { volume: 0.4, cents: 200 + Math.random() * 300 });
     };
     const onDown = (e: PointerEvent) => {
+      // A press of its own ends what the last spawn held back: only the spawning press goes without its menu.
+      if (e.button === 2) menuUntil = 0;
       if (inertRef.current || onUi(e.target)) return;
       const p = local(e);
       if (e.button === 2) {
         // Right button: on a spawner it spawns (held, faster and faster); anywhere else the menu opens.
-        const sk = spawnerAt(p.x, p.y);
+        const sk = spawnerAt(p.x, p.y, e.target);
         if (!sk) return;
         e.stopPropagation();
         e.preventDefault();
@@ -1731,12 +1750,26 @@ export const TableDice = forwardRef<TableDiceHandle, {
      * only the spawners keep their right click for spawning. Cards keep their own menus.
      */
     const onMenu = (e: MouseEvent) => {
-      if (performance.now() < menuUntil) { e.preventDefault(); e.stopPropagation(); return; }
-      if (onUi(e.target)) return;
+      // Heard on the window, so the press that spawned is caught wherever it is let go. The rest is the felt's own:
+      // a right click in the port or a panel never opens the table's menu.
+      if (performance.now() < menuUntil) { e.preventDefault(); e.stopPropagation(); menuUntil = 0; return; }
+      // A die's label is that die, to a right click and to the Menu key on it alike.
+      const named = (e.target as HTMLElement).closest?.('.rk-die-label[data-piece]') as HTMLElement | null;
+      if (!host.contains(e.target as Node) || (!named && onUi(e.target))) return;
       e.preventDefault();
       if (inertRef.current) return;
       const p = local(e);
-      const key = engine.hit(p.x, p.y);
+      // The labels let the pointer through, so one under it is found by where it is, and only over bare felt: over a card
+      // the pointer is the card's, as it is for a click.
+      const onLabel = () => {
+        if ((e.target as HTMLElement).closest?.('[data-card-id], [data-board-card], [data-card-token], [data-domat]')) return null;
+        for (const el of host.querySelectorAll<HTMLElement>('.rk-die-label[data-piece]')) {
+          const r = el.getBoundingClientRect();
+          if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) return el.dataset.piece;
+        }
+        return null;
+      };
+      const key = named?.dataset.piece ?? engine.hit(p.x, p.y) ?? onLabel();
       if (key?.startsWith('fx:mimic')) { e.stopPropagation(); live.current.onMimic?.(key); return; }
       // A token or die on a card has its own menu (owner, v0.47.18): its modifiers, rolling it, taking it off.
       const tokEl = key ? null : (e.target as HTMLElement).closest?.('[data-card-token]') as HTMLElement | null;
@@ -1747,8 +1780,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
       }
       if (key) {
         e.stopPropagation();
-        const own = live.current.toys && (key === CAT || isCtl(key));
-        live.current.onTableMenu(e.clientX, e.clientY, own ? undefined : pieceMenu(key));
+        const piece = pieceMenu(key);
+        if (piece) live.current.onTableMenu(e.clientX, e.clientY, piece);
         return;
       }
       if ((e.target as HTMLElement).closest?.('[data-card-id], [data-board-card], [data-domat]')) return;
@@ -1757,7 +1790,8 @@ export const TableDice = forwardRef<TableDiceHandle, {
     // The wheel: over the deck die it walks the decks, over a supply piece it walks that piece's options.
     let wheelAcc = 0;
     const onWheel = (e: WheelEvent) => {
-      if (inertRef.current) return;
+      // Over an open menu the wheel is the menu's, whatever die lies under it.
+      if (inertRef.current || (e.target as HTMLElement).closest?.('[data-menu-backdrop], .rk-menu-pop')) return;
       const p = local(e);
       const key = engine.hit(p.x, p.y);
       const chest = key === 'src:die' && live.current.diceChest;
@@ -2219,10 +2253,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
       {marquee ? <div style={{ position: 'absolute', left: marquee.left, top: marquee.top, width: marquee.right - marquee.left, height: marquee.bottom - marquee.top, border: '1px solid rgba(224,181,99,0.8)', background: 'rgba(224,181,99,0.08)', zIndex: 22, pointerEvents: 'none' }} /> : null}
       {/* Labels under the control dice; each is also that die's keyboard handle (Tab, then Enter). */}
       {ready && showDice && !props.toys ? actions.filter((a) => !hid.includes(a.key)).map((a) => (
-        <button key={a.key} type="button" className="rk-die-label" ref={setLabel(a.key)} disabled={a.disabled} aria-label={a.label} onClick={() => runControl(a.key)} style={{ ...labelStyle, color: hoverKey === a.key ? T.ivory : a.disabled ? 'rgba(147,142,136,0.5)' : T.muted }}>{a.label}</button>
+        <button key={a.key} type="button" className="rk-die-label" data-piece={a.key} ref={setLabel(a.key)} disabled={a.disabled} aria-label={a.label} onClick={() => runControl(a.key)} style={{ ...labelStyle, color: hoverKey === a.key ? T.ivory : a.disabled ? 'rgba(147,142,136,0.5)' : T.muted }}>{a.label}</button>
       )) : null}
       {ready && deckArt && showDice && !props.toys && !hid.includes(CAT) ? (
-        <button type="button" className="rk-die-label" ref={setLabel(CAT)} aria-label={`Decks. ${currentDeck?.label ?? ''}, ${currentDeck?.count ?? 0} cards. Choose a deck`} aria-haspopup="listbox"
+        <button type="button" className="rk-die-label" data-piece={CAT} ref={setLabel(CAT)} aria-label={`Decks. ${currentDeck?.label ?? ''}, ${currentDeck?.count ?? 0} cards. Choose a deck`} aria-haspopup="listbox"
           onClick={() => { const s = engine?.state(CAT); cue('ui:open', 'floatMenuOpen'); setRing(s ? { x: s.x, y: s.y } : { x: 74, y: height - 88 }); }}
           style={{ ...labelStyle, color: hoverKey === CAT ? T.ivory : T.goldText }}>{currentDeck?.label ?? ''}<span style={{ color: T.muted, marginLeft: 6 }}>{currentDeck?.count ?? ''}</span></button>
       ) : null}

@@ -10,6 +10,7 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { ChamferBox } from '@/components/chamfer-box';
 import { DesktopPortal } from '@/components/desktop-portal';
 import { Body, Display, Rune } from '@/constants/theme';
+import { useDesktop } from '@/hooks/use-desktop';
 import { useDialogKeys } from '@/hooks/use-dialog-keys';
 import { playSfx } from '@/lib/sfx';
 
@@ -40,8 +41,9 @@ export function DeskDialog(p: DeskDialogProps) {
 function DeskDialogBody({ title, subtitle, width, height, initialLabel, footer, onClose, children }: DeskDialogProps) {
   const win = useWindowDimensions();
   const root = useRef<View>(null);
-  // Escape is the layer's; this is for the focus: it starts inside and Tab stays inside.
-  useDialogKeys(root, { enabled: true, initialLabel });
+  // Beside a table Escape is the layer's and this is for the focus. A page has no layers, so there it is both.
+  const layered = !!useDesktop();
+  useDialogKeys(root, { enabled: true, initialLabel, onEscape: layered ? undefined : onClose });
   useEffect(() => { playSfx('panelOpen', { volume: 0.6 }); }, []);
   const h = height === undefined ? undefined : Math.min(height, win.height - MARGIN * 2);
   return (

@@ -16,6 +16,8 @@
  * modifiers to a reflex is the kind of loss that is noticed three fights later.
  */
 import { useCallback, useMemo, useState } from 'react';
+import { DeskModifiers } from '@/components/desk-modifiers';
+import { useDesktop, useDesktopPage } from '@/hooks/use-desktop';
 import { Text, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import Svg, { Polyline } from 'react-native-svg';
@@ -106,6 +108,13 @@ export function DmModifiersPanel({
   const bands = groupEffects(effects);
   const toggleAt = (index: number) => onSave(effects.map((e, i) => (i === index ? { ...e, off: e.off ? undefined : true } : e)));
 
+  const inPort = !!useDesktop(), onPage = useDesktopPage();
+  if (inPort || onPage) {
+    return (
+      <DeskModifiers dm title={title} subtitle={subtitle} effects={effects} level={level} resolve={(e) => resolvedDelta(e, level)}
+        collapsed={collapsed} onCollapsed={setCollapsed} onSave={(next) => onSave(next.filter((e) => e.target))} onClose={onClose} />
+    );
+  }
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 400, backgroundColor: DmRune.ink }}>
       {/* v0.39.0 (owner): the group dialogs are written inside the ScrollView below and DRAWN here,
