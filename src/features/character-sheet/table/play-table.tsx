@@ -59,6 +59,9 @@ import { editNote, isNoteId, mendNotes, newNote, NOTE_MAX, NOTE_W, tearNote, typ
 /** The sheet's dice state and its handle to the table (the traits and the presets roll through it). */
 export type DeskDice = { up: boolean; onToggle: () => void; handleRef: { current: DiceTrayHandle | null }; presets: Omit<Parameters<typeof DicePresetSlots>[0], 'belt'> & { /** What a modifier comes to for this character now (v0.47.17). */ resolve?: (mod?: PresetModifier) => number } };
 type CardEditing = { can: (id: string) => boolean; open: (id: string) => void };
+/** Longer than the table waits for any throw to land. */
+const RETHROW_WAIT_MS = 10000;
+
 export type TablePanel = 'modifiers' | 'cards' | 'newCategory';
 
 const NO_CARDS: CardItem[] = [];
@@ -650,8 +653,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const releaseResult = () => { const h = critHold.current; h.busy = false; if (h.pending) { setResult(h.pending); h.pending = null; } };
   const rollFrom = useRef<{ x: number; y: number } | null>(null);
   const rolling = useRef(false);
-  const throwPool = useCallback(async (list: PoolDie[], m: { label: string | null; value: number }, rig?: number[]) => {
-    if (!list.length || rolling.current || !diceRef.current) return;
+  const throwPool = useCallback(async (list: PoolDie[], m: { label: string | null; value: number }, rig?: number[]): Promise<PoolDie[] | null> => {
+    if (!list.length || rolling.current || !diceRef.current) return null;
     rolling.current = true;
     setResult(null);
     const from = rollFrom.current ?? { x: (play.left + play.right) / 2, y: (openTop + openBottom) / 2 + 60 };
@@ -660,11 +663,33 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const landed = await diceRef.current.roll(list, from, rig);
     rolling.current = false;
     // Thrown again before it landed: the new throw tells its own result, this one none (v0.47.28).
-    if (!landed.length) return;
+    if (!landed.length) return landed;
     for (const d of landed) rolledDice.current.set(d.id, d);
     rollSound(landed);
     showResult({ total: poolTotal(landed, m.value), verdict: dualityVerdict(landed), dice: landed, label: m.label, mod: m.value });
+    return landed;
   }, [play.left, play.right, openTop, openBottom, showResult]);
+  /** The die being rolled for someone (a rest): grabbed and thrown again, it answers with what that throw came to. */
+  const askedDie = useRef<{ id: string; tell: (value: number) => void } | null>(null);
+  const rollFor = useCallback(async (type: DieType, label: string, value: number): Promise<number | null> => {
+    const list = addDie([], type, poolId);
+    const id = list[0].id;
+    let rethrown: number | null = null, wake: (() => void) | null = null;
+    askedDie.current = { id, tell: (v) => { rethrown = v; wake?.(); } };
+    try {
+      const landed = await throwPool(list, { label, value });
+      if (!landed) return null;
+      if (landed.length) return diceRef.current?.stillThere(id) ? landed[0].value : null;
+      // Thrown again by hand before it landed: that throw is the roll.
+      if (rethrown == null) await new Promise<void>((res) => { const t = setTimeout(res, RETHROW_WAIT_MS); wake = () => { clearTimeout(t); res(); }; });
+      if (rethrown == null) return null;
+      const again = [{ ...list[0], value: rethrown }];
+      showResult({ total: poolTotal(again, value), verdict: null, dice: again, label, mod: value });
+      return rethrown;
+    } finally {
+      if (askedDie.current?.id === id) askedDie.current = null;
+    }
+  }, [throwPool, showResult]);
   const selRef = useRef<string[]>([]);
   // The sheet's handle: a trait or a preset rolls here, on the table (owner, v0.47.3: no dice bar).
   useEffect(() => {
@@ -678,6 +703,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         for (const t of types) built = addDie(built, t, poolId);
         void throwPool(built, { label, value });
       },
+      rollFor,
       currentDice: () => selectedTypes(selRef.current),
     };
     dice.handleRef.current = h;
@@ -686,6 +712,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const reroll = useCallback((id: string, value: number) => {
     const d = rolledDice.current.get(id);
     if (d) rolledDice.current.set(id, { ...d, value });
+    if (askedDie.current?.id === id) askedDie.current.tell(value);
     setResult((r) => {
       if (!r) return r;
       const dice2 = r.dice.map((x) => (x.id === id ? { ...x, value } : x));

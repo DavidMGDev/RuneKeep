@@ -92,15 +92,18 @@ export function NumberKeypad({ title, subtitle, extra, min = 1, max = 9, initial
       } else if (e.key === 'Backspace') {
         playSfx('numpadPress');
         setTyped((t) => t.slice(0, -1));
-      } else if (e.key === 'Enter') submit();
-      else return;
+      } else if (e.key === 'Enter') {
+        // With no number to submit, Enter presses whatever button has the focus (a Roll, say).
+        if (!ok && el.contains(e.target as Node)) return;
+        submit();
+      } else return;
       fresh.current = false;
       e.preventDefault();
       e.stopPropagation();
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, [typing, press, submit]);
+  }, [typing, press, submit, ok]);
 
   const panelStyle = useAnimatedStyle(() => ({ opacity: vis.value, transform: [{ translateY: (1 - vis.value) * 26 }, { scale: 0.96 + vis.value * 0.04 }] }));
 

@@ -37,7 +37,7 @@ import { hasMartialForm, isMartialStanceId, MARTIAL_FOCUS_CARD_ID } from '@/data
 import { type CardEffect, tierForLevel } from '@/lib/modifiers';
 import { bundledClassOf, customClassCard, customClassFeatures, customClassPages, hasBeastform, playedClass } from '@/lib/played-class';
 import { dressedForClass } from '@/lib/class-identity';
-import { restMoveLimit } from '@/lib/rest';
+import { applyRestMoves, type RestLogEntry, restMoveLimit, type RestSelection, rollRest } from '@/lib/rest';
 import { playSfx } from '@/lib/sfx';
 import { cardCanToggle, cardToLibraryCard, cardTakesNumberInput, catalogIdOf, contentIdOf, editableCardIds, effectsForCardId, findEditableCard, heldCardIds, isPermanentCard, refOf, sourceLabelForCardId, usesFormulaVariable } from '@/features/cards/card-effects';
 import { applyPromotions, resolveCopyDeletions } from '@/lib/card-copies';
@@ -362,6 +362,12 @@ function VitalsGroup({ hidden, children }: { hidden: boolean; children: React.Re
     </Animated.View>
   );
 }
+
+/** A panel or the tray fading, before what is behind it moves. */
+const REST_PANEL_OUT_MS = 300;
+/** Long enough to read one die before the next is thrown. */
+const REST_READ_MS = 1500;
+const REST_RETRY_MS = 350;
 
 function RedesignedBody({ character, onHp, onTrack, onInfo, heartRef, stressRef, armorRef, hopeRef, onPortraitTransform, onPortraitReplace, onOpenBoard, onAddCard, onAddGear, onFavoritesBlocked, diceUp }: { character: Character; onHp: (n: number) => void; onTrack: (key: TrackKey, active: number) => void; onInfo: () => void; heartRef: React.Ref<HeartTrackHandle>; stressRef: React.Ref<ChargeTrackHandle>; armorRef: React.Ref<ChargeTrackHandle>; hopeRef: React.Ref<ChargeTrackHandle>; onPortraitTransform: (t: PortraitTransform) => void; onPortraitReplace: () => void; onOpenBoard: () => void; onAddCard: () => void; onAddGear: () => void; onFavoritesBlocked: () => void; /** v0.39.0: the dice tray has taken the three vitals panels' places. */ diceUp: boolean }) {
   const tint = useAccentTint();
@@ -1738,6 +1744,12 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     hopeRef.current?.burst(prev.hope.active, next.hope.active);
   }, []);
 
+  const applyRest = useCallback((next: Character) => {
+    withIntent({ kind: 'rest', label: 'Rested' });
+    burstResources(characterRef.current, next);
+    setCharacter(next);
+  }, [withIntent, burstResources]);
+
   // Confirming Level Up (#239 items 6 + 7): re-derive build stats, keep in-play resource positions
   // (clamped to the new maxes), and CELEBRATE the result — a gained Max HP slot fills with its heart
   // animation and every stat change pops a toast.
@@ -2925,6 +2937,62 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   diceUpRef.current = diceUp;
 
   /**
+   * A short rest's dice, rolled (v0.50.3, owner). The panel steps aside, the dice that were left to the app are
+   * thrown one at a time, in the phone's tray or on the desktop's table, and only then is the rest applied, all at
+   * once, to the character as they stand by then. A second rest waits for the first.
+   */
+  const [rested, setRested] = useState<RestLogEntry[] | null>(null);
+  const onSheet = useRef(true);
+  useEffect(() => {
+    onSheet.current = true;
+    return () => { onSheet.current = false; };
+  }, []);
+  const restLive = useRef({ desktop: !!desktop, busy: false, apply: applyRest, toasts: pushToasts });
+  restLive.current = { desktop: !!desktop, busy: desktopModal, apply: applyRest, toasts: pushToasts };
+  const restQueue = useRef<Promise<void>>(Promise.resolve());
+  const rollForRest = useCallback((selections: RestSelection[], tier: number) => {
+    setFloatKind(null);
+    restQueue.current = restQueue.current.then(async () => {
+      const pause = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
+      const showTray = () => {
+        if (restLive.current.desktop || diceUpRef.current) return;
+        setDiceUp(true);
+        playSfx('panelOpen');
+      };
+      showTray();
+      await pause(REST_PANEL_OUT_MS);
+      const done = await rollRest(selections, async (move) => {
+        while (onSheet.current) {
+          showTray();
+          const value = await trayRef.current?.rollFor('d4', move.title, tier);
+          if (value != null) {
+            await pause(REST_READ_MS);
+            return value;
+          }
+          // Something else is in the air, or the die broke: throw when there is room.
+          await pause(REST_RETRY_MS);
+        }
+        return null;
+      });
+      if (!done || !onSheet.current) return;
+      if (!restLive.current.desktop && diceUpRef.current) {
+        // The tray stands where the hearts are: it goes first, so they are seen filling.
+        setDiceUp(false);
+        playSfx('panelClose');
+        await pause(REST_PANEL_OUT_MS);
+      }
+      const before = characterRef.current;
+      const { character: after, log } = applyRestMoves(before, tier, done);
+      restLive.current.apply(after);
+      playSfx('restComplete');
+      // Never over something opened meanwhile.
+      if (restLive.current.busy) restLive.current.toasts(before, after);
+      else { setRested(log); setFloatKind('rest'); }
+    }).catch(() => showToast('That rest could not be rolled. Take it again', 'error'));
+  }, []);
+  useEffect(() => { if (floatKind !== 'rest') setRested(null); }, [floatKind]);
+
+  /**
    * The three roll presets (v0.41.0, owner).
    *
    * They live on the character file, so they travel with an export and belong to the person whose
@@ -3363,7 +3431,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
           {floatKind === 'custom' ? (
             <NewCardFlow backRef={newCardBackRef} categoryOverride={newCardCat ?? undefined} customTypes={customCardTypes} initialMode={newCardEntry === 'gear' ? 'catalog' : 'author'} quick={newCardEntry === 'card'} destinations={moveTargets} customCategories={customCategories} onSave={onAddCustomCard} onCancel={() => { setFloatKind(null); setNewCardCat(null); }} onAcquire={onAcquireCard} onAcquireCustom={onAcquireCustom} acquiredIds={acquiredIds} enabledExpansionIds={file?.enabledExpansionIds} experiences={file?.experiences} />
           ) : floatKind === 'rest' ? (
-            <RestPanel character={character} moveLimit={restMoveLimit(character.restMoves)} onApply={(next) => { withIntent({ kind: 'rest', label: 'Rested' }); burstResources(characterRef.current, next); setCharacter(next); }} onClose={() => setFloatKind(null)} />
+            <RestPanel key={rested ? 'rolled' : 'choose'} character={character} moveLimit={restMoveLimit(character.restMoves)} rested={rested} onApply={applyRest} onRoll={rollForRest} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'modifiers' && file ? (
             <StatePanel file={file} history={historyRef.current} onRewind={rewindTo} onCompact={compactTimeline} onClose={() => setFloatKind(null)} />
           ) : floatKind === 'cards' && file ? (

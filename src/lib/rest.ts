@@ -18,7 +18,8 @@
  * Owner rule (#165): a rest may be taken with only ONE move instead of two, so a character with extra
  * downtime moves can rest for two and then "rest again" for one.
  *
- * This module is the pure, testable core: dice rolls are injected (`roll`), not generated here.
+ * This module is the pure, testable core: dice rolls are injected (`roll`), not generated here. A die the player
+ * left to the app is a dice move with no `roll` yet, and `rollRest` asks the sheet's roller for those.
  */
 
 import type { Character } from '@/features/character-sheet/character';
@@ -82,7 +83,7 @@ export function restMoveById(id: string): RestMove | undefined {
 
 export interface RestSelection {
   moveId: string;
-  /** The 1d4 result (1-4) for dice moves — injected by the caller. */
+  /** The 1d4 result (1-4) for dice moves — injected by the caller. Absent until rolled, when it is to be rolled. */
   roll?: number;
   /** Prepare with party → 2 Hope instead of 1. */
   withParty?: boolean;
@@ -92,6 +93,24 @@ export interface RestLogEntry {
   title: string;
   amount: number;
   note: string;
+  /** A dice move's 1d4, before the tier. */
+  roll?: number;
+}
+
+/**
+ * Roll the dice left to the app, one throw each and one after another, in pick order (v0.50.3). All or nothing: a
+ * roller that gives up (the sheet was left) applies none of the rest.
+ */
+export async function rollRest(selections: RestSelection[], roll: (move: RestMove) => Promise<number | null>): Promise<RestSelection[] | null> {
+  const out: RestSelection[] = [];
+  for (const sel of selections) {
+    const m = restMoveById(sel.moveId);
+    if (!m?.dice || sel.roll != null) { out.push(sel); continue; }
+    const value = await roll(m);
+    if (value == null) return null;
+    out.push({ ...sel, roll: value });
+  }
+  return out;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -136,7 +155,7 @@ export function applyRestMoves(c: Character, tier: number, selections: RestSelec
     if (!m) continue;
     const res = applyOne(ch, tier, m, sel);
     ch = res.character;
-    log.push(res.log);
+    log.push(m.dice && sel.roll != null ? { ...res.log, roll: sel.roll } : res.log);
   }
   return { character: ch, log };
 }

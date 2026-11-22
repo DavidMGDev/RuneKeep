@@ -431,3 +431,11 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   follows the other's writes (`useDeskFollow`). A new screen that writes a party or a character whole must too.
 - Counters: a countdown always has a number to go back to (`startOf`, `setKind`), and at 0 the way back is drawn. A
   countdown still never goes up.
+
+## v0.50.3: a short rest can roll
+
+- Each short rest keypad has Roll 1d4 + tier over the number. It answers that die and moves on, and the app never
+  rolls unasked. Once every keypad is answered the panel steps aside, the dice left to the app are thrown one at a
+  time (the phone's tray, the desktop's table), and then the whole rest is applied at once (`rollRest`).
+- Anything needing a roll's answer asks the roller through `DiceTrayHandle.rollFor`. Never roll a number out of
+  sight: the face that is applied is the one that landed.

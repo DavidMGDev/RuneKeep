@@ -4,7 +4,8 @@
  * This is NOT the app rolling for you. It never resolves a check, never applies a result to anything
  * and never writes to a character file. The only thing it reads off a sheet is a trait's modifier,
  * and only in the direction a real table works: you tap Agility, it throws the pair and adds your +2,
- * and what that means is yours to decide.
+ * and what that means is yours to decide. v0.50.3 (owner): a short rest's Roll may ASK it for a die
+ * (`rollFor`). It answers with the face, and the rest is what applies it.
  *
  * Three panels: a CAROUSEL of dice, a POOL of what you picked up, and a row of Roll, the total and
  * Clear. v0.40.0 makes the three of them a parameter, so the character sheet passes its own design
@@ -409,9 +410,14 @@ export interface DiceTrayHandle {
    * picking the handful up rather than a pool appearing. The throw follows once the last one lands.
    */
   playPreset: (dice: DieType[], label: string, modifier: number) => void;
+  /** Throw one die for someone who needs the answer, the bonus on its total. Null: nothing was thrown. */
+  rollFor: (die: DieType, label: string, modifier: number) => Promise<number | null>;
   /** What is in the tray right now, as preset kinds, so a slot can save it. */
   currentDice: () => DieType[];
 }
+
+/** `named`: thrown for a rest, so the total says what for, and the bonus does not ride the next free throw. */
+interface Modifier { label: string; value: number; named?: boolean }
 
 let seq = 0;
 const nextId = () => `dp-${++seq}`;
@@ -480,14 +486,16 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
   const totalPop = useSharedValue(0);
   /** 0..1 while a fumble's dark-red flash is on the total (v0.41.0, owner). */
   const hurt = useSharedValue(0);
-  const [modifier, setModifier] = useState<{ label: string; value: number } | null>(null);
+  const [modifier, setModifier] = useState<Modifier | null>(null);
+  /** Whoever `rollFor` is throwing for, told when the tray is free again. */
+  const asker = useRef<((value: number | null) => void) | null>(null);
   const [verdict, setVerdict] = useState<Duality>(null);
   const [centreLabel, setCentreLabel] = useState<DieType>(TRAY_DICE[Math.floor(TRAY_DICE.length / 2)]);
   /** Dice that have not been laid out yet, so each flies in from the carousel exactly once. */
   const entering = useRef(new Set<string>());
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const clearTimers = useCallback(() => { for (const t of timers.current) clearTimeout(t); timers.current = []; }, []);
-  useEffect(() => () => clearTimers(), [clearTimers]);
+  useEffect(() => () => { clearTimers(); asker.current?.(null); }, [clearTimers]);
   const rollingRef = useRef(false);
   rollingRef.current = rolling;
   const poolRef = useRef<PoolDie[]>([]);
@@ -583,7 +591,7 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
   // Cleared after the commit that mounted them: the entry point is a first-frame decision only.
   useEffect(() => { entering.current.clear(); }, [pool]);
 
-  const throwPool = useCallback((dice: PoolDie[], mod: { label: string; value: number } | null) => {
+  const throwPool = useCallback((dice: PoolDie[], mod: Modifier | null) => {
     if (dice.length === 0) return;
     clearTimers();
     const id = ++throwId.current;
@@ -752,7 +760,14 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
      * nothing at all.
      */
     const tail = reduced ? 0 : tally.crits > 0 ? 820 : tally.fails > 0 ? 450 : 150;
-    timers.current.push(setTimeout(() => { if (throwId.current === id) setRolling(false); }, resultAtMs + tail));
+    timers.current.push(setTimeout(() => {
+      if (throwId.current !== id) return;
+      rollingRef.current = false;
+      setRolling(false);
+      const tell = asker.current;
+      asker.current = null;
+      tell?.(order[0].value ?? null);
+    }, resultAtMs + tail));
   }, [clearTimers, reduced, tick, totalPop, hurt]);
 
   const clear = useCallback(() => {
@@ -801,6 +816,27 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
       );
     },
     currentDice: () => diceOf(poolRef.current),
+    rollFor: (type: DieType, l: string, value: number) => {
+      if (rollingRef.current) return Promise.resolve(null);
+      clearTimers();
+      // Busy from the deal on, so nothing can be thrown between the die arriving and its throw.
+      rollingRef.current = true;
+      setRolling(true);
+      setShown(null);
+      setSettled(false);
+      setOutcome(null);
+      setVerdict(null);
+      const mod = { label: l, value, named: true };
+      setModifier(mod);
+      const die = addDie([], type, () => nextId());
+      entering.current = new Set(die.map((d) => d.id));
+      setPool(die);
+      playSfx('placeToken', { cents: 140 });
+      return new Promise<number | null>((resolve) => {
+        asker.current = resolve;
+        timers.current.push(setTimeout(() => throwPool(die, mod), PRESET_DEAL_MS + ENTRY_MS));
+      });
+    },
     playPreset: (dice: DieType[], l: string, value: number) => {
       if (rollingRef.current || dice.length === 0) return;
       clearTimers();
@@ -867,7 +903,7 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
   const verdictWord = verdict === 'critical' ? 'Critical' : verdict === 'hope' ? 'With Hope' : verdict === 'fear' ? 'With Fear' : null;
   // A modifier of nothing is not a modifier: a preset with no bonus printed "+0" over its total.
   const modWord = modifier && modifier.value !== 0 ? `${modifier.value > 0 ? '+' : ''}${modifier.value}` : null;
-  const note = [settled ? verdictWord : null, modWord].filter(Boolean).join(' ') || null;
+  const note = [modifier?.named ? modifier.label : settled ? verdictWord : null, modWord].filter(Boolean).join(' ') || null;
 
   return (
     <>
@@ -913,7 +949,7 @@ export function DiceTrayPanels({ layout, dm, hint, handleRef }: {
 
       {/* Roll, the total, Clear */}
       <View style={[box(ROW.left, ROW.top, ROW.w, ROW.h), { flexDirection: 'row', alignItems: 'center' }]}>
-        <TrayButton label="Roll" primary dm={dm} h={ROW.h} disabled={ordered.length === 0 || rolling} onPress={() => throwPool(pool, modifier)} />
+        <TrayButton label="Roll" primary dm={dm} h={ROW.h} disabled={ordered.length === 0 || rolling} onPress={() => throwPool(pool, modifier?.named ? null : modifier)} />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }} pointerEvents="none">
           {note ? (
             <Text numberOfLines={1} style={{ color: verdict === 'fear' ? totalFear : label, fontSize: 8.5, fontFamily: Body.bold, letterSpacing: 1.1, textTransform: 'uppercase' }}>

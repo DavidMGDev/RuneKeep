@@ -93,6 +93,8 @@ export interface TableDiceHandle {
   /** Throw these dice from (x, y); resolves with the faces that came to rest on top. */
   /** `rig`: the faces the dice land on, in order (testing: Roll a crit, v0.47.27). */
   roll: (dice: PoolDie[], from: { x: number; y: number }, rig?: number[]) => Promise<PoolDie[]>;
+  /** Whether a rolled die is still there. One that broke or was put away reads as its first face. */
+  stillThere: (id: string) => boolean;
   /** Roll the dice among these pieces where they lie (tokens are left alone); resolves with what they show. */
   rollPieces: (keys: string[], power?: number, burning?: boolean) => Promise<PoolDie[]>;
   clearRoll: () => void;
@@ -2126,6 +2128,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       return waitFor(all, () => readGroups(engine, groups)).then(celebrate);
     },
     clearRoll: () => { if (engine) clear(engine); },
+    stillThere: (id) => !engine || engine.has(id) || engine.has(`roll:${id}`),
     resetHome: () => {
       if (!engine) return;
       sendHome();

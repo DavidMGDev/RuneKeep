@@ -1,7 +1,7 @@
 import { SAMPLE_CHARACTER, type Character } from '@/features/character-sheet/character';
 import { effectsForCardId } from '@/features/cards/card-effects';
 
-import { applyRestMoves, movesFor, restMoveById, restMoveLimit, tierForLevel } from './rest';
+import { applyRestMoves, movesFor, restMoveById, restMoveLimit, rollRest, tierForLevel } from './rest';
 
 /** A wounded test character with room to heal/clear/repair on every track. */
 function wounded(over: Partial<Character> = {}): Character {
@@ -148,5 +148,39 @@ describe('resting with fewer moves', () => {
   it('is a ceiling, not a requirement — resting with fewer moves still applies them', () => {
     const { log } = applyRestMoves(wounded(), 2, [{ moveId: 'tend', roll: 2 }]);
     expect(log).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------- v0.50.3: a short rest can roll
+
+describe('rollRest', () => {
+  it('throws a separate die for each move left to the app, in pick order, waiting for each', async () => {
+    const faces = [3, 4];
+    const said: string[] = [];
+    let inAir = 0;
+    const done = await rollRest([{ moveId: 'tend' }, { moveId: 'prepare' }, { moveId: 'clear-stress' }], async (m) => {
+      expect(inAir).toBe(0);
+      inAir++;
+      await Promise.resolve();
+      inAir--;
+      said.push(m.id);
+      return faces.shift()!;
+    });
+    expect(said).toEqual(['tend', 'clear-stress']);
+    const { character, log } = applyRestMoves(wounded(), 2, done!);
+    expect(character.hp).toBe(4 + 3 + 2);
+    expect(character.stress.active).toBe(8 - 4 - 2);
+    expect(log.map((l) => l.roll)).toEqual([3, undefined, 4]);
+  });
+
+  it('leaves a typed die alone, and rolls the same move taken twice twice', async () => {
+    let throws = 0;
+    const done = await rollRest([{ moveId: 'repair', roll: 1 }, { moveId: 'tend' }, { moveId: 'tend' }], async () => ++throws);
+    expect(throws).toBe(2);
+    expect(done!.map((s) => s.roll)).toEqual([1, 1, 2]);
+  });
+
+  it('applies none of the rest when the rolling is given up', async () => {
+    expect(await rollRest([{ moveId: 'tend' }, { moveId: 'repair' }], async () => null)).toBeNull();
   });
 });
