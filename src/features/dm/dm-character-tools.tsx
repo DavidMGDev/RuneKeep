@@ -13,6 +13,7 @@ import { dmEffectsOf, setDmEffects } from '@/lib/dm-cards';
 import type { CardEffect } from '@/lib/modifiers';
 import { DmCardsPanel, DmCategoryPrompt } from './dm-cards-panel';
 import { DmModifiersPanel } from './dm-modifiers-panel';
+import { DmSide } from './desk/dm-desk';
 
 export interface DmCharacterTools {
   /** Open the modifiers panel for a character. `edit` skips the summary and opens the editor. */
@@ -48,6 +49,7 @@ export function useDmCharacterTools(files: Record<string, CharacterFile>, onFile
   const node = (
     <>
       {modFile ? (
+        <DmSide>
         <DmModifiersPanel
           title={modFile.name}
           subtitle="Your changes to this character"
@@ -57,12 +59,13 @@ export function useDmCharacterTools(files: Record<string, CharacterFile>, onFile
           onSave={saveMods}
           onClose={() => setMods(null)}
         />
+        </DmSide>
       ) : null}
       {cardFile && cards && !cards.category ? (
-        <DmCategoryPrompt file={cardFile} onPick={(key) => setCards({ id: cards.id, category: key })} onCancel={() => setCards(null)} />
+        <DmSide onClose={() => setCards(null)}><DmCategoryPrompt file={cardFile} onPick={(key) => setCards({ id: cards.id, category: key })} onCancel={() => setCards(null)} /></DmSide>
       ) : null}
       {cardFile && cards?.category ? (
-        <DmCardsPanel file={cardFile} category={cards.category} onFile={write} onClose={() => setCards(null)} />
+        <DmSide><DmCardsPanel file={cardFile} category={cards.category} onFile={write} onClose={() => setCards(null)} /></DmSide>
       ) : null}
     </>
   );

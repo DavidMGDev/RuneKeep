@@ -78,7 +78,7 @@ export interface TokenPiece {
 export interface CardPose { key: string; x: number; y: number; w: number; h: number; rot: number; phys: boolean }
 
 /** Where each row of pieces lives (px, the centre of the row). */
-export interface Places { ctl: { x: number; y: number; dir: 'row' | 'column'; /** The control dice's size (spacing grows with it). */ k?: number }; sup: { x: number; y: number; dir: 'row' | 'column' }; cat: { x: number; y: number }; /** Pieces split off their row, each where it was put (px). */ apart?: Record<string, { x: number; y: number }> }
+export interface Places { ctl: { x: number; y: number; dir: 'row' | 'column'; /** This many to a line, where the whole row does not fit (v0.49.0). */ wrap?: number; /** The control dice's size (spacing grows with it). */ k?: number }; sup: { x: number; y: number; dir: 'row' | 'column' }; cat: { x: number; y: number }; /** Pieces split off their row, each where it was put (px). */ apart?: Record<string, { x: number; y: number }> }
 export type PlaceGroup = 'ctl' | 'sup' | 'cat';
 
 export interface TableDiceHandle {
@@ -162,7 +162,13 @@ function numberColours(finish: Finish, type: DieType, side?: 'hope' | 'fear'): {
 
 /** Each control die's home: a row (or column) round the place the look gives it. */
 export function ctlHome(p: Places, i: number, n: number): { x: number; y: number } {
-  const o = (i - (n - 1) / 2) * ctlGap(n, p.ctl.dir) * Math.max(1, p.ctl.k ?? 1);
+  const k = Math.max(1, p.ctl.k ?? 1);
+  if (p.ctl.wrap && p.ctl.dir === 'row') {
+    const line = Math.floor(i / p.ctl.wrap), lines = Math.ceil(n / p.ctl.wrap);
+    const on = Math.min(p.ctl.wrap, n - line * p.ctl.wrap);
+    return { x: p.ctl.x + ((i % p.ctl.wrap) - (on - 1) / 2) * ctlGap(n, 'row') * k, y: p.ctl.y + (line - (lines - 1) / 2) * 96 * k };
+  }
+  const o = (i - (n - 1) / 2) * ctlGap(n, p.ctl.dir) * k;
   return p.ctl.dir === 'row' ? { x: p.ctl.x + o, y: p.ctl.y } : { x: p.ctl.x, y: p.ctl.y + o };
 }
 /** Each supply piece's home, the same way. */
@@ -2192,7 +2198,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       for (const a of actions) pieceBox(a.key, (ACTION_SIZE * props.ctlSize) / 2 + 12, a.label, 'ctl');
       groups.push({ g: 'cat', keys: [CAT], box: { left: places.cat.x - 58, right: places.cat.x + 58, top: places.cat.y - 58, bottom: places.cat.y + 64 }, label: 'Deck die' });
     } else if (controls !== 'hidden') {
-      const gap = ctlGap(actions.length, places.ctl.dir), hw = places.ctl.dir === 'row' ? half(actions.length, gap) : 44, hh = places.ctl.dir === 'row' ? 50 : half(actions.length, gap);
+      const gap = ctlGap(actions.length, places.ctl.dir), across = places.ctl.wrap ?? actions.length, hw = places.ctl.dir === 'row' ? half(across, gap) : 44, hh = places.ctl.dir === 'row' ? 50 + (Math.ceil(actions.length / across) - 1) * 48 : half(actions.length, gap);
       groups.push({ g: 'ctl', chain: 'split', keys: [...ctlKeys()], box: { left: places.ctl.x - hw, right: places.ctl.x + hw, top: places.ctl.y - hh, bottom: places.ctl.y + hh }, label: 'Control dice' });
       groups.push({ g: 'cat', keys: [CAT], box: { left: places.cat.x - 58, right: places.cat.x + 58, top: places.cat.y - 58, bottom: places.cat.y + 64 }, label: 'Deck die' });
     }

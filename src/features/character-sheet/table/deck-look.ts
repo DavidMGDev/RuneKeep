@@ -590,6 +590,81 @@ export const STARTING_LOOK: DeckLook = cleanLook({
  */
 export const DM_STARTING_LOOK: DeckLook = cleanLook({ ...STARTING_LOOK, supX: 0.2, supY: 0.085, ctlX: 0.5, ctlY: 0.22, catX: 0.93, catY: 0.42 });
 
+type Box = { left: number; top: number; right: number; bottom: number };
+
+/**
+ * The nearest place to `want` where a row reaching `half` each way lies on the felt and on none of `taken` (v0.49.0).
+ * The ready-made tables were drawn round three control dice; the DM screen's seven have to find their own room on
+ * them. `want` itself when nothing is free.
+ */
+export function clearSpot(want: { x: number; y: number }, half: { x: number; y: number }, felt: Box, taken: Box[]): { x: number; y: number; clear: boolean } {
+  const clear = (x: number, y: number) => !taken.some((b) => x - half.x < b.right && x + half.x > b.left && y - half.y < b.bottom && y + half.y > b.top);
+  const left = felt.left + half.x, right = felt.right - half.x, top = felt.top + half.y, bottom = felt.bottom - half.y;
+  const x0 = Math.min(right, Math.max(left, want.x)), y0 = Math.min(bottom, Math.max(top, want.y));
+  if (clear(x0, y0)) return { x: x0, y: y0, clear: true };
+  // A free place nearest another is always in line with it or just past the edge of something in the way.
+  const xs = [x0, left, right, ...taken.flatMap((b) => [b.left - half.x, b.right + half.x])];
+  const ys = [y0, top, bottom, ...taken.flatMap((b) => [b.top - half.y, b.bottom + half.y])];
+  let best: { x: number; y: number } | null = null, near = Infinity;
+  for (const x of xs) {
+    for (const y of ys) {
+      if (x < left || x > right || y < top || y > bottom || !clear(x, y)) continue;
+      const d = Math.hypot(x - x0, y - y0);
+      if (d < near) { near = d; best = { x, y }; }
+    }
+  }
+  return best ? { ...(best as { x: number; y: number }), clear: true } : { x: x0, y: y0, clear: false };
+}
+
+/** What the seven go round: the supply (with the chest past its end) and the deck die, labels and all. */
+function dmTaken(sup: { x: number; y: number; dir: 'row' | 'column' } | null, chest: boolean, cat: { x: number; y: number }): Box[] {
+  const out: Box[] = [{ left: cat.x - 70, right: cat.x + 70, top: cat.y - 52, bottom: cat.y + 72 }];
+  if (sup) {
+    out.push(sup.dir === 'row'
+      ? { left: sup.x - 180, right: sup.x + (chest ? 252 : 180), top: sup.y - 48, bottom: sup.y + 66 }
+      : { left: sup.x - 66, right: sup.x + 66, top: sup.y - 190, bottom: sup.y + (chest ? 262 : 190) });
+  }
+  return out;
+}
+
+/**
+ * Where a long row of control dice is seated (the DM screen's seven): nearest where the look puts it, off the supply,
+ * the deck die, the corner buttons and the cards themselves. A felt too small for that takes them in two rows; only
+ * one too small for that as well lets them lie over the hand.
+ */
+export function seatControls(l: DeckLook, n: number, gap: number, felt: Box, hand: Box, sup: { x: number; y: number }, cat: { x: number; y: number }): { x: number; y: number; wrap?: number; clear: boolean } {
+  const want = { x: l.ctlX * (felt.right + felt.left), y: l.ctlY * (felt.bottom + felt.top) };
+  const k = Math.max(1, l.ctlSize);
+  const reach = (count: number) => ((count - 1) * gap * k) / 2 + 48;
+  const taken = [
+    ...dmTaken(l.tokenTray ? { ...sup, dir: l.supDir } : null, l.diceChest, cat),
+    { left: felt.left, right: felt.left + 62, top: felt.bottom - 262, bottom: felt.bottom },
+  ];
+  let cards: Box;
+  if (l.handMode === 'spread') {
+    // The first row of the laid-out hand's grid, where it deals them.
+    cards = { left: felt.left + 34, right: felt.right - 34, top: felt.top + 134, bottom: felt.top + 146 + Math.round(l.size * 0.8) * 1.4 };
+  } else {
+    // The band the cards are drawn in, which is often much less than the hand's area.
+    const h = hand.bottom - hand.top, cardH = fitSize(l, h) * 1.4;
+    const top = hand.top + 14 + l.rowY * Math.max(0, h - cardH - 28);
+    cards = l.areaMode === 'tray' ? hand : { left: hand.left, right: hand.right, top: top - 8, bottom: top + cardH + 8 };
+  }
+  const half = Math.ceil(n / 2);
+  const shapes: { x: number; y: number; wrap?: number }[] = l.ctlDir === 'row'
+    ? [{ x: reach(n), y: 52 }, { x: reach(half), y: 52 + 48 * k, wrap: half }]
+    : [{ x: 60, y: reach(n) }, { x: reach(n), y: 52, wrap: n }, { x: reach(half), y: 52 + 48 * k, wrap: half }];
+  for (const avoid of [[...taken, cards], taken]) {
+    for (const shape of shapes) {
+      if (shape.x * 2 > felt.right - felt.left || shape.y * 2 > felt.bottom - felt.top) continue;
+      const at = clearSpot(want, shape, felt, avoid);
+      if (at.clear) return { ...at, wrap: shape.wrap };
+    }
+  }
+  const last = shapes[shapes.length - 1];
+  return { ...clearSpot(want, last, felt, taken), wrap: last.wrap };
+}
+
 const CODE_PREFIX = 'RK1:';
 
 /**

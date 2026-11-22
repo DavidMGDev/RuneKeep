@@ -24,7 +24,7 @@ import { importCharacter, listCharacters, saveCharacter } from '@/lib/character-
 import { partyEffectsOf, setPartyEffects } from '@/lib/dm-cards';
 import { initialVitals, memberMaxes } from '@/lib/dm-vitals';
 import { type CardEffect } from '@/lib/modifiers';
-import { addMembers, applyVitalDelta, isPresent, type Party, setGlobalEffects, setMemberVitals, setVital, type VitalKey } from '@/lib/party';
+import { addMembers, applyVitalDelta, isPresent, togglePresent, type Party, setGlobalEffects, setMemberVitals, setVital, type VitalKey } from '@/lib/party';
 import { getParty, saveParty } from '@/lib/party-store';
 import { playSfx } from '@/lib/sfx';
 import { useDmCharacterTools } from './dm-character-tools';
@@ -35,6 +35,7 @@ import { MemberPanel } from './member-panel';
 import { DownedVeil, Portrait } from '@/components/portrait';
 import { StatGlyph } from './stat-glyphs';
 import { StatRadialProvider } from './stat-radial';
+import { DmSide, useDeskApi, useDmDesk } from './desk/dm-desk';
 import { DmPress } from './dm-ui';
 
 const KEY_LABEL: Record<VitalKey, string> = { hp: 'HP', stress: 'Stress', hope: 'Hope', armor: 'Armor' };
@@ -109,11 +110,14 @@ function PartyRoster({
   );
 }
 
-export function PartyOverviewScreen() {
+export function PartyOverviewScreen({ partyId: given }: { /** The DM screen's port says which. */ partyId?: string }) {
   const router = useRouter();
-  const { partyId } = useLocalSearchParams<{ partyId: string }>();
+  const desk = useDmDesk();
+  const params = useLocalSearchParams<{ partyId: string }>();
+  const partyId = given ?? params.partyId;
   const [party, setParty] = useState<Party | null>(null);
   const [files, setFiles] = useState<Record<string, CharacterFile>>({});
+  const [rosterRead, setRosterRead] = useState(false);
   const [keypad, setKeypad] = useState<{ charId: string; key: VitalKey } | null>(null);
   const [globalOpen, setGlobalOpen] = useState(false);
   /** v0.39.0 (owner): the party sheet adds and imports characters, the way the party editor does. */
@@ -129,12 +133,15 @@ export function PartyOverviewScreen() {
   // Debounced persistence: the heartbeat can fire many steps/sec; React state updates instantly, the
   // disk write trails the last change by a beat.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const waiting = useRef<Party | null>(null);
   const commit = useCallback((next: Party) => {
     setParty(next);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => { void saveParty(next); }, 220);
+    waiting.current = next;
+    saveTimer.current = setTimeout(() => { waiting.current = null; void saveParty(next); }, 220);
   }, []);
-  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
+  // Leaving writes what is waiting: a change made a moment before Back (or a press of a die) is not lost.
+  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); if (waiting.current) void saveParty(waiting.current); }, []);
 
   useEffect(() => {
     let live = true;
@@ -142,6 +149,7 @@ export function PartyOverviewScreen() {
       if (!live) return;
       setParty(p);
       setFiles(Object.fromEntries(all.map((f) => [f.id, f])));
+      setRosterRead(true);
     });
     return () => { live = false; };
   }, [partyId]);
@@ -176,7 +184,8 @@ export function PartyOverviewScreen() {
       if (!f) return p;
       const next = setMemberVitals(p, charId, applyVitalDelta(p.global[charId], key, delta, memberMaxes(f)));
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => { void saveParty(next); }, 220);
+      waiting.current = next;
+      saveTimer.current = setTimeout(() => { waiting.current = null; void saveParty(next); }, 220);
       return next;
     });
   }, [files]);
@@ -237,6 +246,16 @@ export function PartyOverviewScreen() {
     setLanded((l) => ({ id: charId, n: (l?.n ?? 0) + 1 }));
   };
 
+  useDeskApi('party', party && rosterRead ? {
+    id: party.id,
+    add: () => setPicking(true),
+    partyModifiers: () => setGlobalOpen(true),
+    modifiers: (charId) => tools.openModifiers(charId, true),
+    cards: tools.openCards,
+    presence: (charId) => commit(togglePresent(party, charId)),
+    setVital: (charId, key) => setKeypad({ charId, key }),
+  } : null);
+
   if (!party) return <LoadingScreen dm label="Reading the party" />;
 
   const memberIds = party.memberIds.filter((id) => files[id]);
@@ -249,8 +268,9 @@ export function PartyOverviewScreen() {
     <AppScreen
       title="Party sheet"
       dm
-      onBack={() => router.back()}
-      headerRight={
+      desktopMaxWidth={760}
+      onBack={() => (desk ? desk.open('session') : router.back())}
+      headerRight={desk ? undefined :
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
           <DmPress onPress={() => { playSfx('buttonTap'); setPicking(true); }} hitSlop={10} accessibilityRole="button" accessibilityLabel="Add characters to this party">
             <AddMemberIcon />
@@ -307,15 +327,18 @@ export function PartyOverviewScreen() {
         />
       ) : null}
       {picking ? (
+        <DmSide onClose={() => setPicking(false)}>
         <MemberPicker
           candidates={Object.values(files).filter((f) => !party.memberIds.includes(f.id))}
           onCancel={() => setPicking(false)}
           onAdd={addSelected}
           onImport={onImport}
         />
+        </DmSide>
       ) : null}
       {tools.node}
       {globalOpen ? (
+        <DmSide>
         <DmModifiersPanel
           title={party.name}
           subtitle="Everyone in the party"
@@ -323,6 +346,7 @@ export function PartyOverviewScreen() {
           onSave={saveGlobal}
           onClose={() => setGlobalOpen(false)}
         />
+        </DmSide>
       ) : null}
     </AppScreen>
     </StatRadialProvider>

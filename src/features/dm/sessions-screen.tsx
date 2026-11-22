@@ -26,13 +26,16 @@ import { Body, DmRune, DmType } from '@/constants/theme';
 import { type DmIdentity } from '@/lib/dm-identity';
 import { type Party } from '@/lib/party';
 import { listParties } from '@/lib/party-store';
-import { type EncounterStatus, newSession, type Session } from '@/lib/session';
-import { deleteEncounter, deleteSession, listEncounters, listSessions, saveSession } from '@/lib/session-store';
+import { type EncounterStatus, newEncounter, newSession, nextIndex, type Session } from '@/lib/session';
+import { deleteEncounter, deleteSession, listEncounters, listSessions, saveEncounter, saveSession } from '@/lib/session-store';
 import { playSfx } from '@/lib/sfx';
 import { IdentityBadge, IdentityDropdown, IdentityLines } from './dm-identity-ui';
 import { DmEmpty, DmPress } from './dm-ui';
 import { IdentityEditor } from './identity-editor';
 import { useSelection } from './use-selection';
+import { useDesktopPage } from '@/hooks/use-desktop';
+import { CAMPAIGN_LIST_W, type EncounterLine } from './desktop-campaigns';
+import { DesktopSessions } from './desktop-sessions';
 
 /**
  * A session's encounters, as bullets (v0.36, owner).
@@ -70,7 +73,8 @@ export function SessionsScreen() {
   const [editing, setEditing] = useState<Session | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Set<string> | null>(null);
   const sel = useSelection();
-  const [encs, setEncs] = useState<Record<string, { id: string; name: string; status: EncounterStatus }[]>>({});
+  const desktop = useDesktopPage();
+  const [encs, setEncs] = useState<Record<string, EncounterLine[]>>({});
 
   const loadSessions = useCallback((partyId: string) => {
     void listSessions(partyId).then(async (list) => {
@@ -78,7 +82,7 @@ export function SessionsScreen() {
       // A campaign has a handful of sessions, so reading their encounters up front costs less than a
       // per-row loader would, and the list never reflows as they arrive one at a time.
       const found: Record<string, { id: string; name: string; status: EncounterStatus }[]> = {};
-      for (const s of list) found[s.id] = (await listEncounters(s.id)).map((e) => ({ id: e.id, name: e.name, status: e.status }));
+      for (const s of list) found[s.id] = (await listEncounters(s.id)).map((e) => ({ id: e.id, name: e.name, status: e.status, description: e.description, color: e.color, imageUri: e.imageUri }));
       setEncs(found);
     });
   }, []);
@@ -144,8 +148,28 @@ export function SessionsScreen() {
     );
   }
 
+  const dialogUp = creating || !!editing || !!confirmDelete;
   return (
-    <AppScreen title="Sessions" dm onBack={() => router.back()}>
+    <AppScreen title="Sessions" dm onBack={() => router.back()}
+      inertHeader={desktop && dialogUp}
+      sideAnchor={desktop ? CAMPAIGN_LIST_W + 1 : 0}
+      headerRight={desktop ? <RuneButton label="New session" kind="primary" height={38} dm onPress={() => setCreating(true)} /> : undefined}>
+      {desktop ? (
+        <DesktopSessions key={selected.id} parties={parties} campaign={selected} sessions={sessions} encounters={encs} busy={dialogUp}
+          onChoose={choose}
+          onOpen={(sid, eid) => { playSfx('enterCardViewer'); router.push(`/session?id=${sid}${eid ? `&encounter=${eid}` : ''}` as Href); }}
+          onNew={() => setCreating(true)}
+          onNewEncounter={(s) => {
+            playSfx('buttonTap');
+            void listEncounters(s.id).then(async (list) => {
+              const enc = newEncounter(s, selected, nextIndex(list));
+              await saveEncounter(enc);
+              router.push(`/session?id=${s.id}&encounter=${enc.id}` as Href);
+            });
+          }}
+          onEdit={setEditing}
+          onDelete={(ids) => setConfirmDelete(new Set(ids))} />
+      ) : (
       <View style={{ flex: 1, gap: 14 }}>
         <IdentityDropdown
           label="Campaign"
@@ -202,6 +226,7 @@ export function SessionsScreen() {
           <RuneButton label="New session" kind="primary" height={46} dm onPress={() => setCreating(true)} />
         </View>
       </View>
+      )}
 
       {sel.selecting ? (
         <View style={{ position: 'absolute', left: 12, right: 12, bottom: 14, zIndex: 50 }}>

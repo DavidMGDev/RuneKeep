@@ -9,6 +9,7 @@ import { RuneButton } from '@/components/rune-button';
 import { classColor } from '@/constants/identity';
 import { Body, Display, DmRune, DmType } from '@/constants/theme';
 import { type CharacterFile, classLabel } from '@/lib/character-file';
+import type { DmIdentity } from '@/lib/dm-identity';
 import { isPresent, type Party } from '@/lib/party';
 import type { EncounterStatus, Session } from '@/lib/session';
 import { IdentityBadge, IdentityLines } from './dm-identity-ui';
@@ -16,7 +17,7 @@ import { IdentityBadge, IdentityLines } from './dm-identity-ui';
 /** The desktop campaigns page's list column; the pop-up sidebar opens past its divider. */
 export const CAMPAIGN_LIST_W = 380;
 
-export type EncounterLine = { id: string; name: string; status: EncounterStatus };
+export type EncounterLine = { id: string; name: string; status: EncounterStatus } & Partial<DmIdentity>;
 
 /**
  * The campaigns page's right-hand pane on a desktop window: the roster's dossier, for a campaign. Who it is,
@@ -96,7 +97,7 @@ export function CampaignDossier({ party, roster, sessions, encounters, onOpenSes
   );
 }
 
-function SectionHead({ title, count }: { title: string; count?: number }) {
+export function SectionHead({ title, count }: { title: string; count?: number }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
       <Text style={{ color: DmRune.accent, fontSize: 13, fontFamily: Body.bold, letterSpacing: 1.8, textTransform: 'uppercase' }}>{title}</Text>
@@ -139,9 +140,13 @@ function SessionRow({ session, encounters, onPress }: { session: Session; encoun
 
 /** A row shaped like a campaign row that starts one, last in the list (the roster's New character row). */
 export function NewCampaignRow({ onPress }: { onPress: () => void }) {
+  return <NewRow title="New campaign" sub="A cast, and its nights at the table" onPress={onPress} />;
+}
+
+export function NewRow({ title, sub, onPress }: { title: string; sub: string; onPress: () => void }) {
   const [hover, setHover] = useState(false);
   return (
-    <Pressable onPress={onPress} onHoverIn={() => setHover(true)} onHoverOut={() => setHover(false)} accessibilityRole="button" accessibilityLabel="New campaign">
+    <Pressable onPress={onPress} onHoverIn={() => setHover(true)} onHoverOut={() => setHover(false)} accessibilityRole="button" accessibilityLabel={title}>
       <ChamferBox chamfer={12} fill={hover ? 'rgba(24,28,35,0.95)' : 'rgba(14,17,22,0.9)'} stroke={hover ? DmRune.lineStrong : DmRune.accent} strokeWidth={1.4}
         style={{ flexDirection: 'row', alignItems: 'center', gap: 13, paddingHorizontal: 14, paddingVertical: 13 }}>
         <ChamferBox chamfer={9} fill={DmRune.ink} stroke={DmRune.accent} strokeWidth={1.2} style={{ width: 46, height: 46, alignItems: 'center', justifyContent: 'center' }}>
@@ -151,8 +156,8 @@ export function NewCampaignRow({ onPress }: { onPress: () => void }) {
           </Svg>
         </ChamferBox>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>New campaign</Text>
-          <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, marginTop: 2 }}>A cast, and its nights at the table</Text>
+          <Text style={{ color: DmRune.ivory, fontSize: DmType.title, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>{title}</Text>
+          <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.medium, marginTop: 2 }}>{sub}</Text>
         </View>
       </ChamferBox>
     </Pressable>

@@ -43,9 +43,9 @@ const OWNED_KEYS = [
   'runekeep.onboarding',
   'runekeep.dmMode',
   'runekeep.uiMuted',
-  'runekeep.notes',
-  'runekeep.dmTables',
 ];
+/** And the ones there is one of to each table. */
+const OWNED_PREFIXES = ['runekeep.notes.', 'runekeep.dmTable.'];
 
 const mem = new Map<string, string>();
 let backend: 'idb' | 'local' = 'local';
@@ -110,8 +110,10 @@ async function run(): Promise<void> {
     if (mem.size === 0) migrateFromLocalStorage();
   } catch {
     backend = 'local';
-    for (const key of OWNED_KEYS) {
-      const v = globalThis.localStorage?.getItem(key);
+    const ls = globalThis.localStorage;
+    const perTable = ls ? Array.from({ length: ls.length }, (_, i) => ls.key(i) ?? '').filter((k) => OWNED_PREFIXES.some((prefix) => k.startsWith(prefix))) : [];
+    for (const key of [...OWNED_KEYS, ...perTable]) {
+      const v = ls?.getItem(key);
       if (v != null) mem.set(key, v);
     }
   }

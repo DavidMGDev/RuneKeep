@@ -21,6 +21,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { Body, Display, DmRune, DmType } from '@/constants/theme';
 import { DmDiceIcon } from './dm-icons';
 import { DiceTrayPanels, type TrayLayout } from '@/features/character-sheet/sheet/dice-tray';
+import { useDesktop } from '@/hooks/use-desktop';
 import { DimScreen } from '@/lib/screen-dim';
 import { playSfx } from '@/lib/sfx';
 import { useAndroidBack } from './use-android-back';
@@ -45,12 +46,13 @@ function layoutFor(w: number, h: number): TrayLayout {
 export function DmDicePanel({ onClose }: { onClose: () => void }) {
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   useAndroidBack(() => { onClose(); return true; });
+  const beside = !!useDesktop();
   const layout = useMemo(() => (size ? layoutFor(size.w, size.h) : null), [size]);
 
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 500, alignItems: 'center', justifyContent: 'center' }}>
       {/* The scrim closes it, and the panel below swallows its own taps so a near-miss inside does not. */}
-      <Pressable style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.88)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close the dice tray" />
+      <Pressable style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: beside ? 'transparent' : 'rgba(6,8,13,0.88)' }} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close the dice tray" />
       <DimScreen opacity={0.88} />
       <Pressable onPress={() => {}} style={{ width: '92%', maxWidth: 420, height: '78%', maxHeight: 620 }}>
         <ChamferBox chamfer={14} fill={DmRune.ink} stroke={DmRune.line} strokeWidth={1.6} style={{ flex: 1, paddingTop: 12 }}>

@@ -77,17 +77,24 @@ export interface SideLayers {
   remove(rank: number): void;
   /** 'none' when no layer is open; 'dismissed' after asking the top layer to close; 'blocked' when it has no closer. */
   dismissTop(): 'none' | 'dismissed' | 'blocked';
+  /** How many are open, and word when that changes (the DM screen holds its table still under one). */
+  count(): number;
+  watch(fn: () => void): () => void;
 }
 
 export function createSideLayers(onCount?: (open: number) => void): SideLayers {
   let seq = 0;
   const layers = new Map<number, { el: HTMLElement; dismiss: () => void; hasDismiss: () => boolean }>();
+  const watchers = new Set<() => void>();
   const sync = () => {
     onCount?.(layers.size);
+    for (const fn of watchers) fn();
     const top = layers.size ? Math.max(...layers.keys()) : -1;
     layers.forEach((l, rank) => (rank === top ? l.el.removeAttribute('inert') : l.el.setAttribute('inert', '')));
   };
   return {
+    count: () => layers.size,
+    watch: (fn) => { watchers.add(fn); return () => { watchers.delete(fn); }; },
     next: (priority, floor = 0) => Math.max(BAND[priority], floor - (floor % 1_000_000)) + ++seq,
     set: (rank, el, dismiss, hasDismiss) => { layers.set(rank, { el, dismiss, hasDismiss }); sync(); },
     remove: (rank) => { layers.delete(rank); sync(); },

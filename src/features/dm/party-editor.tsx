@@ -35,6 +35,7 @@ import { DimScreen } from '@/lib/screen-dim';
 import { Portrait as SharedPortrait } from '@/components/portrait';
 import { IdentityBadge } from './dm-identity-ui';
 import { IdentityEditor } from './identity-editor';
+import { DmSide, useDmDesk } from './desk/dm-desk';
 import { DmEmpty, DmPress } from './dm-ui';
 
 /** v0.36.1: the shared chamfered portrait (see components/portrait). */
@@ -111,9 +112,11 @@ export function MemberPicker({ candidates, onCancel, onAdd, onImport }: { candid
   );
 }
 
-export function PartyEditorScreen() {
+export function PartyEditorScreen({ partyId }: { /** The DM screen's port says which. */ partyId?: string }) {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const desk = useDmDesk();
+  const params = useLocalSearchParams<{ id: string }>();
+  const id = partyId ?? params.id;
   const [party, setParty] = useState<Party | null>(null);
   const [roster, setRoster] = useState<CharacterFile[]>([]);
   const [picking, setPicking] = useState(false);
@@ -166,7 +169,8 @@ export function PartyEditorScreen() {
     <AppScreen
       title={party.name}
       dm
-      onBack={() => router.back()}
+      desktopMaxWidth={760}
+      onBack={() => (desk ? desk.open('session') : router.back())}
       headerRight={
         /* The identity lives in the top right corner (owner): picture, colour or letter, title and
            description, in the same dialog the campaign list opens. */
@@ -213,14 +217,14 @@ export function PartyEditorScreen() {
         <View style={{ gap: 10, paddingTop: 8 }}>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <RuneButton label="Add characters" kind="secondary" height={46} dm style={{ flex: 1 }} onPress={() => setPicking(true)} />
-            {party.memberIds.length > 0 ? <RuneButton label="Party sheet" kind="secondary" height={46} dm style={{ flex: 1 }} onPress={() => router.push(`/party-overview?partyId=${party.id}` as Href)} /> : null}
+            {party.memberIds.length > 0 ? <RuneButton label="Party sheet" kind="secondary" height={46} dm style={{ flex: 1 }} onPress={() => (desk ? desk.open('party') : router.push(`/party-overview?partyId=${party.id}` as Href))} /> : null}
           </View>
           {/* Sessions are always reachable now: a campaign owns them, and none of them is gated. */}
-          <RuneButton label="Sessions" kind="primary" height={46} dm onPress={() => { playSfx('enterCardViewer'); router.push(`/sessions?campaign=${party.id}` as Href); }} />
+          <RuneButton label="Sessions" kind="primary" height={46} dm onPress={() => { playSfx('enterCardViewer'); if (desk) desk.open('session'); else router.push(`/sessions?campaign=${party.id}` as Href); }} />
         </View>
       </View>
 
-      {picking ? <MemberPicker candidates={candidates} onCancel={() => setPicking(false)} onAdd={addSelected} onImport={onImport} /> : null}
+      {picking ? <DmSide onClose={() => setPicking(false)}><MemberPicker candidates={candidates} onCancel={() => setPicking(false)} onAdd={addSelected} onImport={onImport} /></DmSide> : null}
       {editingIdentity ? <IdentityEditor title="Edit campaign" namePlaceholder="Campaign" initial={party} onSave={saveIdentity} onCancel={() => setEditingIdentity(false)} /> : null}
       {confirmRemove ? (
         <PopupDialog dm

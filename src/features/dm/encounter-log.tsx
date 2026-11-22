@@ -117,7 +117,10 @@ export function EncounterLog({
   onDeleteEntries,
   onKeepOnly,
   onClose,
+  write = false,
 }: {
+  /** Open it with a new entry already being written (the DM screen's Log die). */
+  write?: boolean;
   log: LogEntry[];
   onAddNote: (text: string) => void;
   onEditNote: (id: string, text: string) => void;
@@ -128,7 +131,7 @@ export function EncounterLog({
   onClose: () => void;
 }) {
   const [editing, setEditing] = useState<LogEntry | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(write);
   const [confirm, setConfirm] = useState<'delete' | 'keep' | null>(null);
   const sel = useSelection();
 

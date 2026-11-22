@@ -31,6 +31,7 @@ import { EncounterMovePicker, type MoveTarget } from './encounter-move-picker';
 import { IdentityEditor } from './identity-editor';
 import { DmEmpty, DmPress } from './dm-ui';
 import { useSelection } from './use-selection';
+import { useDeskApi, useDmDesk } from './desk/dm-desk';
 
 const STATUS_COLOR = (s: Encounter['status']) => (s === 'active' ? DmRune.accent : s === 'completed' ? DmRune.muted : DmRune.accentDim);
 
@@ -46,6 +47,7 @@ export function SessionScreen() {
   /** The other sessions of THIS campaign, for the switcher at the top. */
   const [siblings, setSiblings] = useState<Session[]>([]);
   const sel = useSelection();
+  const desk = useDmDesk();
 
   const reload = useCallback(() => {
     let live = true;
@@ -67,11 +69,10 @@ export function SessionScreen() {
     if (!session || !party) return;
     const enc = newEncounter(session, party, nextIndex(encounters));
     playSfx('buttonTap');
-    void saveEncounter(enc).then(() => router.push(`/encounter?id=${enc.id}` as Href));
-  }, [session, party, encounters, router]);
+    void saveEncounter(enc).then(() => (desk ? desk.open('encounter', enc.id) : router.push(`/encounter?id=${enc.id}` as Href)));
+  }, [session, party, encounters, router, desk]);
 
-  const duplicate = useCallback(async () => {
-    const eid = [...sel.ids][0];
+  const duplicate = useCallback(async (eid: string = [...sel.ids][0]) => {
     const e = encounters.find((x) => x.id === eid);
     if (!e) return;
     await saveEncounter(duplicateEncounter(e, nextIndex(encounters)));
@@ -132,6 +133,15 @@ export function SessionScreen() {
     setEditing(null); sel.clear(); reload();
   }, [editing, sel, reload]);
 
+  useDeskApi('session', session && party ? {
+    id: session.id,
+    create,
+    edit: (eid) => { const e = encounters.find((x) => x.id === eid); if (e) setEditing(e); },
+    duplicate: (eid) => void duplicate(eid),
+    move: (eid) => { sel.start(eid); void openMove(); },
+    remove: (eid) => setConfirmDelete(new Set([eid])),
+  } : null);
+
   if (!session) return <LoadingScreen dm label="Opening the session" />;
   const ordered = sortedEncounters(encounters, session.activeEncounterId);
 
@@ -167,7 +177,7 @@ export function SessionScreen() {
               const on = sel.ids.has(item.id);
               return (
                 <DmPress
-                  onPress={() => (sel.selecting ? sel.toggle(item.id) : router.push(`/encounter?id=${item.id}` as Href))}
+                  onPress={() => (sel.selecting ? sel.toggle(item.id) : desk ? desk.open('encounter', item.id) : router.push(`/encounter?id=${item.id}` as Href))}
                   onLongPress={() => (sel.selecting ? sel.toggle(item.id) : sel.start(item.id))}
                   delayLongPress={340}
                   accessibilityRole="button"
@@ -195,10 +205,11 @@ export function SessionScreen() {
             }}
           />
         )}
-        <View style={{ flexDirection: 'row', gap: 10, paddingTop: 8, paddingBottom: 6 }}>
+        {/* On the DM screen both are dice. */}
+        {desk ? null : <View style={{ flexDirection: 'row', gap: 10, paddingTop: 8, paddingBottom: 6 }}>
           <RuneButton label="Party sheet" kind="secondary" height={46} dm style={{ flex: 1 }} onPress={() => party && router.push(`/party-overview?partyId=${party.id}` as Href)} />
           <RuneButton label="New encounter" kind="primary" height={46} dm style={{ flex: 1.4 }} onPress={create} />
-        </View>
+        </View>}
       </View>
 
       {/* bottom multi-select bar (item 4) */}
@@ -207,7 +218,7 @@ export function SessionScreen() {
           <ChamferBox chamfer={10} fill="rgba(20,24,30,0.98)" stroke={DmRune.accent} strokeWidth={1.4} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, flexWrap: 'wrap' }}>
             <Text style={{ color: DmRune.accent, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase', marginRight: 2 }}>{sel.ids.size} selected</Text>
             {sel.ids.size === 1 ? <RuneButton label="Edit details" kind="ghost" height={30} dense dm onPress={() => { const e = ordered.find((x) => x.id === [...sel.ids][0]); if (e) setEditing(e); }} /> : null}
-            {sel.ids.size === 1 ? <RuneButton label="Duplicate" kind="ghost" height={30} dense dm onPress={duplicate} /> : null}
+            {sel.ids.size === 1 ? <RuneButton label="Duplicate" kind="ghost" height={30} dense dm onPress={() => void duplicate()} /> : null}
             <RuneButton label="Move" kind="ghost" height={30} dense dm onPress={() => void openMove()} />
             <RuneButton label="Delete" kind="ghost" height={30} dense dm onPress={() => setConfirmDelete(new Set(sel.ids))} />
             <RuneButton label="Cancel" kind="ghost" height={30} dense dm onPress={sel.clear} />
@@ -224,7 +235,8 @@ export function SessionScreen() {
           onMove={(sid) => void sendTo(sid, 'move')}
           onCopy={(sid) => void sendTo(sid, 'copy')}
           onNewSession={() => void moveToNew()}
-          onCancel={() => setMoving(null)}
+          // From the die it selected the encounter itself, so it lets it go again.
+          onCancel={() => { setMoving(null); if (desk) sel.clear(); }}
         />
       ) : null}
       {editing ? <IdentityEditor title="Edit encounter" namePlaceholder="Encounter" initial={editing} onSave={(idn) => void saveIdentity(idn)} onCancel={() => setEditing(null)} /> : null}

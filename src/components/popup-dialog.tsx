@@ -82,7 +82,7 @@ export function PopupDialog({
     <InPageSideCheck>{(inSide) => (
     <View ref={rootRef} style={inSide ? PAGE_SIDE_BODY : [StyleSheet.absoluteFill, { zIndex: 200, alignItems: 'center', justifyContent: 'center' }]}>
       {inSide ? null : <>
-        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.82)' }]} onPress={dismiss} {...(desktopPage || desktopSheet ? ({ focusable: false, tabIndex: -1 } as object) : {})} accessibilityRole="button" accessibilityLabel="Dismiss" />
+        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: dm && desktopSheet ? 'transparent' : 'rgba(6,8,13,0.82)' }]} onPress={dismiss} {...(desktopPage || desktopSheet ? ({ focusable: false, tabIndex: -1 } as object) : {})} accessibilityRole="button" accessibilityLabel="Dismiss" />
         <DimScreen opacity={0.82} />
       </>}
       {/* tap-absorb wrapper (#3): a near-miss inside the panel never falls through to the scrim */}

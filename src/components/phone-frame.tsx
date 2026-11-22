@@ -85,11 +85,12 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
   const [windowHost, setWindowHost] = useState<HTMLElement | null>(null);
   const [layers] = useState(createSideLayers);
   const desktopWindow = isDesktopWindow(width, scaleH);
-  const desktopSheet = desktopWindow && pathname === '/sheet';
+  // v0.49.0: a session has the sheet's shape too (the DM screen): a port, and a table beside it.
+  const desktopTable = desktopWindow && DESKTOP_TABLES.has(pathname);
   // v0.45.0: full-page desktop screens are drawn at the window's own size, unscaled.
   const desktopPage = desktopWindow && DESKTOP_PAGES.has(pathname);
   const desktop = useMemo<Desktop | null>(() => {
-    if (!desktopSheet) return null;
+    if (!desktopTable) return null;
     const pad = DESKTOP_PORT_PAD;
     // Height-fit, but never so wide that the table loses its minimum (a tall, narrow window).
     const scale = Math.min((scaleH - pad * 2) / DESIGN_H, (width - DESKTOP_TABLE_MIN_W - pad) / DESIGN_W);
@@ -97,11 +98,11 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
     const side = { left: port.left + port.width + 10, top: port.top, width: SIDE_W, height: port.height };
     const table = { left: port.left + port.width, top: 0, width: Math.max(0, width - port.left - port.width), height };
     return { port, side, table, layers, tableHost, sideHost, win: { left: 0, top: 0, width, height }, windowHost };
-  }, [desktopSheet, scaleH, width, height, layers, tableHost, sideHost, windowHost]);
+  }, [desktopTable, scaleH, width, height, layers, tableHost, sideHost, windowHost]);
   // Desktop sheet (v0.46.0, owner): a press outside the side slot closes the panel on top, as Escape does, and
   // that press does nothing else (it never also hits a heart in the port). A panel with no closer stays open.
   useEffect(() => {
-    if (!desktopSheet || !sideHost || typeof document === 'undefined') return;
+    if (!desktopTable || !sideHost || typeof document === 'undefined') return;
     const swallow = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
     let release: ReturnType<typeof setTimeout> | undefined;
     const onDown = (e: PointerEvent) => {
@@ -114,7 +115,7 @@ export function PhoneFrame({ children }: { children: ReactNode }) {
     };
     document.addEventListener('pointerdown', onDown, true);
     return () => { document.removeEventListener('pointerdown', onDown, true); document.removeEventListener('click', swallow, { capture: true }); clearTimeout(release); };
-  }, [desktopSheet, sideHost, windowHost, layers]);
+  }, [desktopTable, sideHost, windowHost, layers]);
   const portFrame = useMemo(
     () =>
       desktop
@@ -192,6 +193,8 @@ function MarginStrip({ side, width, topBar, bottomBar, dim }: { side: 'left' | '
 
 const DESKTOP_PORT_PAD = 14;
 /** Routes with a full-page desktop layout (v0.45.0). A route joins when its screen reads `useDesktopPage()`. */
-const DESKTOP_PAGES = new Set(['/', '/characters', '/library', '/gallery', '/create', '/onboarding', '/parties']);
+const DESKTOP_PAGES = new Set(['/', '/characters', '/library', '/gallery', '/create', '/onboarding', '/parties', '/sessions', '/party', '/party-overview', '/adversary-library']);
+/** Routes that are a port with the play table beside it. */
+const DESKTOP_TABLES = new Set(['/sheet', '/session']);
 /** How wide the side slot is that panels open into, in window pixels. A panel is laid out for a phone. */
 const SIDE_W = 440;

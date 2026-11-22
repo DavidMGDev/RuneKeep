@@ -75,6 +75,7 @@ import { useDmCharacterTools } from './dm-character-tools';
 import { ArchiveIcon, PartySheetIcon } from './dm-icons';
 import { DmDiceButton, DmDicePanel } from './dm-dice-panel';
 import { useSelection } from './use-selection';
+import { DmSide, useDeskApi, useDmDesk } from './desk/dm-desk';
 
 const KEY_LABEL: Record<VitalKey, string> = { hp: 'HP', stress: 'Stress', hope: 'Hope', armor: 'Armor' };
 type KeypadTarget = { kind: 'member'; charId: string; key: VitalKey } | { kind: 'char'; charId: string; key: VitalKey } | { kind: 'combatant'; id: string; stat: CombatantStat };
@@ -125,9 +126,11 @@ const DIM = 0.4;
 /** The same reflow the combatant panels use, so the headers move with them rather than after. */
 const ROW_SPRING = LinearTransition.duration(180).easing(Easing.out(Easing.cubic));
 
-export function EncounterScreen() {
+export function EncounterScreen({ encounterId }: { /** The DM screen's port says which; on its own route, the address does. */ encounterId?: string }) {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const desk = useDmDesk();
+  const params = useLocalSearchParams<{ id: string }>();
+  const id = encounterId ?? params.id;
   const [encounter, setEncounter] = useState<Encounter | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [party, setParty] = useState<Party | null>(null);
@@ -144,7 +147,7 @@ export function EncounterScreen() {
   const [overMax, setOverMax] = useState<{ charId: string; name: string; key: VitalKey; value: number; cap: number } | null>(null);
   const [editing, setEditing] = useState<Combatant | null>(null);
   const [viewImage, setViewImage] = useState<Combatant | null>(null);
-  const [showLog, setShowLog] = useState(false);
+  const [showLog, setShowLog] = useState<'read' | 'write' | null>(null);
   const [showOptions, setShowOptions] = useState(false);
   const [libraryMode, setLibraryMode] = useState<LibraryMode | null>(null);
   const [addingNpc, setAddingNpc] = useState(false);
@@ -526,6 +529,49 @@ export function EncounterScreen() {
     commitParty(r.party); commitEncounter(r.encounter);
   }, [session, commitParty, commitEncounter]);
 
+  /** To the party sheet: in the port on the DM screen, a screen of its own anywhere else. */
+  const openParty = () => {
+    const p = partyRef.current;
+    if (desk) desk.open('party');
+    else if (p) router.push(`/party-overview?partyId=${p.id}` as Href);
+  };
+  useDeskApi('encounter', encounter && session && party ? {
+    id: encounter.id,
+    start: onStart,
+    finish: () => setConfirmComplete(true),
+    restart: () => setRestartPrompt(true),
+    options: () => setShowOptions(true),
+    log: (write) => setShowLog(write ? 'write' : 'read'),
+    toggleAutoLog,
+    toggleSync,
+    addAdversary,
+    addNpc: () => setAddingNpc(true),
+    library: (side) => setLibraryMode(side),
+    reorder: (side) => {
+      const list = side === 'ally' ? 'allies' : 'adversaries';
+      advSel.clear(); allySel.clear();
+      setReordering((r) => (r === list ? null : list));
+    },
+    spawn: (tid, as) => { const t = library.find((x) => x.id === tid); if (t) spawnMany(t, 1, as); },
+    edit: (cid) => { const r = findCombatant(cid); if (r) setEditing(r.c); },
+    image: (cid) => { const r = findCombatant(cid); if (r) setViewImage(r.c); },
+    fell: fellCombatant,
+    recover: recoverCombatant,
+    remove: (cid, from) => (from === 'ally' ? setConfirmDeleteAlly : setConfirmDeleteAdv)(new Set([cid])),
+    saveTemplate: saveToLibrary,
+    convert: (cid, from) => (from === 'ally' ? convertToAdversaries : convertToAllies)(new Set([cid])),
+    characterize,
+    presence: (charId) => flipPresence(new Set([charId])),
+    modifiers: (charId) => tools.openModifiers(charId, true),
+    cards: tools.openCards,
+    setStat: (cid, stat) => setKeypad({ kind: 'combatant', id: cid, stat }),
+    setVital: (charId, key, member) => {
+      if (!member) setKeypad({ kind: 'char', charId, key });
+      else if (canEditMembers(encounter)) setKeypad({ kind: 'member', charId, key });
+      else blockedVitals();
+    },
+  } : null);
+
   if (!encounter) return <LoadingScreen dm label="Setting the scene" />;
   const enc = encounter;
   const editableMembers = canEditMembers(enc);
@@ -594,8 +640,8 @@ export function EncounterScreen() {
     <AppScreen
       title={enc.name}
       dm
-      onBack={() => router.back()}
-      headerRight={
+      onBack={() => (desk ? desk.open('session') : router.back())}
+      headerRight={desk ? undefined :
         <DmPress onPress={() => setShowOptions(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Encounter options">
           <Svg width={20} height={20} viewBox="0 0 20 20"><Polyline points="3,6 17,6" stroke={DmRune.accent} strokeWidth={2} strokeLinecap="round" /><Polyline points="3,10 17,10" stroke={DmRune.accent} strokeWidth={2} strokeLinecap="round" /><Polyline points="3,14 17,14" stroke={DmRune.accent} strokeWidth={2} strokeLinecap="round" /></Svg>
         </DmPress>
@@ -610,8 +656,10 @@ export function EncounterScreen() {
             <Text style={{ color: statusColor, fontSize: DmType.body, fontFamily: Body.bold, letterSpacing: 1.4, textTransform: 'uppercase' }}>{enc.status === 'completed' ? 'Finished' : enc.status}</Text>
             {!enc.options.globalSync ? <Text style={{ color: DmRune.muted, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>· Self-contained</Text> : null}
           </View>
+          {/* On the DM screen all of these are dice. Only Start stays, so a fight that is waiting says what it waits for. */}
+          {desk ? (enc.status === 'prepared' ? <RuneButton label="Start encounter" kind="primary" height={36} dm onPress={onStart} /> : null) :
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <DmPress onPress={() => setShowLog(true)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Open log">
+            <DmPress onPress={() => setShowLog('read')} hitSlop={6} accessibilityRole="button" accessibilityLabel="Open log">
               <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.line} strokeWidth={1.1} style={{ paddingHorizontal: 11, height: CTRL_H, justifyContent: 'center' }}>
                 <Text style={{ color: DmRune.accent, fontSize: DmType.micro, fontFamily: Body.bold, letterSpacing: 1, textTransform: 'uppercase' }}>Log · {enc.log.length}</Text>
               </ChamferBox>
@@ -630,22 +678,22 @@ export function EncounterScreen() {
               </ChamferBox>
             </DmPress>
             {partyRef.current ? (
-              <DmPress onPress={() => { const p = partyRef.current; playSfx('buttonTap'); if (p) router.push(`/party-overview?partyId=${p.id}` as Href); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Open the party sheet">
+              <DmPress onPress={() => { playSfx('buttonTap'); openParty(); }} hitSlop={8} accessibilityRole="button" accessibilityLabel="Open the party sheet">
                 <ChamferBox chamfer={5} fill="transparent" stroke={DmRune.line} strokeWidth={1.1} style={{ width: CTRL_H, height: CTRL_H, alignItems: 'center', justifyContent: 'center' }}>
                   <PartySheetIcon size={16} />
                 </ChamferBox>
               </DmPress>
             ) : null}
-          </View>
+          </View>}
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: allySel.selecting || advSel.selecting ? 150 : 90, gap: 8 }}>
           <Animated.View layout={ROW_SPRING} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ opacity: notStarted ? DIM : 1 }}><SectionLabel dm>Allies</SectionLabel></View>
             <View style={{ flexDirection: 'row', gap: 14 }}>
-              {enc.allies.length > 1 ? <RuneButton label={reordering === 'allies' ? 'Done' : 'Reorder'} kind="ghost" height={28} dense dm onPress={() => { playSfx('buttonTap'); allySel.clear(); setReordering((r) => (r === 'allies' ? null : 'allies')); }} /> : null}
-              {reordering !== 'allies' ? <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('ally')} /> : null}
-              {reordering !== 'allies' ? <RuneButton label="+ NPC" kind="secondary" height={28} dense dm onPress={() => setAddingNpc(true)} /> : null}
+              {(desk ? reordering === 'allies' : enc.allies.length > 1) ? <RuneButton label={reordering === 'allies' ? 'Done' : 'Reorder'} kind="ghost" height={28} dense dm onPress={() => { playSfx('buttonTap'); allySel.clear(); setReordering((r) => (r === 'allies' ? null : 'allies')); }} /> : null}
+              {!desk && reordering !== 'allies' ? <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('ally')} /> : null}
+              {!desk && reordering !== 'allies' ? <RuneButton label="+ NPC" kind="secondary" height={28} dense dm onPress={() => setAddingNpc(true)} /> : null}
             </View>
           </Animated.View>
           {memberAllies.length === 0 && npcAllies.length === 0 ? (
@@ -707,12 +755,12 @@ export function EncounterScreen() {
           <Animated.View layout={ROW_SPRING} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: DmGap.section }}>
             <View style={{ opacity: notStarted ? DIM : 1 }}><SectionLabel dm>Adversaries</SectionLabel></View>
             <View style={{ flexDirection: 'row', flexShrink: 1, flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 }}>
-              {enc.adversaries.length > 1 ? <RuneButton label={reordering === 'adversaries' ? 'Done' : 'Reorder'} kind="ghost" height={28} dense dm onPress={() => { playSfx('buttonTap'); advSel.clear(); setReordering((r) => (r === 'adversaries' ? null : 'adversaries')); }} /> : null}
-              {reordering !== 'adversaries' ? <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('adversary')} /> : null}
-              {reordering !== 'adversaries' ? <RuneButton label="+ Add" accessibilityLabel="Add an adversary" kind="secondary" height={28} dense dm onPress={addAdversary} /> : null}
+              {(desk ? reordering === 'adversaries' : enc.adversaries.length > 1) ? <RuneButton label={reordering === 'adversaries' ? 'Done' : 'Reorder'} kind="ghost" height={28} dense dm onPress={() => { playSfx('buttonTap'); advSel.clear(); setReordering((r) => (r === 'adversaries' ? null : 'adversaries')); }} /> : null}
+              {!desk && reordering !== 'adversaries' ? <RuneButton label="Library" kind="ghost" height={28} dense dm onPress={() => setLibraryMode('adversary')} /> : null}
+              {!desk && reordering !== 'adversaries' ? <RuneButton label="+ Add" accessibilityLabel="Add an adversary" kind="secondary" height={28} dense dm onPress={addAdversary} /> : null}
             </View>
           </Animated.View>
-          {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic', opacity: notStarted ? DIM : 1 }}>None yet, add one, or spawn a whole group from the library.</Text> : null}
+          {enc.adversaries.length === 0 ? <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, fontStyle: 'italic', opacity: notStarted ? DIM : 1 }}>{desk ? 'None yet. The Foes die adds one, or spawns a whole group from the library.' : 'None yet, add one, or spawn a whole group from the library.'}</Text> : null}
           {reordering === 'adversaries' ? (
             <ReorderList
               rows={orderedAdversaries.map((c) => ({ id: c.id, name: c.name }))}
@@ -756,7 +804,7 @@ export function EncounterScreen() {
           {allySel.ids.size === 1 && files[[...allySel.ids][0]] ? (
             <RuneButton label="Modifiers" kind="ghost" height={30} dense dm onPress={() => { const id = [...allySel.ids][0]; allySel.clear(); tools.openModifiers(id, false); }} />
           ) : partyRef.current && partyRef.current.memberIds.length > 1 && partyRef.current.memberIds.every((id) => allySel.ids.has(id)) ? (
-            <RuneButton label="Global modifiers" kind="ghost" height={30} dense dm onPress={() => { const p = partyRef.current; allySel.clear(); if (p) router.push(`/party-overview?partyId=${p.id}` as Href); }} />
+            <RuneButton label="Global modifiers" kind="ghost" height={30} dense dm onPress={() => { allySel.clear(); openParty(); }} />
           ) : null}
           {/* v0.36 (owner): presence belongs to PLAYER CHARACTERS. An NPC ally has no presence to
               toggle, so with one selected the button used to be offered and then refuse. */}
@@ -800,10 +848,11 @@ export function EncounterScreen() {
           </View>
         </PopupDialog>
       ) : null}
-      {editing ? <AdversaryEditor initial={editing} onSave={saveConfig} onCancel={() => setEditing(null)} /> : null}
-      {viewImage ? <AdversaryImageViewer uri={viewImage.portraitUri} name={viewImage.name} onClose={() => setViewImage(null)} /> : null}
+      {editing ? <DmSide><AdversaryEditor key={editing.id} initial={editing} onSave={saveConfig} onCancel={() => setEditing(null)} /></DmSide> : null}
+      {viewImage ? <DmSide onClose={() => setViewImage(null)}><AdversaryImageViewer uri={viewImage.portraitUri} name={viewImage.name} onClose={() => setViewImage(null)} /></DmSide> : null}
       {addingNpc ? <NameDialog title="Add NPC" placeholder="NPC name" confirmLabel="Add" onConfirm={addNpcAlly} onCancel={() => setAddingNpc(false)} /> : null}
       {libraryMode ? (
+        <DmSide onClose={() => setLibraryMode(null)}>
         <AdversaryLibrary
           mode={libraryMode}
           savedList={library}
@@ -811,9 +860,13 @@ export function EncounterScreen() {
           onDeleteSaved={(ids) => commitLibrary(removeTemplates(library, ids))}
           onClose={() => setLibraryMode(null)}
         />
+        </DmSide>
       ) : null}
       {showLog ? (
+        <DmSide onClose={() => setShowLog(null)}>
         <EncounterLog
+          key={showLog}
+          write={showLog === 'write'}
           log={enc.log}
           onAddNote={(t) => commitEncounter(appendLog(enc, 'note', t))}
           onEditNote={(lid, t) => commitEncounter({ ...enc, log: editLogEntry(enc.log, lid, t) })}
@@ -821,8 +874,9 @@ export function EncounterScreen() {
           onReorder={(lid, to) => commitEncounter({ ...enc, log: moveLogEntry(enc.log, lid, to) })}
           onDeleteEntries={(ids) => commitEncounter({ ...enc, log: deleteLogEntries(enc.log, ids) })}
           onKeepOnly={(ids) => commitEncounter({ ...enc, log: keepOnlyLogEntries(enc.log, ids) })}
-          onClose={() => setShowLog(false)}
+          onClose={() => setShowLog(null)}
         />
+        </DmSide>
       ) : null}
 
       {showOptions ? (
@@ -836,16 +890,16 @@ export function EncounterScreen() {
               {/* v0.35 (owner): the party sheet is where party-wide modifiers live, and getting to it
                   from a fight meant backing out through the session. */}
               {partyRef.current ? (
-                <RuneButton label="Party sheet" kind="secondary" height={44} dm onPress={() => { const p = partyRef.current; setShowOptions(false); if (p) router.push(`/party-overview?partyId=${p.id}` as Href); }} />
+                <RuneButton label="Party sheet" kind="secondary" height={44} dm onPress={() => { setShowOptions(false); openParty(); }} />
               ) : null}
-              <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 15, textAlign: 'center' }}>Rename this encounter by holding it in the session list. The card archive button is on the encounter, next to the log.</Text>
+              <Text style={{ color: DmRune.muted, fontSize: DmType.body, fontFamily: Body.regular, lineHeight: 15, textAlign: 'center' }}>{desk ? 'Rename this encounter from the Encounter die, under Edit details. The card archive is under Tools.' : 'Rename this encounter by holding it in the session list. The card archive button is on the encounter, next to the log.'}</Text>
               <RuneButton label="Done" kind="ghost" height={44} dm onPress={() => setShowOptions(false)} />
             </View>
           </ChamferBox>
         </DmModal>
       ) : null}
 
-      {diceOpen ? <DmDicePanel onClose={() => setDiceOpen(false)} /> : null}
+      {diceOpen ? <DmSide onClose={() => setDiceOpen(false)}><DmDicePanel onClose={() => setDiceOpen(false)} /></DmSide> : null}
       {tools.node}
       {confirmComplete ? <PopupDialog dm title="Finish this encounter?" body="This freezes the party's current state onto the encounter as a record, modifiers included. The party keeps its live state, and its modifiers, for the next encounter." confirmLabel="Finish" onConfirm={complete} onCancel={() => setConfirmComplete(false)} /> : null}
       {confirmDeleteAlly ? <PopupDialog dm title="Remove these allies?" body={`${confirmDeleteAlly.size === 1 ? 'This ally' : `These ${confirmDeleteAlly.size} allies`} will be removed from this encounter. Player characters are never removed this way.`} confirmLabel="Remove" destructive onConfirm={() => { deleteNpcAllies(confirmDeleteAlly); setConfirmDeleteAlly(null); allySel.clear(); }} onCancel={() => setConfirmDeleteAlly(null)} /> : null}

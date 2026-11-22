@@ -1,4 +1,5 @@
 import { DesktopPortal } from '@/components/desktop-portal';
+import { useDesktop } from '@/hooks/use-desktop';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -51,6 +52,8 @@ export function StepBtn({ label, onPress, disabled, a11y }: { label: string; onP
 export function NumberKeypad({ title, subtitle, extra, min = 1, max = 9, initial, dm, onSubmit, onClose }: { title: string; subtitle?: string; /** v0.43.0: one row of controls between the subtitle and the number, for a question the number alone cannot answer (ADD GEAR's roll pad asks which table). */ extra?: ReactNode; min?: number; max?: number; /** v0.32.0: the number already set, so the keypad opens on it rather than empty. */ initial?: number; /** v0.22.0: this is the PRIMARY stat-editing surface of DM mode, and it was gold-and-red. */ dm?: boolean; onSubmit: (n: number) => void; onClose: () => void }) {
   const { scale } = useLayout();
   const vis = useSharedValue(0);
+  // On the DM screen the table behind the slot is dimmed already.
+  const beside = !!useDesktop();
   const [typed, setTyped] = useState(initial != null && initial !== 0 ? String(initial) : '');
   useEffect(() => { vis.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.quad) }); }, [vis]);
 
@@ -85,7 +88,7 @@ export function NumberKeypad({ title, subtitle, extra, min = 1, max = 9, initial
           v0.36.3 (owner): in DM MODE it is a real scrim. The sheet has its own `SheetDim` behind this,
           which is why the tap-catcher was left all but transparent; the DM screens have nothing, so
           the keypad floated over a fully lit encounter and was hard to pick out. */}
-      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: dm ? 'rgba(6,8,13,0.72)' : 'rgba(6,8,13,0.01)' }]} collapsable={false} onPress={onClose} accessibilityRole="button" accessibilityLabel="Cancel" />
+      <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: dm && !beside ? 'rgba(6,8,13,0.72)' : 'rgba(6,8,13,0.01)' }]} collapsable={false} onPress={onClose} accessibilityRole="button" accessibilityLabel="Cancel" />
       {dm ? <DimScreen opacity={0.72} /> : null}
       <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
       <Animated.View style={panelStyle}>

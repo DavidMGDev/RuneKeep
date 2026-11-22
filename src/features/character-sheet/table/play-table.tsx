@@ -38,7 +38,7 @@ import type { DiceTrayHandle } from '../sheet/dice-tray';
 import type { DicePresetSlots } from '../sheet/dice-preset-slots';
 import { SortPanel } from '../sheet/sort-panel';
 import { BoardCards, maxW, MIN_W } from './board-cards';
-import { type DeckLook } from './deck-look';
+import { type DeckLook, seatControls } from './deck-look';
 import { CardFace, DeskCarousel, type DeskCarouselHandle, type TableCard } from './desk-carousel';
 import type { Bounds, Impact } from './dice-physics';
 import { type DomatCard, DOMAT, DOMAT_MAX, DOMAT_START, type DomatStock, domatStock, drawDomat, type Element, ELEMENTS, elementWinner, takeDomat } from './domat';
@@ -171,20 +171,18 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       return { x: Math.min(tableW - pad - halfX, Math.max(pad + halfX, x)), y: Math.min(tableH - pad - halfY, Math.max(pad + halfY, yy)) };
     };
     const along = (n: number, gap: number) => ((n - 1) * gap * (n > 3 ? Math.max(1, look.ctlSize) : 1)) / 2 + 40;
-    let ctl = look.ctlDir === 'row' ? keepOut(look.ctlX * tableW, look.ctlY * tableH, along(ctlN, ctlGap(ctlN, 'row')), 44) : keepOut(look.ctlX * tableW, look.ctlY * tableH, 44, along(ctlN, ctlGap(ctlN, 'column')));
+    let ctl: { x: number; y: number; wrap?: number } = look.ctlDir === 'row' ? keepOut(look.ctlX * tableW, look.ctlY * tableH, along(ctlN, ctlGap(ctlN, 'row')), 44) : keepOut(look.ctlX * tableW, look.ctlY * tableH, 44, along(ctlN, ctlGap(ctlN, 'column')));
     const sup = look.supDir === 'row' ? keepOut(look.supX * tableW, look.supY * tableH, SUPPLY_HALF.row, 40) : keepOut(look.supX * tableW, look.supY * tableH, 64, SUPPLY_HALF.column);
-    // The DM's seven dice are most of a narrow table's width: on any table they would lie on the supply, so they take
-    // the line beside it.
-    if (ctlN > 3 && look.tokenTray && look.ctlDir === 'row' && look.supDir === 'row' && Math.abs(ctl.y - sup.y) < 96
-      && Math.abs(ctl.x - sup.x) < along(ctlN, ctlGap(ctlN, 'row')) + SUPPLY_HALF.row + (look.diceChest ? 120 : 0)) {
-      ctl = { x: ctl.x, y: sup.y + (sup.y < tableH / 2 ? 116 : -116) };
-    }
     const cat = keepOut(look.catX * tableW, look.catY * tableH, 56, 56);
+    // The DM's seven are most of a narrow table's width: they find their own room (see seatControls).
+    if (ctlN > 3 && look.controls === 'dice') {
+      ctl = seatControls(look, ctlN, ctlGap(ctlN, look.ctlDir === 'column' ? 'column' : 'row'), { left: pad, top: pad, right: tableW - pad, bottom: tableH - pad }, hand, sup, cat);
+    }
     // Pieces split off their rows sit where they were put, kept on the table and out of the hand's own area.
     const apart: Record<string, { x: number; y: number }> = {};
     for (const [k, [fx, fy]] of Object.entries(look.apart)) apart[k] = keepOut(fx * tableW, fy * tableH, 40, 40);
-    return { ctl: { ...ctl, dir: look.ctlDir, k: look.ctlSize }, sup: { ...sup, dir: look.supDir }, cat, apart };
-  }, [look.ctlX, look.ctlY, look.ctlDir, look.ctlSize, look.supX, look.supY, look.supDir, look.catX, look.catY, look.apart, look.tokenTray, look.diceChest, ctlN, tableW, tableH, ownArea, hand.top, hand.bottom, pad]);  
+    return { ctl: { x: ctl.x, y: ctl.y, wrap: ctl.wrap, dir: ctl.wrap ? 'row' : look.ctlDir, k: look.ctlSize }, sup: { ...sup, dir: look.supDir }, cat, apart };
+  }, [look, look.ctlX, look.ctlY, look.ctlDir, look.ctlSize, look.supX, look.supY, look.supDir, look.catX, look.catY, look.apart, look.tokenTray, look.diceChest, look.controls, ctlN, tableW, tableH, ownArea, hand.top, hand.bottom, pad]); // eslint-disable-line react-hooks/exhaustive-deps -- the hand is made of these  
 
 
   // ---------------------------------------------------------------- the hand
@@ -2452,7 +2450,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           }} />
         ) : null}
         {settings ? (
-          <div style={{ position: 'absolute', left: '50%', bottom: pad + 14, transform: 'translateX(-50%)', zIndex: 1255, pointerEvents: 'none', padding: '7px 14px', background: 'rgba(11,14,19,0.92)', border: `1px solid ${T.goldSoft}`, color: T.goldText, fontFamily: T.bold, fontSize: 13, whiteSpace: 'nowrap' }}>
+          <div style={{ position: 'absolute', left: '50%', bottom: pad + 14, transform: 'translateX(-50%)', zIndex: 1255, pointerEvents: 'none', padding: '7px 14px', background: 'rgba(11,14,19,0.92)', border: `1px solid ${T.goldSoft}`, color: T.goldText, fontFamily: T.bold, fontSize: 13, whiteSpace: tableW < 900 ? 'normal' : 'nowrap', width: tableW < 900 ? tableW - 150 : undefined }}>
             Drag a framed row to move it. The arrows beside its name stand it on end; the link splits it into pieces you place one by one; the eye hides it until you edit again.
           </div>
         ) : null}
@@ -3003,6 +3001,8 @@ function CardViewer({ card, live, from, closing, onClose, onGone }: { card: Tabl
   const [win, setWin] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
   const veil = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
+  const [face, setFace] = useState(0);
+  const pages = live ? 0 : card?.faces?.length ?? 0;
   useEffect(() => {
     const on = () => setWin({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', on);
@@ -3037,9 +3037,9 @@ function CardViewer({ card, live, from, closing, onClose, onGone }: { card: Tabl
     <div data-ui="" role="dialog" aria-label="The card, read large" onPointerDown={(e) => { e.stopPropagation(); onClose(); }} onContextMenu={(e) => { e.preventDefault(); onClose(); }}
       style={{ position: 'fixed', inset: 0, zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out', pointerEvents: closing ? 'none' : 'auto' }}>
       <div ref={veil} style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,13,0.78)', opacity: 0 }} />
-      <div ref={box} onPointerDown={live ? (e) => e.stopPropagation() : undefined} style={{ width: FORGED_W * k, height: FORGED_H * k, position: 'relative', boxShadow: '0 30px 80px rgba(0,0,0,0.7)', willChange: 'transform', cursor: live ? 'default' : undefined }}>
+      <div ref={box} onPointerDown={live ? (e) => e.stopPropagation() : pages > 1 ? (e) => { e.stopPropagation(); cue('card:turn', 'gearScroll2', { volume: 0.5 }); setFace((f) => (f + 1) % pages); } : undefined} style={{ width: FORGED_W * k, height: FORGED_H * k, position: 'relative', boxShadow: '0 30px 80px rgba(0,0,0,0.7)', willChange: 'transform', cursor: live ? 'default' : pages > 1 ? 'pointer' : undefined }}>
         <div style={{ position: 'absolute', left: 0, top: 0, width: FORGED_W, height: FORGED_H, transform: `scale(${k})`, transformOrigin: '0 0' }}>
-          {live ? <View style={{ width: FORGED_W, height: FORGED_H }}>{live}</View> : <CardFace card={card} hiRes />}
+          {live ? <View style={{ width: FORGED_W, height: FORGED_H }}>{live}</View> : <CardFace card={card} hiRes face={face} />}
         </div>
       </div>
     </div>,

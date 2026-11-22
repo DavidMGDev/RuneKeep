@@ -1,7 +1,7 @@
 /** Shared DM-Mode UI atoms (v0.15.0/v0.16.0): an animated tap-absorbing modal, a name-input dialog, and
  *  small chrome helpers. */
 import { useDialogKeys } from '@/hooks/use-dialog-keys';
-import { useDesktopPage } from '@/hooks/use-desktop';
+import { useDesktop, useDesktopPage } from '@/hooks/use-desktop';
 import { type ReactNode, useState, useRef } from 'react';
 import { Pressable, type PressableProps, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { Easing, FadeIn, FadeInDown, FadeOut, FadeOutDown, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -34,6 +34,8 @@ export function DmModal({ onClose, children, contentStyle }: { onClose: () => vo
 }
 
 function DmModalBody({ onClose, children, contentStyle }: { onClose: () => void; children: ReactNode; contentStyle?: object }) {
+  // Beside a port the table is dimmed already: a scrim the width of the slot would be a dark bar down it.
+  const beside = !!useDesktop();
   if (useInPageSide()) {
     return (
       <View style={PAGE_SIDE_BODY}>
@@ -44,7 +46,7 @@ function DmModalBody({ onClose, children, contentStyle }: { onClose: () => void;
   return (
     <View style={[StyleSheet.absoluteFill, { zIndex: 300, alignItems: 'center', justifyContent: 'center' }]}>
       <Animated.View entering={FadeIn.duration(140)} exiting={FadeOut.duration(120)} style={StyleSheet.absoluteFill}>
-        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(6,8,13,0.86)' }]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Dismiss" />
+        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: beside ? 'transparent' : 'rgba(6,8,13,0.86)' }]} onPress={onClose} accessibilityRole="button" accessibilityLabel="Dismiss" />
         <DimScreen opacity={0.86} />
       </Animated.View>
       {/* item 4: short, smooth, non-elastic — no spring bounce. */}

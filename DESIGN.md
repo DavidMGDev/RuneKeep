@@ -377,3 +377,23 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
 - Fonts are the repo's own files in `assets/fonts`. Never import a bundled asset from a package: Cloudflare Pages drops `node_modules` folders from the upload, and the site answers with the app's page (cached for a year by `/assets/*`).
 - A desktop page's toast drops in under the top bar. A tour page with no illustration is one column.
 - Under 1500px the campaign pane's buttons take their own row under the badge and name; the name is never cut.
+
+## v0.49.0: the DM screen and sticky notes
+
+- A session on a desktop window is the DM screen (`/session`, `features/dm/desk`): the sheet's shape, a port and the
+  play table. The port shows the phone's own DM screens (encounters, encounter, party sheet, cast, library); never
+  write a second one of any of them. A screen hands the table its handlers with `useDeskApi`; panels that are full
+  screen on a phone open beside the port through `DmSide`.
+- DM controls are seven control dice (Screen, Encounter, Party, Foes, Log, Cards, Tools), each opening the deck die's
+  menu. A new DM control is a row in `desk/dm-controls.ts`, not a button in the port.
+- The table takes any host (`table/table-host.ts`) and any number of control dice. The seven find their own room on
+  every table (`seatControls`, tested against each ready-made table at four sizes), in two rows where they must.
+- The DM's decks: Adversaries, Party, Allies, Encounters, My adversaries, and the DM's own. Table, notes, Fear and
+  presets are the campaign's, so they carry from one session to the next. No grids, maps or game-running tools; the
+  Fear tracker is the one optional extra (Tools).
+- Sticky notes are on both tables: square board cards with writing. Physical ones tear, are cut and leave scraps that
+  burn, as cards do; pinned ones are passed by. Breaking only marks a note torn: Reset brings back what it said, and
+  only Delete loses it. One storage key to each table (`runekeep.notes.<owner>`).
+- Sessions, the cast, the party sheet and the adversary library are desktop pages. Nothing DM is left in the phone
+  frame on a desktop window.
+- Colours used only by the table go in `constants/table-tints.ts`: editing `theme.ts` re-forges every card on every device.

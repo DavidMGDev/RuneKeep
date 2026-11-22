@@ -19,6 +19,7 @@
  * else is rendered live, which is exactly what the creation and level-up carousels do.
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useDesktop } from '@/hooks/use-desktop';
 import { Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -72,9 +73,10 @@ export function DmCategoryPrompt({ file, onPick, onCancel }: { file: CharacterFi
   const meta = useMemo(() => glyphMeta(file), [file]);
   useAndroidBack(() => { onCancel(); return true; });
   useScreenDim(0.86);
+  const beside = !!useDesktop();
   return (
     <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 420, alignItems: 'center', justifyContent: 'center' }}>
-      <DmPress style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.86)' }} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Close" />
+      <DmPress style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: beside ? 'transparent' : 'rgba(6,8,13,0.86)' }} onPress={onCancel} accessibilityRole="button" accessibilityLabel="Close" />
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.goldEdge} strokeWidth={1.6} style={{ width: 320, maxWidth: '92%', paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.goldText, fontSize: 18, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.5 }}>{file.name}</Text>
         <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, marginTop: 2, marginBottom: 12 }}>Which of their decks do you want to see?</Text>
