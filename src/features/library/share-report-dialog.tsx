@@ -34,7 +34,7 @@ export function WarningTriangle({ size = 14, color = '#E8B33A' }: { size?: numbe
   );
 }
 
-export function ShareReportDialog({ report, packName, onGoToCard, onShare, onClose }: {
+export function ShareReportDialog({ report, packName, onGoToCard, onShare, onClose, inline = false }: {
   report: ShareReport;
   packName: string;
   /** Jump to a card that needs work. */
@@ -42,12 +42,11 @@ export function ShareReportDialog({ report, packName, onGoToCard, onShare, onClo
   /** Only offered when the pack is ready. */
   onShare: () => void;
   onClose: () => void;
+  /** Desktop (v0.50.5): a panel in the pack's pane, under its header, rather than a pop-up over it. */
+  inline?: boolean;
 }) {
-  return (
-    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
-      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} />
-      <DimScreen opacity={0.92} />
-      <ChamferBox chamfer={14} fill={Rune.panel} stroke={report.ok ? Rune.goldEdge : Rune.red} strokeWidth={1.6} style={{ width: 344, maxHeight: 620, paddingHorizontal: 14, paddingVertical: 14, gap: Gap.intra }}>
+  const box = (
+      <ChamferBox chamfer={14} fill={Rune.panel} stroke={report.ok ? Rune.goldEdge : Rune.red} strokeWidth={1.6} style={inline ? { maxHeight: 420, paddingHorizontal: 16, paddingVertical: 14, gap: Gap.intra } : { width: 344, maxHeight: 620, paddingHorizontal: 14, paddingVertical: 14, gap: Gap.intra }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           {report.ok ? null : <WarningTriangle size={17} />}
           <Text style={{ flex: 1, color: report.ok ? Rune.goldText : Rune.ivory, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.4 }}>
@@ -96,6 +95,13 @@ export function ShareReportDialog({ report, packName, onGoToCard, onShare, onClo
           {report.ok ? <RuneButton label="Share it" kind="primary" height={42} style={{ flex: 1 }} onPress={onShare} /> : null}
         </View>
       </ChamferBox>
+  );
+  if (inline) return box;
+  return (
+    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9000, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(6,8,13,0.92)' }} />
+      <DimScreen opacity={0.92} />
+      {box}
     </View>
   );
 }

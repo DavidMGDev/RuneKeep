@@ -52,6 +52,13 @@ describe('inheritedPage', () => {
     expect(inheritedPage(first, b, first).color).toBe('#00aa00');
   });
 
+  it('wears the class card banner over the first page art, and a page keeps its own', () => {
+    const first = page('p1', 'Warden', { imageUri: 'first.png' });
+    expect(inheritedPage(page('p2', 'Warden'), b, first).imageUri).toBe('art.png');
+    expect(inheritedPage(page('p3', 'Warden', { imageUri: 'mine.png' }), b, first).imageUri).toBe('mine.png');
+    expect(inheritedPage(page('p2', 'Warden'), base('Warden'), first).imageUri).toBe('first.png');
+  });
+
   it('keeps the page own text, which is the only thing that is really the page own', () => {
     expect(inheritedPage(page('p', 'Warden', { text: 'Mine' }), b).text).toBe('Mine');
   });

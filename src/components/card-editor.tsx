@@ -770,6 +770,8 @@ export function CardEditor({
   generatedBody,
   templateNotice,
   templateMode = false,
+  banner = false,
+  inline = false,
 }: {
   kindLabel: string;
   /** v0.14.0: the centered line under the title in the LIVE preview — the subclass tier word, so an
@@ -875,6 +877,18 @@ export function CardEditor({
    */
   templateMode?: boolean;
   /**
+   * A CLASS'S BANNER (v0.50.5, owner: "it is important that I am capable of updating the banner of that class").
+   *
+   * A class template has no art of its own to show, but its picture is the class's banner: every page without art
+   * of its own wears it. So the template gets one control back, a picture, drawn on a page of the class.
+   */
+  banner?: boolean;
+  /**
+   * DRAWN IN PLACE (v0.50.5): on a desktop page the editor is the pane, not a pop-up. No scrim, no frame: the card
+   * stands on the left at a readable size and its fields scroll beside it.
+   */
+  inline?: boolean;
+  /**
    * v0.42.3: a full-screen panel drawn OVER the editor, at its root.
    *
    * The class form's card browser is the case: written inside the scrolling fields column it would be
@@ -906,6 +920,14 @@ export function CardEditor({
     if (!res.canceled && res.assets[0]) {
       const uri = await ownImage(res.assets[0].uri);
       setDraft((d) => ({ ...d, imageUri: uri, color: canLayerColor(uri) ? d.color : null, fullImage: false }));
+    }
+  }, []);
+  /** The class's banner: a picture only. The template's colour is the class's and stays. */
+  const pickBanner = useCallback(async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.9 });
+    if (!res.canceled && res.assets[0]) {
+      const uri = await ownImage(res.assets[0].uri);
+      setDraft((d) => ({ ...d, imageUri: uri, fullImage: false }));
     }
   }, []);
   /**
@@ -1100,9 +1122,10 @@ export function CardEditor({
 
   const KB = { duration: 240, easing: Easing.out(Easing.cubic) };
   const onFieldFocus = useCallback((e: unknown) => {
+    if (inline) return; // in place on a desktop page: nothing to make room for
     if (!reduced) kb.value = withTiming(1, KB);
     scrollFieldIntoView(e); // web: the browser shrank the page, so aim at the field rather than pad
-  }, [kb, reduced]);
+  }, [kb, reduced, inline]);
   // Drive compaction off the keyboard itself (item 1): re-tapping an already-focused field re-opens
   // the keyboard (no onFocus fires) but DOES fire keyboardDidShow — so the UI re-compacts; hiding it
   // (Back / dismiss) animates back even though the field keeps its cursor.
@@ -1133,30 +1156,9 @@ export function CardEditor({
     };
   });
 
-  // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
-  return (
-    <DesktopPortal to="side" onDismiss={guardedClose}>
-    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10000 }}>
-      {/* v0.39.0: the group dialogs the effects field raises are drawn HERE, at the editor's root,
-          for the same reason the effect picker already is: written inside the scrolling fields
-          column, they were positioned against the scroll content rather than the screen. */}
-      <OverlayHost>
-      {scrimless ? (
-        // In-sheet (#252): OPAQUE full-screen backdrop; closes only via the Cancel button, never by
-        // tapping outside. OCCLUDES touches (#276 item 4): when editing a card from FULLSCREEN the
-        // carousel stays mounted+fullscreen behind this, so the backdrop must swallow stray taps (no
-        // pointerEvents=none) or they'd reach the focused card and close it.
-        <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(8,10,15,0.985)' }, scrimStyle]} />
-      ) : (
-        // v0.13.0: standalone scrim no longer dismisses — a stray outside tap must never discard a
-        // draft. The editor closes ONLY via its Cancel/Save buttons (same contract as scrimless).
-        <Animated.View style={[{ position: 'absolute', top: -120, bottom: -120, left: -60, right: -60, backgroundColor: 'rgba(6,8,13,0.92)' }, scrimStyle]} />
-      )}
-      <EditorFrame framed={scrimless} insetTop={insets.top} insetBottom={insets.bottom} animStyle={contentStyle}>
-      <DimScreen opacity={scrimless ? 0.985 : 0.92} />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 140 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        {/* top gap: collapses while typing so the card + fields ride up to just below the border (#227) */}
-        <Animated.View style={topSpacer} />
+  const [paneW, setPaneW] = useState(0);
+  const previewBlock = (
+    <>
         {/**
           * A TEMPLATE previews as its CHIP (v0.43.1).
           *
@@ -1221,14 +1223,18 @@ export function CardEditor({
         {templateMode ? null : (
         <Text style={{ marginTop: 8, color: Rune.bronze, fontSize: 10.5, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase', textAlign: 'center', paddingHorizontal: 24 }}>
           {faceMode
-            ? 'This card is the picture. Tap it to choose another one.'
-            : typeGroups?.length && !experienceMode
-              ? 'Tap the art for a new color, hold it for a picture. Tap the type to change it.'
-              : 'Tap the art for a new color, hold it for a picture.'}
+            ? inline ? 'This card is the picture. Click it to choose another one.' : 'This card is the picture. Tap it to choose another one.'
+            : inline
+              ? typeGroups?.length && !experienceMode ? 'Click the art for a new colour, or its type to change it.' : 'Click the art for a new colour.'
+              : typeGroups?.length && !experienceMode
+                ? 'Tap the art for a new color, hold it for a picture. Tap the type to change it.'
+                : 'Tap the art for a new color, hold it for a picture.'}
         </Text>
         )}
-        {/* fields */}
-        <View style={{ width: 320, marginTop: 16, gap: 9 }}>
+    </>
+  );
+  const fieldsBlock = (
+        <View style={{ width: inline ? '100%' : 320, maxWidth: inline ? 560 : undefined, marginTop: inline ? 0 : 16, gap: inline ? 12 : 9 }}>
           {/* half-and-half: Add Image (smaller text) | Random Color (flat random fill) (#153) */}
           {/* v0.42.7 (owner): "the random color button in card creation is redundant because the colors
               button already has a surprise me button." Two buttons, both wider for it. */}
@@ -1252,6 +1258,7 @@ export function CardEditor({
             />
           )}
           {templateMode ? templateNotice : null}
+          {banner ? <BannerField uri={draft.imageUri} title={draft.title.trim()} color={draft.color} onPick={pickBanner} onClear={() => setDraft((d) => ({ ...d, imageUri: null }))} /> : null}
           {templateMode ? (
             <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Name, which is what the chip says</Text>
           ) : null}
@@ -1313,11 +1320,9 @@ export function CardEditor({
             {templateMode ? 'This is a template. It never becomes a card in anybody\u2019s hand.' : 'Same format as every RuneKeep card.'}
           </Text>
         </View>
-        {/* v0.23.0: a spacer the exact height of the keyboard, so Cancel and Save can always be
-            reached and are never underneath it. */}
-        <Animated.View style={bottomSpacer} />
-      </ScrollView>
-      </EditorFrame>
+  );
+  const overlayBlock = (
+    <>
       {pickEffect != null && draft.effects[pickEffect] ? (
         <EffectPicker
           current={matchOption(draft.effects[pickEffect], experiences)}
@@ -1384,9 +1389,109 @@ export function CardEditor({
           onStay={() => setLeaving(false)}
         />
       ) : null}
+    </>
+  );
+  // A desktop page draws the editor in its pane: the card on the left at a size you can read, the fields beside it.
+  if (inline) {
+    // Too narrow for the two side by side (a small window): the card stands over its fields, as on a phone.
+    if (paneW > 0 && paneW < 820) {
+      return (
+        <OverlayHost>
+          <View style={{ flex: 1 }} onLayout={(e) => setPaneW(e.nativeEvent.layout.width)}>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 40, gap: 16 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
+              {previewBlock}
+              <View style={{ width: '100%', maxWidth: 560 }}>{fieldsBlock}</View>
+            </ScrollView>
+          </View>
+          {overlayBlock}
+        </OverlayHost>
+      );
+    }
+    return (
+      <OverlayHost>
+        <View style={{ flex: 1, flexDirection: 'row', gap: 40 }} onLayout={(e) => setPaneW(e.nativeEvent.layout.width)}>
+          <View style={{ width: templateMode ? 360 : FORGED_W * INLINE_SCALE + 40, alignItems: 'center', paddingTop: 8 }}>
+            {templateMode ? previewBlock : (
+              <View style={{ width: FORGED_W * INLINE_SCALE, alignItems: 'center' }}>
+                <View style={{ width: FORGED_W * INLINE_SCALE, height: FORGED_H * INLINE_SCALE }}>
+                  <View style={{ width: FORGED_W, transform: [{ scale: INLINE_SCALE }], transformOrigin: 'top left' }}>{previewBlock}</View>
+                </View>
+              </View>
+            )}
+          </View>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40, paddingRight: 8 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator>
+            {fieldsBlock}
+          </ScrollView>
+        </View>
+        {overlayBlock}
+      </OverlayHost>
+    );
+  }
+  // Desktop (v0.44.0): drawn in the side slot beside the phone port instead of over the sheet.
+  return (
+    <DesktopPortal to="side" onDismiss={guardedClose}>
+    <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 10000 }}>
+      {/* v0.39.0: the group dialogs the effects field raises are drawn HERE, at the editor's root,
+          for the same reason the effect picker already is: written inside the scrolling fields
+          column, they were positioned against the scroll content rather than the screen. */}
+      <OverlayHost>
+      {scrimless ? (
+        // In-sheet (#252): OPAQUE full-screen backdrop; closes only via the Cancel button, never by
+        // tapping outside. OCCLUDES touches (#276 item 4): when editing a card from FULLSCREEN the
+        // carousel stays mounted+fullscreen behind this, so the backdrop must swallow stray taps (no
+        // pointerEvents=none) or they'd reach the focused card and close it.
+        <Animated.View style={[{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(8,10,15,0.985)' }, scrimStyle]} />
+      ) : (
+        // v0.13.0: standalone scrim no longer dismisses — a stray outside tap must never discard a
+        // draft. The editor closes ONLY via its Cancel/Save buttons (same contract as scrimless).
+        <Animated.View style={[{ position: 'absolute', top: -120, bottom: -120, left: -60, right: -60, backgroundColor: 'rgba(6,8,13,0.92)' }, scrimStyle]} />
+      )}
+      <EditorFrame framed={scrimless} insetTop={insets.top} insetBottom={insets.bottom} animStyle={contentStyle}>
+      <DimScreen opacity={scrimless ? 0.985 : 0.92} />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 140 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        {/* top gap: collapses while typing so the card + fields ride up to just below the border (#227) */}
+        <Animated.View style={topSpacer} />
+        {previewBlock}
+        {fieldsBlock}
+        {/* v0.23.0: a spacer the exact height of the keyboard, so Cancel and Save can always be
+            reached and are never underneath it. */}
+        <Animated.View style={bottomSpacer} />
+      </ScrollView>
+      </EditorFrame>
+      {overlayBlock}
       </OverlayHost>
     </View>
     </DesktopPortal>
+  );
+}
+
+/** How much larger the card is drawn beside its fields on a desktop page. */
+const INLINE_SCALE = 1.3;
+
+/**
+ * The class's banner, picked on the class card (v0.50.5): a page of the class drawn with it, and the two things to
+ * do with it. A page with art of its own keeps that; every other page of the class wears this.
+ */
+function BannerField({ uri, title, color, onPick, onClear }: { uri: string | null; title: string; color: string | null; onPick: () => void; onClear: () => void }) {
+  const k = 0.62;
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={{ color: Rune.bronze, fontSize: 10, fontFamily: Body.bold, letterSpacing: 0.6, textTransform: 'uppercase' }}>Class banner</Text>
+      <View style={{ flexDirection: 'row', gap: 14, alignItems: 'flex-start' }}>
+        <View style={{ width: FORGED_W * k, height: ART_H * k, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(218,162,73,0.4)' }}>
+          <View style={{ width: FORGED_W, transform: [{ scale: k }], transformOrigin: 'top left' }} pointerEvents="none">
+            <ForgedCard title={title} kindLabel="Class" body="" accentDeep={Rune.panel} imageUri={uri} colorArt={color} bannerArt />
+          </View>
+        </View>
+        <View style={{ flex: 1, gap: 8 }}>
+          <Text style={{ color: Rune.muted, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}>
+            {uri ? 'Every page of this class wears this picture, unless a page has a picture of its own.' : 'No banner yet. Pick a picture and every page of this class wears it.'}
+          </Text>
+          <RuneButton label={uri ? 'Change picture' : 'Choose a picture'} kind="ghost" dense height={34} onPress={onPick} />
+          {uri ? <RuneButton label="Remove banner" kind="ghost" dense height={34} onPress={onClear} /> : null}
+        </View>
+      </View>
+    </View>
   );
 }
 

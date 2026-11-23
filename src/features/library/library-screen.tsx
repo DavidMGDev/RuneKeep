@@ -8,7 +8,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { type Href, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { AppScreen } from '@/components/app-screen';
@@ -79,6 +79,9 @@ import { LibraryForgedCard } from '@/features/create/components/library-forged-c
 import { ChipPreview } from '@/features/create/components/forged-card';
 import { getPlaqueTheme, plaqueThemeOf } from '@/features/create/components/card-divider';
 import { ExpansionGallery } from './expansion-gallery-view';
+import { below, DeskGallery, LIB_LIST_W, LibraryList, type MenuAt, MetaFields, PageMenu } from './desktop-library';
+import type { MenuSpec, TableRow } from '@/features/character-sheet/table/context-menu';
+import { MENU_ICON } from '@/features/character-sheet/table/menu-icons';
 import { FunctionEditor } from './function-editor';
 import { CardFunctionsForm, ClassSpecForm } from './class-spec-form';
 import { NfcSendModal } from '@/features/share/nfc-modal';
@@ -165,6 +168,9 @@ interface CardConfig {
   /** v0.43.0: the invented kind this card belongs to, by type-card id. */
   customType?: string;
 }
+
+/** What a saved card says about itself, as the editor's config (the phone builds the same object inline). */
+const configOf = (c: LibraryCard): CardConfig => ({ advances: c.advances, contentType: c.contentType, domain: c.domain, level: c.level, className: c.className, linkSubclass: c.linkSubclass, classRole: c.classRole, subclass: c.subclass, spellcastTrait: c.spellcastTrait, classSpec: c.classSpec, functions: c.functions, functionCategory: c.functionCategory, tier: c.tier, ancestryEffectTrait: c.ancestryEffectTrait, weapon: c.weapon, armor: c.armor, typeLabel: c.typeLabel, plaque: c.plaque, typeSpec: c.typeSpec, customType: c.customType });
 
 /** Fresh config for a newly-chosen content type (Feature 5). */
 function defaultConfigFor(t: LibraryContentType): CardConfig {
@@ -1009,11 +1015,17 @@ function incompleteSubclassWarning(cards: LibraryCard[]): string | null {
   return `A subclass needs all three cards. Foundation, Specialization and Mastery, to level up properly. These are incomplete:\n\n${lines}\n\nYou can still use this pack; the missing tiers just won't be granted on level-up.`;
 }
 
+/** The pack last open in the desktop library, for this page session. */
+let lastDeskPack: string | null = null;
+
 export function LibraryScreen() {
   const router = useRouter();
   const desktop = useDesktopPage();
+  const winW = useWindowDimensions().width;
   const [expansions, setExpansions] = useState<Expansion[] | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Desktop: the pack you had open is open again when you come back (from campaign settings, the archive).
+  const [selectedId, setSelectedIdState] = useState<string | null>(() => lastDeskPack); // only ever set on desktop
+  const setSelectedId = useCallback((id: string | null) => { if (desktop) lastDeskPack = id; setSelectedIdState(id); }, [desktop]);
   const [editingCard, setEditingCard] = useState<{ index: number | 'new'; config: CardConfig; draft?: CardDraft } | null>(null);
   /** v0.35.2: an ancestry just saved as one whole picture, waiting to be told what that costs. */
   const [fullImageAncestry, setFullImageAncestry] = useState<string | null>(null);
@@ -1082,6 +1094,11 @@ export function LibraryScreen() {
   const [confirmDeleteCard, setConfirmDeleteCard] = useState<number | null>(null);
   const [message, setMessage] = useState<{ title: string; body: string } | null>(null);
   const [nfcSend, setNfcSend] = useState<{ content: RkpContent; label: string } | null>(null);
+  /** Desktop (v0.50.5): the menu open now (Add card, a card's, a pack's), the cards picked in the grid, and the editor's guarded close. */
+  const [deskMenu, setDeskMenu] = useState<{ at: MenuAt; spec: MenuSpec } | null>(null);
+  const [deskSel, setDeskSel] = useState<Set<string>>(() => new Set());
+  const editorBack = useRef<(() => void) | null>(null);
+  const addRef = useRef<View>(null);
   // v0.14.0: an incomplete subclass (missing Foundation / Specialization / Mastery) can still be saved
   // and enabled — but the player is told, both when they switch a pack on and when they open it.
   const warnIncomplete = (e: Expansion) => {
@@ -1194,13 +1211,322 @@ export function LibraryScreen() {
       if (metaForm) { setMetaForm(null); return; }
       if (selectedId) { setSelectedId(null); return; } // back to the hub, not out of the library
       leaveThroughSpares(() => { if (router.canGoBack()) router.back(); else { router.replace('/'); endLeave(); } });
-    }, [confirmDeleteExp, confirmDeleteCards, movingCards, reportFor, nfcSend, message, holdingExp, writingItem, askingClassFor, askingParentClass, askingClassRole, choosingType, metaForm, selectedId, router]),
+    }, [confirmDeleteExp, confirmDeleteCards, movingCards, reportFor, nfcSend, message, holdingExp, writingItem, askingClassFor, askingParentClass, askingClassRole, choosingType, metaForm, selectedId, setSelectedId, router]),
     { enabled: !editingCard },
   );
 
+  // Desktop (v0.50.5): Escape closes what is open in the pane, top first. A sidebar layer, the page and a menu
+  // claim the key before this hears it (they mark it handled).
+  useEffect(() => {
+    if (!desktop || typeof window === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
+      if (editingCard) { editorBack.current?.(); e.preventDefault(); return; }
+      if (metaForm) { setMetaForm(null); e.preventDefault(); return; }
+      if (reportFor) { setReportFor(null); e.preventDefault(); return; }
+      if (deskSel.size) { setDeskSel(new Set()); e.preventDefault(); }
+    };
+    // A text field stops its keys going any further (react-native-web), so a field in the pane is heard on the way
+    // down instead. A field anywhere else (a sidebar layer) keeps its own Escape.
+    const inField = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA)$/.test(t.tagName) && document.getElementById('lib-pane')?.contains(t)) onKey(e);
+    };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('keydown', inField, true);
+    return () => { window.removeEventListener('keydown', onKey); document.removeEventListener('keydown', inField, true); };
+  }, [desktop, editingCard, metaForm, reportFor, deskSel]);
+
   if (!expansions) return <LoadingScreen label="Opening the library" />;
 
+  /**
+   * THE DESKTOP PAGE (v0.50.5, owner: "the same treatment that the campaign UI had", "less pop-ups more proper menus,
+   * no functionality lost").
+   *
+   * The campaigns page's shape: the packs down the left, the one being worked on beside them. The phone's chain of
+   * pop-ups (what are you making, which kind of class card, of which class) is ONE menu with its classes in
+   * submenus; a card's hold menu is its right click; the pack's details are edited where they are read; the share
+   * report opens under the pack's header. Questions that guard what cannot be got back (deleting) still ask.
+   */
+  function deskPage() {
+    const all = expansions ?? [];
+    const official = all.filter((e) => e.official === true);
+    const custom = all.filter((e) => !e.official);
+    const cur = selected;
+    const curOfficial = !!cur && (cur.official || isOfficialExpansion(cur.id));
+    const isOn = (e: Expansion) => (e.official ? isEnabledForCreation(e) : isExpansionEnabled(e));
+    const countOf = (e: Expansion) => (e.official ? expansionCardCount(e) : expansionSummary(e).cardCount);
+    const menu = (at: MenuAt | null, spec: MenuSpec) => { if (!at) return; playSfx('buttonTap'); setDeskMenu({ at, spec }); };
+    const pick = (e: Expansion) => {
+      if (editingCard && editorBack.current) { editorBack.current(); return; } // a draft is in the pane: it asks first
+      playSfx('buttonTap');
+      setMetaForm(null);
+      setReportFor(null);
+      setDeskSel(new Set());
+      openExpansion(e);
+    };
+    const start = (config: CardConfig) => { setDeskSel(new Set()); setReportFor(null); setMetaForm(null); setEditingCard({ index: 'new', config }); };
+    const edit = (c: LibraryCard) => { if (!cur) return; setReportFor(null); setEditingCard({ index: cur.cards.findIndex((x) => x.id === c.id), config: configOf(c) }); };
+    /** Cards to another pack, moved or copied: the destination is saved first, so a crash leaves a duplicate, never a hole. */
+    const send = (cards: LibraryCard[], dest: Expansion, mode: MoveMode) => {
+      if (!cur) return;
+      const r = moveCards(cur.cards, dest.cards, cards.map((c) => c.id), mode);
+      setDeskSel(new Set());
+      void persist({ ...dest, cards: r.to })
+        .then(() => (mode === 'move' ? persist({ ...cur, cards: r.from }) : undefined))
+        .then(() => showToast(`${r.moved.length === 1 ? '1 card' : `${r.moved.length} cards`} ${mode === 'move' ? 'moved' : 'copied'} to ${dest.name}.`, 'success'))
+        .catch(() => showToast('Could not send that card.', 'error'));
+    };
+    const targets = cur ? custom.filter((e) => e.id !== cur.id) : [];
+    const sendRows = (cards: LibraryCard[]): TableRow[] => {
+      const note = cur ? extraDependencies(cards.map((c) => c.id), cur.cards) : [];
+      const say = targets.length ? (note.length ? dependencyNote(note) : undefined) : 'There is nowhere to send it. Make another expansion first.';
+      return [
+        { label: 'Move to', icon: MENU_ICON.moveDeck, gap: true, say, rows: targets.map((e) => ({ label: e.name, icon: MENU_ICON.decks, onPress: () => send(cards, e, 'move') })) },
+        { label: 'Copy to', icon: MENU_ICON.duplicate, say, rows: targets.map((e) => ({ label: e.name, icon: MENU_ICON.decks, onPress: () => send(cards, e, 'copy') })) },
+      ];
+    };
+    const shareCards = (cs: LibraryCard[]) => {
+      setDeskSel(new Set());
+      // One card goes as a card (it can travel by NFC); several go as a pack of their own.
+      if (cs.length === 1) { void embedCardImageForNfc(cs[0]).then((card) => setNfcSend({ content: { kind: 'card', payload: card }, label: card.title || 'card' })); return; }
+      packTools?.share(cs);
+    };
+    const cardMenu = (c: LibraryCard): MenuSpec => ({
+      title: c.title || 'Untitled card', icon: MENU_ICON.cards, detail: CONTENT_TYPE_LABEL[c.contentType],
+      rows: [
+        { label: 'Edit', icon: MENU_ICON.edit, quick: true, onPress: () => edit(c) },
+        { label: 'Share', icon: MENU_ICON.share, quick: true, onPress: () => shareCards([c]) },
+        { label: deskSel.has(c.id) ? 'Deselect' : 'Select', icon: deskSel.has(c.id) ? MENU_ICON.unmark : MENU_ICON.mark, quick: true, onPress: () => { const n = new Set(deskSel); if (n.has(c.id)) n.delete(c.id); else n.add(c.id); setDeskSel(n); } },
+        ...sendRows([c]),
+        { label: 'Delete card', icon: MENU_ICON.bin, danger: true, gap: true, onPress: () => { if (cur) void persist({ ...cur, cards: cur.cards.filter((x) => x.id !== c.id) }); },
+          confirm: { title: 'Delete card?', body: `"${c.title || 'Untitled'}" will be removed from this expansion.`, verb: 'Delete' } },
+      ],
+    });
+    // Add card: the phone's type chooser and its three class questions, as one menu.
+    const addMenu = (): MenuSpec => {
+      const mine = cur ? classTitles(cur.cards) : [];
+      const ofClass = (make: (t: string) => CardConfig, label: (t: string) => string): TableRow[] => [
+        ...mine.map((t): TableRow => ({ label: label(t), icon: MENU_ICON.cards, onPress: () => start(make(t)) })),
+        ...BUILTIN_CLASS_LABELS.filter((t) => !mine.includes(t)).map((t, i): TableRow => ({ label: label(t), icon: MENU_ICON.cards, gap: i === 0 && mine.length > 0, onPress: () => start(make(t)) })),
+      ];
+      const kinds = cur ? contentTypes(cur.cards) : [];
+      const rows: TableRow[] = kinds.map((ct) => ({ label: ct.title.trim(), icon: MENU_ICON.cards, onPress: () => start({ ...defaultConfigFor('generic'), customType: ct.id }) }));
+      TYPE_GROUPS.forEach((g, gi) => g.types.forEach((t, i) => {
+        const gap = i === 0 && (gi > 0 || rows.length > 0);
+        if (t === 'class') {
+          rows.push({ label: 'Class', icon: MENU_ICON.newDeck, gap, say: 'A new class is its name, chip, numbers, domains and starting items; no player holds it. An info card is a page players read, for a class of yours or one from the base game.',
+            rows: [
+              { label: 'A new class', icon: MENU_ICON.newDeck, onPress: () => start({ contentType: 'class', classSpec: { ...EMPTY_CLASS_SPEC, role: 'base' } }) },
+              ...ofClass((c) => ({ contentType: 'class', className: c, classSpec: { ...EMPTY_CLASS_SPEC, role: 'page' } }), (c) => `An info card for ${c}`).map((r, j) => (j === 0 ? { ...r, gap: true } : r)),
+            ] });
+        } else if (t === 'subclass') {
+          rows.push({ label: 'Subclass', icon: MENU_ICON.cards, gap, say: 'A subclass of which class? It copies that class\u2019s look.', rows: ofClass((c) => ({ ...defaultConfigFor('subclass'), className: c }), (c) => `Of ${c}`) });
+        } else if (t === 'feature') {
+          rows.push({ label: 'Feature', icon: MENU_ICON.counter, gap, say: 'A card of its own in the player\u2019s arsenal, and the only kind that carries counters, dice, switches and text fields.',
+            rows: [
+              { label: 'No class, a card on its own', icon: MENU_ICON.cards, onPress: () => start(defaultConfigFor('feature')) },
+              ...ofClass((c) => ({ ...defaultConfigFor('feature'), className: c }), (c) => `Of ${c}`).map((r, j) => (j === 0 ? { ...r, gap: true } : r)),
+            ] });
+        } else {
+          rows.push({ label: CONTENT_TYPE_LABEL[t], icon: t === 'type' ? MENU_ICON.newDeck : MENU_ICON.cards, gap, onPress: () => start(defaultConfigFor(t)) });
+        }
+      }));
+      return { title: 'Add a card', icon: MENU_ICON.plus, rows };
+    };
+    const packMenu = (e: Expansion): MenuSpec => ({
+      title: e.name, icon: MENU_ICON.decks,
+      rows: [
+        { label: 'Open', icon: MENU_ICON.open, onPress: () => pick(e) },
+        { label: 'Delete expansion', icon: MENU_ICON.bin, danger: true, gap: true, onPress: () => setConfirmDeleteExp({ exp: e, step: 1 }) },
+      ],
+    });
+    const report = packTools?.report;
+
+    let pane: React.ReactNode;
+    if (metaForm === 'new') {
+      pane = (
+        <ScrollView contentContainerStyle={{ paddingLeft: 34, paddingTop: 22, paddingBottom: 30, gap: 18 }}>
+          <Text style={{ color: DmRune.ivory, fontSize: 30, fontFamily: Display.black, letterSpacing: 1.2, textTransform: 'uppercase' }}>New expansion</Text>
+          <MetaFields onCancel={() => setMetaForm(null)} onSave={(m) => {
+            const exp: Expansion = { id: newId('exp'), createdAt: new Date().toISOString(), cards: [], ...m };
+            void persist(exp).then(() => setSelectedId(exp.id));
+            setMetaForm(null);
+          }} />
+        </ScrollView>
+      );
+    } else if (editorEl && cur) {
+      const ex = typeof editingCard?.index === 'number' ? cur.cards[editingCard.index] : undefined;
+      pane = (
+        <View style={{ flex: 1, paddingLeft: 34, paddingTop: 16, gap: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            <RuneButton dm label={`Back to ${cur.name}`} kind="ghost" dense height={36} onPress={() => (editorBack.current ? editorBack.current() : setEditingCard(null))} />
+            <Text numberOfLines={1} style={{ flex: 1, color: DmRune.ivory, fontSize: 22, fontFamily: Display.black, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+              {ex ? ex.title || 'Untitled card' : editingCard!.config.classSpec?.role === 'page' ? `New info card for ${editingCard!.config.className}` : `New ${CONTENT_TYPE_LABEL[editingCard!.config.contentType].toLowerCase()}`}
+            </Text>
+          </View>
+          {editorEl}
+        </View>
+      );
+    } else if (cur && curOfficial) {
+      const on = isEnabledForCreation(cur);
+      pane = (
+        <ScrollView contentContainerStyle={{ paddingLeft: 34, paddingTop: 22, paddingBottom: 30, gap: 14 }}>
+          <Text style={{ color: DmRune.ivory, fontSize: 34, fontFamily: Display.black, letterSpacing: 1.2, textTransform: 'uppercase' }}>{cur.name}</Text>
+          <Text style={{ color: P.goldText, fontSize: 13, fontFamily: Body.bold, letterSpacing: 0.6 }}>by {cur.author || 'unknown'} · {expansionCardCount(cur)} card{expansionCardCount(cur) === 1 ? '' : 's'} · official, read only</Text>
+          {cur.description ? <Text style={{ color: P.muted, fontSize: 15, fontFamily: Body.regular, lineHeight: 22, maxWidth: 720 }}>{cur.description}</Text> : null}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 6 }}>
+            <ExpansionToggle on={on} onToggle={() => toggleExpansion(cur, !on)} />
+            <Text style={{ color: P.ivory, fontSize: 15, fontFamily: Body.bold }}>{on ? 'On for character creation' : 'Off for character creation'}</Text>
+          </View>
+          <RuneButton dm label="Browse its cards in the archive" kind="ghost" height={40} style={{ alignSelf: 'flex-start', marginTop: 8 }} onPress={() => { playSfx('enterCardViewer'); leaveThroughSpares(() => router.push('/gallery')); }} />
+        </ScrollView>
+      );
+    } else if (cur) {
+      const s = expansionSummary(cur);
+      pane = (
+        <ScrollView contentContainerStyle={{ paddingLeft: 34, paddingTop: 22, paddingBottom: 30, gap: 22 }} showsVerticalScrollIndicator>
+          {metaForm === 'edit' ? (
+            <MetaFields initial={cur} onCancel={() => setMetaForm(null)} onSave={(m) => { void persist({ ...cur, ...m }); setMetaForm(null); }} />
+          ) : (
+            <View style={{ gap: 10 }}>
+              <Text style={{ color: DmRune.ivory, fontSize: 34, fontFamily: Display.black, letterSpacing: 1.2, textTransform: 'uppercase', overflowWrap: 'anywhere' } as object}>{cur.name}</Text>
+              <Text style={{ color: P.goldText, fontSize: 13, fontFamily: Body.bold, letterSpacing: 0.6 }}>by {cur.author || 'unknown'} · v{nextShareVersion(cur)} · {s.cardCount} card{s.cardCount === 1 ? '' : 's'}</Text>
+              {cur.description ? <Text style={{ color: P.muted, fontSize: 15, fontFamily: Body.regular, lineHeight: 22, maxWidth: 760 }}>{cur.description}</Text> : null}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                <View ref={addRef}><RuneButton dm label="Add card" kind="primary" height={42} style={{ minWidth: 160 }} onPress={() => menu(below(addRef.current), addMenu())} /></View>
+                <RuneButton dm label="Add cards from images" kind="secondary" height={42} onPress={() => void addCardsFromImages(cur)} />
+                <RuneButton dm label="Campaign settings" kind="secondary" height={42} onPress={() => { playSfx('buttonTap'); router.push(`/create?campaign=${cur.id}` as Href); }} />
+                <View>
+                  <RuneButton dm label={reportFor ? 'Hide the share report' : 'Share pack'} kind="secondary" height={42} onPress={() => { playSfx('buttonTap'); setReportFor(reportFor ? null : cur.cards); }} />
+                  {report && !report.ok ? <View pointerEvents="none" style={{ position: 'absolute', top: -5, right: -5 }}><WarningTriangle size={16} /></View> : null}
+                </View>
+                <RuneButton dm label="Edit details" kind="secondary" height={42} onPress={() => { playSfx('buttonTap'); setReportFor(null); setMetaForm('edit'); }} />
+                <RuneButton dm label="Delete" kind="ghost" height={42} onPress={() => setConfirmDeleteExp({ exp: cur, step: 1 })} />
+              </View>
+            </View>
+          )}
+          {reportFor ? (
+            <ShareReportDialog
+              inline
+              report={shareReport({ cards: reportFor })}
+              packName={cur.name}
+              onGoToCard={(cardId) => { const c = cur.cards.find((x) => x.id === cardId); setReportFor(null); if (c) edit(c); }}
+              onShare={() => { const cards = reportFor; setReportFor(null); packTools?.doShare(cards); }}
+              onClose={() => setReportFor(null)}
+            />
+          ) : null}
+          <DeskGallery
+            cards={cur.cards}
+            selected={deskSel}
+            onSelect={setDeskSel}
+            onEdit={edit}
+            onMenu={(c, at) => menu(at, cardMenu(c))}
+            onShare={shareCards}
+            onMove={(cs, at) => menu(at, { title: cs.length === 1 ? cs[0].title || 'Untitled card' : `${cs.length} cards`, icon: MENU_ICON.moveDeck, rows: sendRows(cs).map((r) => ({ ...r, gap: false })) })}
+            onDelete={(cs) => setConfirmDeleteCards(cs)}
+          />
+        </ScrollView>
+      );
+    } else {
+      pane = (
+        <ScrollView contentContainerStyle={{ paddingLeft: 34, paddingTop: 4, gap: 18 }}>
+          <ArchiveBanner onOpen={() => { playSfx('enterCardViewer'); leaveThroughSpares(() => router.push('/gallery')); }} />
+          <Text style={{ color: P.muted, fontSize: 15, fontFamily: Body.medium, lineHeight: 22, maxWidth: 680 }}>
+            Pick an expansion on the left to write its cards, or make a new one. Switching one off keeps it out of character creation without deleting anything.
+          </Text>
+        </ScrollView>
+      );
+    }
+
+    return (
+      <AppScreen
+        dm={dm}
+        title="Card library"
+        sideAnchor={LIB_LIST_W + 1}
+        onBack={() => leaveThroughSpares(() => { if (router.canGoBack()) router.back(); else { router.replace('/'); endLeave(); } })}
+        // The list has both of these; the header repeats them only where it has room to (the nav comes first).
+        headerRight={winW >= 1300 ? (
+          <>
+            <RuneButton dm={dm} label="Import a file" kind="secondary" height={38} onPress={onImport} />
+            <RuneButton dm={dm} label="New expansion" kind="primary" height={38} onPress={() => { setSelectedId(null); setEditingCard(null); setMetaForm('new'); }} />
+          </>
+        ) : undefined}>
+        <View style={{ flex: 1, flexDirection: 'row' }}>
+          <View style={{ width: LIB_LIST_W, paddingRight: 18, borderRightWidth: 1, borderRightColor: 'rgba(218,162,73,0.22)' }}>
+            <LibraryList
+              official={official}
+              custom={custom}
+              selectedId={metaForm === 'new' ? null : cur?.id ?? null}
+              creating={metaForm === 'new'}
+              isOn={isOn}
+              countOf={countOf}
+              toggle={(e) => <ExpansionToggle on={isOn(e)} onToggle={() => toggleExpansion(e, !isOn(e))} />}
+              onSelect={pick}
+              onMenu={(e, at) => menu(at, packMenu(e))}
+              onArchive={() => { playSfx('enterCardViewer'); leaveThroughSpares(() => router.push('/gallery')); }}
+              onNew={() => { setSelectedId(null); setEditingCard(null); setMetaForm('new'); }}
+              onImport={onImport}
+            />
+          </View>
+          <View nativeID="lib-pane" style={{ flex: 1, minWidth: 0 }}>{pane}</View>
+        </View>
+
+        {deskMenu ? <PageMenu at={deskMenu.at} menu={deskMenu.spec} onClose={() => setDeskMenu(null)} /> : null}
+        {confirmDeleteCards.length && cur ? (
+          <PopupDialog
+            title={confirmDeleteCards.length === 1 ? 'Delete card?' : `Delete ${confirmDeleteCards.length} cards?`}
+            body={confirmDeleteCards.length === 1
+              ? `"${confirmDeleteCards[0].title || 'Untitled'}" will be removed from this expansion.`
+              : 'They will be removed from this expansion. Anything that pointed at them keeps its own text.'}
+            confirmLabel="Delete"
+            destructive
+            onConfirm={() => {
+              const gone = new Set(confirmDeleteCards.map((c) => c.id));
+              void persist({ ...cur, cards: cur.cards.filter((c) => !gone.has(c.id)) });
+              setConfirmDeleteCards([]);
+              setDeskSel(new Set());
+            }}
+            onCancel={() => setConfirmDeleteCards([])} />
+        ) : null}
+        {nfcSend ? <NfcSendModal content={nfcSend.content} label={nfcSend.label} onClose={() => setNfcSend(null)} /> : null}
+        {message ? <PopupDialog title={message.title} body={message.body} confirmLabel="OK" onConfirm={() => setMessage(null)} onCancel={() => setMessage(null)} /> : null}
+        {confirmDeleteExp?.step === 1 ? (
+          <PopupDialog
+            dm
+            destructive
+            title={`Delete ${confirmDeleteExp.exp.name}?`}
+            body={`All ${confirmDeleteExp.exp.cards.length} of its cards go with it. Characters already built with them keep their copies, and any file you have exported is untouched.`}
+            confirmLabel="Delete"
+            onConfirm={() => setConfirmDeleteExp({ exp: confirmDeleteExp.exp, step: 2 })}
+            onCancel={() => setConfirmDeleteExp(null)}
+          />
+        ) : confirmDeleteExp?.step === 2 ? (
+          <PopupDialog
+            dm
+            destructive
+            title="THIS CANNOT BE UNDONE"
+            body={`DELETE ${confirmDeleteExp.exp.name.toUpperCase()} AND ALL ${confirmDeleteExp.exp.cards.length} OF ITS CARDS?`}
+            confirmLabel="DELETE IT"
+            cancelLabel="KEEP IT"
+            onConfirm={() => {
+              const id = confirmDeleteExp.exp.id;
+              setConfirmDeleteExp(null);
+              setSelectedId(null);
+              setEditingCard(null);
+              if (isOfficialExpansion(id)) return; // a bundled pack is never deleted, only switched off
+              void deleteExpansion(id).then(reload).then(() => showToast(`${confirmDeleteExp.exp.name} deleted`, 'success'));
+            }}
+            onCancel={() => setConfirmDeleteExp(null)}
+          />
+        ) : null}
+      </AppScreen>
+    );
+  }
+
   // ---- card editor overlay (author/edit a card inside the selected expansion) ----
+  // Desktop (v0.50.5): the same editor, drawn in the pane beside the list instead of over the screen.
+  let editorEl: React.ReactElement | null = null;
   if (editingCard && selected) {
     const existing = typeof editingCard.index === 'number' ? selected.cards[editingCard.index] : undefined;
     const cfg = editingCard.config;
@@ -1314,8 +1640,13 @@ export function LibraryScreen() {
       customType: cfg.customType,
       fullImage: d.fullImage,
     });
-    return (
+    editorEl = (
       <CardEditor
+        key={existing?.id ?? `new-${cfg.contentType}`}
+        inline={desktop}
+        backRef={editorBack}
+        // v0.50.5 (owner): a class's banner is set on the class card itself.
+        banner={cfg.contentType === 'class' && cfg.classSpec?.role !== 'page'}
         kindLabel={cfg.typeLabel || CONTENT_TYPE_LABEL[cfg.contentType]}
         previewSubtitle={cfg.contentType === 'subclass' ? SUBCLASS_TIER_LABEL[cfg.tier ?? 1] : undefined}
         initial={initial}
@@ -1419,7 +1750,7 @@ export function LibraryScreen() {
               {/* What to do NEXT, which is the only thing an author needs from this box. */}
               <Text style={{ color: Rune.sheet, fontSize: 11.5, fontFamily: Body.regular, lineHeight: 16 }}>
                 {cfg.contentType === 'class'
-                  ? 'Give it a name and a chip. Then add Class info cards for the pages players read: the first one you write decides the look of the rest.'
+                  ? 'Give it a name, a chip and a banner. Then add Class info cards for the pages players read: they wear the banner, and the first one you write decides their colour.'
                   : cfg.contentType === 'customDomain'
                     ? 'Give it a name and a chip. Then write Domain cards in this pack and set each one\u2019s domain to this.'
                     : 'Give it a name and a chip. Then use Add card, where this type is offered by name, to write its cards.'}
@@ -1548,13 +1879,14 @@ export function LibraryScreen() {
         }}
       />
     );
+    if (!desktop) return editorEl;
   }
 
   // ---- official expansion detail (read-only) ----
   // v0.12.2: bundled expansions (The Void) are read-only — name/author/description + card count + the
   // global enable toggle only. No edit/share/add/delete, no editable card list. Their cards live in the
   // catalog (the record's own `cards` is empty), so the count comes from there.
-  if (selected && (selected.official || isOfficialExpansion(selected.id))) {
+  if (!desktop && selected && (selected.official || isOfficialExpansion(selected.id))) {
     const cardCount = expansionCardCount(selected);
     const on = isEnabledForCreation(selected);
     return (
@@ -1577,7 +1909,8 @@ export function LibraryScreen() {
   }
 
   // ---- expansion detail ----
-  if (selected) {
+  let packTools: { report: ReturnType<typeof shareReport>; share: (cards: LibraryCard[]) => void; doShare: (cards: LibraryCard[]) => void } | null = null;
+  if (selected && !(selected.official || isOfficialExpansion(selected.id))) {
     const s = expansionSummary(selected);
     /** What is stopping this pack from being shared. One answer, used by the badge and the dialog. */
     const report = shareReport(selected);
@@ -1628,7 +1961,8 @@ export function LibraryScreen() {
       if (!canSharePack(pack)) { setReportFor(cards); return; }
       doShare(cards);
     };
-    return (
+    packTools = { report, share, doShare };
+    if (!desktop) return (
       <AppScreen dm={dm} desktopMaxWidth={880} title={selected.name} onBack={() => setSelectedId(null)}>
         <View style={{ flex: 1, gap: Gap.group }}>
           <View style={{ gap: Gap.intra }}>
@@ -1818,7 +2152,7 @@ export function LibraryScreen() {
                       <Text style={{ fontFamily: Body.bold }}>Class card</Text>: starts the class. A name and a chip, plus its numbers, domains and starting items. Nobody ever holds one.
                     </Text>
                     <Text style={{ color: Rune.sheet, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14.5 }}>
-                      <Text style={{ fontFamily: Body.bold }}>Class info card</Text>: a page a player actually reads. Write as many as the class needs; the FIRST one decides the look of the rest.
+                      <Text style={{ fontFamily: Body.bold }}>Class info card</Text>: a page a player actually reads. Write as many as the class needs; they wear the class card&apos;s banner, and the FIRST one decides their colour.
                     </Text>
                     <Text style={{ color: Rune.sheet, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14.5 }}>
                       <Text style={{ fontFamily: Body.bold }}>Feature card</Text>: optional, a card of its own in the player&apos;s arsenal. The only kind that carries counters, dice and switches.
@@ -1846,7 +2180,7 @@ export function LibraryScreen() {
                   <ChamferBox chamfer={8} fill="rgba(20,24,31,0.85)" stroke={Rune.goldEdge} strokeWidth={1.2} style={{ padding: 11, gap: 4 }}>
                     <Text style={{ color: Rune.ivory, fontSize: 14.5, fontFamily: Body.bold }}>A class info card</Text>
                     <Text style={{ color: Rune.muted, fontSize: 10.5, fontFamily: Body.regular, lineHeight: 14 }}>
-                      A page players read, for a class that already exists, yours or one from the base game. It takes that class&apos;s name and chip, and the first one you write sets the banner and colour for all of them.
+                      A page players read, for a class that already exists, yours or one from the base game. It takes that class&apos;s name, chip and banner, and the first one you write sets the colour for all of them.
                     </Text>
                   </ChamferBox>
                 </Pressable>
@@ -2011,6 +2345,7 @@ export function LibraryScreen() {
   // player's authored/received expansions follow under "My expansions".
   const officialExps = expansions.filter((e) => e.official === true);
   const customExps = expansions.filter((e) => !e.official);
+  if (desktop) return deskPage();
   return (
     <AppScreen
       dm={dm}

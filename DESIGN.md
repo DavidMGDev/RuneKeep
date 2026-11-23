@@ -454,3 +454,19 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
 - Sticky notes alone in a selection are moved, never rolled: Reposition brings them out onto the open felt, Put back
   deletes them. A pinned note is never selected, only clicked.
 - A delete asks over the whole window on desktop, never inside the sidebar. The table menu has Reset and no Clear.
+
+## v0.50.5: the card library is a desktop page
+
+- The campaigns page's shape (`features/library/desktop-library`): the packs in a 380px list down the left (the
+  archive, official packs, yours, New expansion, Import a file), and the pane beside it is what is being worked on.
+  A pack's details are written where they are read; its share report opens under its header.
+- A chain of pop-ups on the phone is one menu on desktop. Add card is the table's menu (`PageMenu` over the page):
+  Class, Subclass and Feature open submenus of classes, and what the phone explained first time is the submenu's
+  line. A card's right click holds what a hold did: edit, share, select, move to or copy to another pack, delete.
+  Ctrl or Shift and a click selects; a bar over the grid acts on the selection. Every card shows, no pages.
+- The card editor is drawn in the pane (`CardEditor inline`): the card on the left at 1.3x, its fields beside it,
+  stacked when the pane is under 820px. Escape and Back go through the editor's own guard, from a field too.
+- A class's banner is set on the class card (`banner`). A page's own picture wins, then the class card's banner,
+  then the first page's. A character holding the class takes a banner its copy lacks from the installed pack.
+- Only what guards something that cannot be got back still asks (deleting a pack, deleting cards). Phones and
+  tablets keep their screens unchanged, apart from the class card's banner control.

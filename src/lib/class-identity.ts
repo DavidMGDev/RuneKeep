@@ -75,7 +75,7 @@ export function classIdentityFor(cards: LibraryCard[] | undefined, className: st
     return {
       title: (base?.title ?? firstInfo?.className ?? '').trim(),
       color: firstInfo?.color ?? base?.color ?? null,
-      imageUri: firstInfo?.imageUri || base?.imageUri || null,
+      imageUri: base?.imageUri || firstInfo?.imageUri || null, // the class card's banner first (v0.50.5)
       key: undefined,
     };
   }
