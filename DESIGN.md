@@ -439,3 +439,18 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   time (the phone's tray, the desktop's table), and then the whole rest is applied at once (`rollRest`).
 - Anything needing a roll's answer asks the roller through `DiceTrayHandle.rollFor`. Never roll a number out of
   sight: the face that is applied is the one that landed.
+
+## v0.50.4: what is physical reads at a glance
+
+- Only a physical card is ever turned, and only by physics. A card lying still stands upright with a size grip; a
+  physical one has no grips at all. There is no rotate grip.
+- A live card (a counter, gold, a tracker) works where it lies on the felt, not only in View. A press on its own
+  control is the control's; anywhere else on the card still drags it.
+- A Hope and Fear pair is one thing: put either away and both go. A d20 can be thrown as either side, with a d12 of
+  the other, and is then a pair like any other (its result, its critical).
+- Preset rolls leap and spin like the Roll button's, but thrown across to the middle, still rolling as they land.
+- Re-arrange holds a hand card up, ringed in gold, and it takes the place nearest the pointer as the rest slide aside.
+  A click keeps the order, Escape or a right click undoes it. The wheel still turns the hand under it.
+- Sticky notes alone in a selection are moved, never rolled: Reposition brings them out onto the open felt, Put back
+  deletes them. A pinned note is never selected, only clicked.
+- A delete asks over the whole window on desktop, never inside the sidebar. The table menu has Reset and no Clear.

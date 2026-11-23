@@ -1,7 +1,8 @@
 /**
  * Cards laid on the felt (v0.47.0). A copy of a deck card, placed where it was dropped: drag it to move it, pull
  * the grip at its corner to make it bigger or smaller (between MIN_W and a cap that keeps it on the table), click
- * a card with pages to turn them, and drag it back into the card tray to put it away.
+ * a card with pages to turn them, and drag it back into the card tray to put it away. Only a physical card is ever
+ * turned, and only by physics; it has no size grip either (v0.50.4).
  *
  * Copies only: the card stays in its deck, and nothing here touches the character file.
  */
@@ -76,7 +77,6 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, on
             onMove={(fx, fy, over) => { setReturning(over ? c.uid : null); onChange(c.uid, () => ({ fx, fy })); }}
             onDrop={(over) => { setReturning(null); if (over) onReturn(c.uid); }}
             onResize={(w) => onChange(c.uid, () => ({ w }))}
-            onRotate={(rot) => onChange(c.uid, () => ({ rot }))}
             onTurn={() => onChange(c.uid, (x) => ({ face: ((x.face ?? 0) + 1) % (card.faces?.length || 1) }))}
             // A note has no hand to go back to.
             overTray={card.h ? NEVER : overTray}
@@ -92,20 +92,21 @@ export function BoardCards({ cards, lookup, feltW, feltH, onChange, onReturn, on
 
 const NEVER = () => false;
 
-const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live, onGrab, onLift, onCarry, onSettle, onDragTo, onMove, onDrop, onResize, onRotate, onTurn, onTap, onUnpin, overTray, onMenu }: {
+const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live, onGrab, onLift, onCarry, onSettle, onDragTo, onMove, onDrop, onResize, onTurn, onTap, onUnpin, overTray, onMenu }: {
   entry: BoardCard; card: TableCard; feltW: number; feltH: number; returning: boolean; live?: Map<string, { x: number; y: number; rot: number }>;
   onGrab: () => void; onLift: () => void; onCarry: (dx: number, dy: number) => void; onSettle: () => void; onDragTo: (x: number, y: number, rot: number, end?: boolean) => void; onMove: (fx: number, fy: number, overTray: boolean) => void; onDrop: (overTray: boolean) => void;
-  onResize: (w: number) => void; onRotate: (deg: number) => void; onTurn: () => void; onTap: () => void; onUnpin?: () => void; overTray: (x: number, y: number) => boolean; onMenu: (x: number, y: number) => void;
+  onResize: (w: number) => void; onTurn: () => void; onTap: () => void; onUnpin?: () => void; overTray: (x: number, y: number) => boolean; onMenu: (x: number, y: number) => void;
 }) {
   const [hover, setHover] = useState(false);
-  const [drag, setDrag] = useState<'move' | 'size' | 'turn' | null>(null);
+  const [drag, setDrag] = useState<'move' | 'size' | null>(null);
   // A physical card is drawn where physics has it, so a re-render never snaps it back to where it last stopped.
   const lp = live?.get(entry.uid);
   const poseNow = () => {
     const p = live?.get(entry.uid);
-    return p ? { cx: p.x, cy: p.y, rot: p.rot } : { cx: entry.fx * feltW, cy: entry.fy * feltH, rot: entry.rot ?? 0 };
+    return p ? { cx: p.x, cy: p.y, rot: p.rot } : { cx: entry.fx * feltW, cy: entry.fy * feltH, rot };
   };
-  const rot = lp ? lp.rot : entry.rot ?? 0;
+  // Only a physical card is ever turned (owner, v0.50.4): an upright card is one lying still, at a glance.
+  const rot = lp ? lp.rot : entry.phys ? entry.rot ?? 0 : 0;
   const [born, setBorn] = useState(false);
   useEffect(() => { const id = requestAnimationFrame(() => setBorn(true)); return () => cancelAnimationFrame(id); }, []);
   const w = Math.min(maxW(feltH), Math.max(MIN_W, entry.w));
@@ -115,48 +116,10 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
   const ref = useRef<HTMLDivElement>(null);
   const pages = card.faces?.length ?? 0;
 
-  /**
-   * The rotate grip (owner, v0.47.1): a click turns the card a quarter, a drag turns it freely (snapping to every
-   * 15 degrees when it passes close to one).
-   */
-  const turnStart = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    e.preventDefault();
-    onGrab();
-    // Where the card is right now: a physical card still sliding is wherever physics has it, not where the page
-    // last drew it (owner, v0.47.7: grabbing one mid-flight teleported it back).
-    const { cx, cy, rot } = poseNow();
-    const el = ref.current?.parentElement;
-    if (!el) return;
-    const felt = el.getBoundingClientRect();
-    const cxs = felt.left + cx, cys = felt.top + cy;
-    const a0 = Math.atan2(e.clientY - cys, e.clientX - cxs);
-    const sx = e.clientX, sy = e.clientY;
-    let moved = false;
-    const move = (m: PointerEvent) => {
-      if (!moved && Math.hypot(m.clientX - sx, m.clientY - sy) < 4) return;
-      if (!moved) { moved = true; setDrag('turn'); }
-      let deg = rot + ((Math.atan2(m.clientY - cys, m.clientX - cxs) - a0) * 180) / Math.PI;
-      const snap = Math.round(deg / 15) * 15;
-      if (Math.abs(deg - snap) < 4) deg = snap;
-      onRotate(Math.round(((deg % 360) + 360) % 360));
-    };
-    const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', up);
-      setDrag(null);
-      // A click puts the card back upright (owner, v0.47.2); a drag turns it.
-      if (!moved) { cue('card:place', 'cardDragEnd', { volume: 0.5 }); onRotate(0); }
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', up);
-  };
-
   const start = (e: React.PointerEvent, mode: 'move' | 'size') => {
     if (e.button !== 0) return;
+    // A press on a live card's own control (a counter's plus) is the control's, not a drag (Koy, v0.50.4).
+    if (card.live && (e.target as HTMLElement).closest?.('[tabindex], button, input, textarea')) return;
     e.stopPropagation();
     e.preventDefault();
     onGrab();
@@ -230,14 +193,14 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
         cursor: drag === 'move' ? 'grabbing' : 'grab', touchAction: 'none',
         transform: `rotate(${rot + (drag === 'move' ? -1.2 : 0)}deg) scale(${scale})`,
         opacity: returning ? 0.45 : born ? 1 : 0,
-        transition: drag === 'turn' ? 'none' : drag ? `transform 140ms ${T.ease}, opacity 140ms` : `transform 220ms ${T.ease}, opacity 180ms, left 0ms, top 0ms`,
+        transition: drag ? `transform 140ms ${T.ease}, opacity 140ms` : `transform 220ms ${T.ease}, opacity 180ms, left 0ms, top 0ms`,
         boxShadow: drag === 'move' ? '0 22px 44px rgba(0,0,0,0.6)' : '0 8px 22px rgba(0,0,0,0.5)',
         zIndex: drag ? 5 : undefined,
       }}>
       {/* The picture is drawn at the card's own size and scaled, so it is sharp at any width. */}
-      <div style={{ width: FORGED_W, height: card.h ?? FORGED_H, transform: `scale(${w / FORGED_W})`, transformOrigin: '0 0', pointerEvents: 'none', position: 'relative' }}>
-        <CardFace card={card} hiRes={w > 150 || hover} face={entry.face ?? 0} />
-        {card.overlay ? <div style={{ position: 'absolute', inset: 0 }}>{card.overlay}</div> : null}
+      <div style={{ width: FORGED_W, height: card.h ?? FORGED_H, transform: `scale(${w / FORGED_W})`, transformOrigin: '0 0', pointerEvents: card.live ? 'auto' : 'none', position: 'relative' }}>
+        {card.live ?? <CardFace card={card} hiRes={w > 150 || hover} face={entry.face ?? 0} />}
+        {card.overlay ? <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>{card.overlay}</div> : null}
       </div>
       {pages > 1 ? (
         <div style={{ position: 'absolute', bottom: -16, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 5, pointerEvents: 'none' }}>
@@ -252,19 +215,8 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
           <span style={{ width: 8, height: 8, boxSizing: 'border-box', transform: 'rotate(45deg)', background: T.red, border: `1px solid ${T.ink}` }} />
         </button>
       ) : null}
-      {/* The rotate grip: click for a quarter turn, drag to turn freely. */}
-      <div
-        data-grip=""
-        onPointerDown={turnStart}
-        title="Drag to rotate, click to stand it upright"
-        style={{ position: 'absolute', left: -11, top: -11, width: 24, height: 24, cursor: 'grab', opacity: hover || drag === 'turn' ? 1 : 0, transition: 'opacity 140ms', touchAction: 'none' }}>
-        <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
-          <polygon points="12,1 23,12 12,23 1,12" fill={T.panel} stroke={T.gold} strokeWidth="1.4" />
-          <path d="M15.6 12a3.6 3.6 0 1 1-1.05-2.55M15.8 7.8v2.4h-2.4" stroke={T.goldText} strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </div>
-      {/* The size grip: pull out to grow, in to shrink. */}
-      <div
+      {/* The size grip: pull out to grow, in to shrink. A physical card has none: physics, not a grip, moves it. */}
+      {entry.phys ? null : <div
         data-grip=""
         onPointerDown={(e) => start(e, 'size')}
         title="Drag to resize, click for the normal size"
@@ -273,7 +225,7 @@ const Placed = memo(function Placed({ entry, card, feltW, feltH, returning, live
           <polygon points="12,1 23,12 12,23 1,12" fill={T.panel} stroke={T.gold} strokeWidth="1.4" />
           <path d="M8.5 15.5 15.5 8.5M15.5 8.5h-4M15.5 8.5v4M8.5 15.5h4M8.5 15.5v-4" stroke={T.goldText} strokeWidth="1.4" fill="none" strokeLinecap="round" />
         </svg>
-      </div>
+      </div>}
     </div>
   );
 });

@@ -233,6 +233,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       source: c.source,
       faces: c.faces,
       custom: c.live && !c.faces ? <View style={{ width: FORGED_W, height: FORGED_H }} pointerEvents="none">{c.live}</View> : undefined,
+      live: c.interactive && c.live && !c.faces ? <View style={{ width: FORGED_W, height: FORGED_H }}>{c.live}</View> : undefined,
       overlay: on || tokens?.length || cross ? (
         <>
           {tokens?.length ? <View style={StyleSheet.absoluteFill}><BakedTokenLayer tokens={tokens} cardW={FORGED_W} cardH={FORGED_H} /></View> : null}
@@ -244,6 +245,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     };
   }, [ctx.cardTokens, ctx.crossOuts, ctx.enabledIds, ctx.cardStates]);
   const cards = useMemo(() => deck.map((c) => toCard(c)), [deck, toCard]);
+  /** A card being re-arranged in the hand (owner, v0.50.4), and the order as it stands while it moves. */
+  const [arranging, setArranging] = useState<{ id: string; order: string[] } | null>(null);
+  const handCards = useMemo(() => {
+    if (!arranging) return cards;
+    const byId = new Map(cards.map((c) => [c.id, c]));
+    return arranging.order.flatMap((id) => byId.get(id) ?? []);
+  }, [cards, arranging]);
   const allById = useMemo(() => {
     const m = new Map<string, CardItem>();
     for (const list of Object.values(decks)) for (const c of list ?? []) if (!m.has(c.id)) m.set(c.id, c);
@@ -457,7 +465,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   };
   const cardPoses = useMemo<CardPose[]>(() => [...board.map((b) => {
     const { w, h } = sizeOf(b);
-    return { key: `card:${b.uid}`, x: b.fx * tableW, y: b.fy * tableH, w, h, rot: b.rot ?? 0, phys: !!b.phys };
+    return { key: `card:${b.uid}`, x: b.fx * tableW, y: b.fy * tableH, w, h, rot: b.phys ? b.rot ?? 0 : 0, phys: !!b.phys };
   }), ...scraps.filter((c) => !c.fading).map((c) => {
     const sh = scrapShape(c.poly), h = (c.w * naturalH(c.id)) / FORGED_W;
     return { key: `card:${c.uid}`, x: c.x, y: c.y, w: ((sh.x1 - sh.x0) / 100) * c.w, h: ((sh.y1 - sh.y0) / 100) * h, rot: c.rot, phys: true };
@@ -1548,6 +1556,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const p = livePoses.get(id);
     livePoses.delete(id);
     setNotes(editNote(noteNow.current, id, pinned ? { phys: false, rot: 0, ...(p ? { fx: p.x / tableW, fy: p.y / tableH } : {}) } : { phys: true }));
+    // A pinned note is only ever clicked, never selected (owner, v0.50.4).
+    if (pinned && selection.includes(`card:${id}`)) { const rest = selection.filter((k) => k !== `card:${id}`); diceRef.current?.select(rest); setSelection(rest); }
     cue('card:physical', 'cardSelect', { volume: 0.6 });
   };
   const tornNotes = noteList.filter((n) => n.torn).length;
@@ -1929,6 +1939,19 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const putBack = (keys: string[]) => {
     diceRef.current?.putAway([...new Set(keys.filter((x) => /^(free|roll):/.test(x)).map(baseOf))]);
     fadeScraps(keys.filter((x) => x.startsWith('card:scrap:')).map((x) => x.slice(5)));
+    // A sticky note has nowhere to go back to: putting it back deletes it (owner, v0.50.4).
+    const gone = keys.filter((x) => x.startsWith('card:') && isNoteId(x.slice(5))).map((x) => x.slice(5));
+    if (gone.length) {
+      for (const id of gone) { for (const t of ctx.cardTokens[id] ?? []) ctx.removeToken(id, t.id); livePoses.delete(id); }
+      setNotes(noteNow.current.filter((n) => !gone.includes(n.id)));
+      cue('ui:delete', 'tokenRemove', { volume: 0.6 });
+    }
+  };
+  /** Selected notes fly back out onto the open felt, where a new note lands (owner, v0.50.4: one stuck under the hand). */
+  const reposition = (keys: string[]) => {
+    const eng = diceRef.current?.engine();
+    keys.forEach((k, i) => eng?.home(k, tableW * 0.5 + ((i % 5) - 2) * 54, (openTop + openBottom) * 0.5 + ((i % 3) - 1) * 40));
+    cue('card:place', 'cardDragEnd', { volume: 0.6 });
   };
   const putBackRef = useRef(putBack);
   putBackRef.current = putBack;
@@ -2125,7 +2148,6 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
         : []),
       { label: 'Bring back torn notes', icon: MENU_ICON.mend, gap: true, value: String(tornNotes), hidden: !tornNotes, onPress: mendTorn },
       { label: 'Reset the table', icon: MENU_ICON.reset, gap: !tornNotes, onPress: resetAll },
-      { label: 'Clear the whole table', icon: MENU_ICON.clear, danger: true, onPress: clearAll, confirm: { title: 'Clear the whole table?', body: 'Every loose die, token, scrap, drawn card and card copy comes off, and effects end. Your decks, notes and counters stay.', verb: 'Clear the table' } },
       { label: 'Table settings', icon: MENU_ICON.settings, gap: true, hidden: playground, onPress: () => setSettings(true) },
     ] };
   };
@@ -2167,10 +2189,28 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       return { title: `${name} token`, icon: MENU_ICON.token, rows: [away, ...many] };
     }
     const duality = piece.die === 'duality';
+    /**
+     * A d20 thrown as one side of Hope and Fear (owner, v0.50.4): a d12 of the other side comes with it, and the two are
+     * a pair like any other, its result, its critical and all. The d20 is thrown again from where it lies.
+     */
+    const asPair = (side: 'hope' | 'fear') => () => {
+      const at = diceRef.current?.engine()?.state(piece.key);
+      if (piece.key.startsWith('free:')) setLoose(looseRef.current.filter((t) => t.key !== base));
+      rollFrom.current = at ? { x: at.x, y: at.y } : null;
+      const pairId = poolId();
+      void throwPool([{ id: poolId(), type: 'd20', value: null, side, pairId }, { id: poolId(), type: 'd12', value: null, side: side === 'hope' ? 'fear' : 'hope', pairId }], { label: null, value: 0 });
+    };
     return {
       title: duality ? 'Hope and Fear' : piece.die, icon: DIE_ICON[piece.die],
       detail: piece.value === undefined ? undefined : `Shows ${duality && piece.value2 !== undefined ? `${piece.value} and ${piece.value2}` : piece.value}`,
-      rows: [{ label: duality ? 'Roll these dice' : `Roll this ${piece.die}`, icon: DIE_ICON[piece.die], onPress: () => diceRef.current?.rollPiece(piece.key) }, away, ...many],
+      rows: [
+        { label: duality ? 'Roll these dice' : `Roll this ${piece.die}`, icon: DIE_ICON[piece.die], onPress: () => diceRef.current?.rollPiece(piece.key) },
+        ...(piece.die === 'd20' ? [
+          { label: 'Roll as Hope die', icon: DIE_ICON.duality, onPress: asPair('hope') },
+          { label: 'Roll as Fear die', icon: DIE_ICON.duality, onPress: asPair('fear') },
+        ] : []),
+        away, ...many,
+      ],
     };
   };
   /** The corner buttons folded away (owner, v0.47.17), remembered in this browser. */
@@ -2429,7 +2469,19 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
             {deck.length === 0 ? (
               <div style={{ position: 'absolute', left: 0, right: 0, top: '45%', textAlign: 'center', color: T.muted, fontFamily: T.medium, fontSize: 14 }}>{dm?.emptyDeck ?? 'Nothing in this deck yet. Add a card from the sheet.'}</div>
             ) : (
-              <DeskCarousel key={category} ref={carRef} cards={cards} look={look} initialIndex={middle} onCentre={onCentre} onCentreClick={onCentreClick} takenId={copy?.card.id} heldId={menu && !menu.board ? menu.id : undefined} />
+              <DeskCarousel key={category} ref={carRef} cards={handCards} look={look} initialIndex={middle} onCentre={onCentre} onCentreClick={onCentreClick} takenId={copy?.card.id} heldId={menu && !menu.board ? menu.id : undefined}
+                arranging={arranging?.id}
+                onArrange={(to) => {
+                  cue('hand:scroll', 'carouselScroll', { volume: 0.5 });
+                  setArranging((a) => { if (!a) return a; const order = a.order.filter((x) => x !== a.id); order.splice(to, 0, a.id); return { ...a, order }; });
+                }}
+                onArrangeEnd={(keep) => {
+                  const a = arranging;
+                  setArranging(null);
+                  if (!a) return;
+                  const before = deck.map((c) => c.id);
+                  if (keep && a.order.join() !== before.join()) { cue('card:place', 'cardDragEnd'); ctx.onReorderCards?.([a.id], category, a.order); } else cue('ui:close', 'floatMenuClose');
+                }} />
             )}
           </div>
         )}
@@ -2580,6 +2632,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               cue('ui:confirm', 'cardSelect', { volume: 0.6 });
             }}
             onPutBack={() => { putBack(selection); clearSelection(); }}
+            onReposition={selection.every((k) => k.startsWith('card:') && isNoteId(k.slice(5))) ? () => reposition(selection) : undefined}
             onClear={clearSelection} />
         ) : null}
 
@@ -2748,7 +2801,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
               const card = lookup(menu.id);
               if (el && r && card) takeCopy(card, el.getBoundingClientRect(), { x: r.left + menu.x, y: r.top + menu.y });
             }}
-            throwIt={menu.board || spread ? undefined : () => throwCopy(menu.id)} />
+            throwIt={menu.board || spread ? undefined : () => throwCopy(menu.id)}
+            arrange={menu.board || !canReorder ? undefined : () => { cue('card:lift', 'cardDragStart', { volume: 0.6 }); setArranging({ id: menu.id, order: deck.map((c) => c.id) }); }} />
         ) : null}
       </div>
       {result ? <RollPopup key={result.dice.map((d) => d.id).join()} result={result} top={plaqueTop} minWidth={barOn ? barBox.w : undefined} box={{ left: winW - tableW, top: 0, width: tableW, height: tableH }} onAccept={() => { cue('ui:tap', 'buttonTap'); setResult(null); }} /> : null}
@@ -2810,7 +2864,7 @@ function CornerButton({ glyph, label, onPress, active, disabled, count }: { glyp
 }
 
 /** What can be done with selected pieces: roll the dice among them, keep them as a preset, put them back. */
-function SelectionBar({ x, y, count, types, onRoll, canSave, onSave, onPutBack, onClear, mod, onMod, resolve, cardVars }: { x: number; y: number; count: number; types: DieType[]; onRoll: (power: number, burning: boolean) => void; canSave: boolean; onSave: (name: string) => void; onPutBack: () => void; onClear: () => void; mod: PresetModifier | null; onMod: (m: PresetModifier | null) => void; resolve?: (m?: PresetModifier) => number; cardVars: FunctionVar[] }) {
+function SelectionBar({ x, y, count, types, onRoll, canSave, onSave, onPutBack, onReposition, onClear, mod, onMod, resolve, cardVars }: { x: number; y: number; count: number; types: DieType[]; onRoll: (power: number, burning: boolean) => void; canSave: boolean; onSave: (name: string) => void; onPutBack: () => void; /** Only sticky notes are selected: they are moved, not rolled. */ onReposition?: () => void; onClear: () => void; mod: PresetModifier | null; onMod: (m: PresetModifier | null) => void; resolve?: (m?: PresetModifier) => number; cardVars: FunctionVar[] }) {
   const [modsOpen, setModsOpen] = useState(false);
   const total = mod && hasModifier(mod) ? resolve?.(mod) ?? mod.value : 0;
   const [naming, setNaming] = useState(false);
@@ -2827,6 +2881,11 @@ function SelectionBar({ x, y, count, types, onRoll, canSave, onSave, onPutBack, 
             <input autoFocus value={name} maxLength={24} placeholder="Name the preset" aria-label="Name the preset" onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') save(); if (e.key === 'Escape') setNaming(false); }}
               style={{ all: 'unset', width: 150, height: 30, padding: '0 9px', background: T.panel, border: `1px solid ${T.goldSoft}`, color: T.ivory, fontFamily: T.medium, fontSize: 14, caretColor: T.red }} />
             <TButton label="Save" h={32} disabled={!name.trim()} onPress={save} />
+          </>
+        ) : onReposition ? (
+          <>
+            <TButton label="Reposition" h={32} title="Bring the notes back out onto the open table" onPress={onReposition} />
+            <TButton label="Put back" h={32} title="Delete the selected notes" onPress={onPutBack} />
           </>
         ) : (
           <>
@@ -3144,7 +3203,7 @@ function CardViewer({ card, live, from, closing, onClose, onGone }: { card: Tabl
  * A card on the felt is a copy of one, so it has all but what files or deletes the original; in the laid-out hand a
  * card is the card itself and has everything.
  */
-function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, throwIt, spread, physical, onPhysical, view, editCard, file }: { id: string; x: number; y: number; tableW: number; tableH: number; onClose: () => void; board?: () => void; place?: () => void; throwIt?: () => void; /** Read it large, the table dimmed behind it (v0.47.17). */ view?: () => void; spread: boolean; physical?: boolean; onPhysical?: () => void; editCard?: CardEditing; file?: CharacterFile }) {
+function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, throwIt, arrange, spread, physical, onPhysical, view, editCard, file }: { id: string; x: number; y: number; tableW: number; tableH: number; onClose: () => void; board?: () => void; place?: () => void; throwIt?: () => void; /** Pick it up and move it along the hand (owner, v0.50.4). */ arrange?: () => void; /** Read it large, the table dimmed behind it (v0.47.17). */ view?: () => void; spread: boolean; physical?: boolean; onPhysical?: () => void; editCard?: CardEditing; file?: CharacterFile }) {
   const ctx = useTableHost();
   const item = Object.values(ctx.decks).flat().find((c) => c?.id === id);
   if (!item) return null;
@@ -3159,6 +3218,7 @@ function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, throwIt, sp
     ...(view ? [{ label: 'View', icon: MENU_ICON.view, quick: true, gap: true, onPress: view }] : []),
     ...(place ? [{ label: 'Place a copy', short: 'Place copy', icon: MENU_ICON.layCopy, quick: true, onPress: place }] : []),
     ...(throwIt ? [{ label: 'Throw a copy', short: 'Throw', icon: MENU_ICON.throwCopy, quick: true, onPress: throwIt }] : []),
+    ...(arrange ? [{ label: 'Re-arrange', icon: MENU_ICON.sort, quick: true, onPress: arrange }] : []),
     ...(onPhysical && (board || spread) ? [physical
       ? { label: 'Stop its physics', short: 'Stop physics', icon: MENU_ICON.still, quick: true, onPress: onPhysical }
       : { label: 'Make it physical', short: 'Make physical', icon: MENU_ICON.physics, quick: true, onPress: onPhysical }] : []),

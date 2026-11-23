@@ -698,7 +698,8 @@ export function MoveSheet({ count, ids, decks, ordered, customCategories, onMove
 
 export function Confirm({ title, body, confirmLabel, onConfirm, onCancel }: { title: string; body: string; confirmLabel: string; onConfirm: () => void; onCancel: () => void }) {
   return (
-    <CenterDialog onClose={onCancel} zIndex={10005}>
+    // A delete covers the whole window on desktop, table included (owner, v0.50.4), not only the sidebar.
+    <CenterDialog onClose={onCancel} zIndex={10005} to="window">
       <ChamferBox chamfer={14} fill={Rune.panel} stroke={Rune.red} strokeWidth={1.6} style={{ width: 300, paddingHorizontal: 16, paddingVertical: 16 }}>
         <Text style={{ color: Rune.ivory, fontSize: 16, fontFamily: Display.black, textTransform: 'uppercase', letterSpacing: 0.4 }}>{title}</Text>
         <Text style={{ color: Rune.muted, fontSize: 12.5, fontFamily: Body.regular, lineHeight: 18, marginTop: 8 }}>{body}</Text>

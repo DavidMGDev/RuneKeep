@@ -2008,11 +2008,15 @@ export const TableDice = forwardRef<TableDiceHandle, {
    * rest stay. `mouth`: they go into the chest, which opens for them and shuts once they are in (v0.47.24).
    */
   const putAwayRef = useRef<(bases: string[], mouth?: boolean) => void>(() => {});
-  putAwayRef.current = (bases, mouth) => {
+  putAwayRef.current = (asked, mouth) => {
     const engine = engineRef.current;
     if (!engine) return;
-    const keys = engine.keys().filter((k) => (k.startsWith('free:') || k.startsWith('roll:')) && bases.includes(baseOf(k)));
+    const loose = engine.keys().filter((k) => k.startsWith('free:') || k.startsWith('roll:'));
+    // A pair goes away whole (owner, v0.50.4): Hope with its Fear, never one d12 left behind.
+    const pairs = new Set(loose.filter((k) => asked.includes(baseOf(k))).map((k) => rolled.current.get(k)?.pairId).filter(Boolean));
+    const keys = loose.filter((k) => asked.includes(baseOf(k)) || pairs.has(rolled.current.get(k)?.pairId));
     if (!keys.length) return;
+    const bases = [...new Set(keys.map(baseOf))];
     for (const k of keys) fireRef.current?.set(k, 0);
     setBurning((bs) => bs.filter((k) => !keys.includes(k)));
     offered.current = offered.current.filter((o) => !bases.includes(o));
@@ -2077,14 +2081,19 @@ export const TableDice = forwardRef<TableDiceHandle, {
         specs.forEach((spec, j) => {
           const spread = Math.min(b.right - b.left - 160, 60 + dice.length * 34);
           const x = Math.min(b.right - 50, Math.max(b.left + 50, from.x + (((i + j * 0.5) / Math.max(1, dice.length - 1)) - 0.5) * spread));
-          engine.add(spec, x, Math.min(b.bottom - 50, Math.max(b.top + 50, from.y)), { random: true });
+          const y = Math.min(b.bottom - 50, Math.max(b.top + 50, from.y));
+          engine.add(spec, x, y, { random: true });
           rolled.current.set(spec.key, d);
           // Towards the middle of the open table (owner, v0.47.11: thrown up, they landed under the result at the top).
           const cx = (b.left + b.right) / 2, cy = b.top + (b.bottom - b.top) * 0.4;
-          const dist = Math.hypot(cx - x, cy - from.y);
-          const ang = (dist > 120 ? Math.atan2(cy - from.y, cx - x) : Math.random() * Math.PI * 2) + (Math.random() - 0.5) * 0.9;
-          const sp = Math.min(1150, 420 + dist * 0.9) * (0.85 + Math.random() * 0.3);
-          engine.toss(spec.key, Math.cos(ang) * sp, Math.sin(ang) * sp);
+          const dist = Math.hypot(cx - x, cy - y);
+          const ang = (dist > 120 ? Math.atan2(cy - y, cx - x) : Math.random() * Math.PI * 2) + (Math.random() - 0.5) * 0.9;
+          // The Roll button's leap and spin, thrown across (owner, v0.50.4): up and tumbling on the way to the middle,
+          // still rolling on as it lands, not slid along the felt. Never higher than keeps it in view.
+          const T = (0.62 + Math.random() * 0.16);
+          const peak = Math.min(230 * (0.9 + Math.random() * 0.2), Math.max(110, (y - 50) / 0.31));
+          const run = Math.min(820, 260 + dist * 0.55) * (0.85 + Math.random() * 0.3);
+          engine.leap(spec.key, Math.cos(ang) * run, Math.sin(ang) * run, (4 * peak) / T, (8 * peak) / (T * T), 40 * (0.85 + Math.random() * 0.3));
           keys.push(spec.key);
         });
       });

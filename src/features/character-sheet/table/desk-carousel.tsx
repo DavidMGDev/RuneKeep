@@ -14,6 +14,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { ArtImage } from '@/components/art-image';
 import { FORGED_H, FORGED_W } from '@/features/create/components/forged-card';
+import { T } from './table-ui';
 import { cardOffset, type DeckLook, fitSize, lookScale, lookX, pastSpot, visibleReach } from './deck-look';
 
 export interface TableCard {
@@ -26,6 +27,8 @@ export interface TableCard {
   faces?: { thumb?: number | { uri: string }; source?: number | { uri: string }; custom?: ReactNode }[];
   /** Drawn over the card (the equipped corner, tokens, a struck trait). */
   overlay?: ReactNode;
+  /** A card with controls on it (a counter), drawn live where it lies on the table so they can be used there. */
+  live?: ReactNode;
 }
 
 export interface DeskCarouselHandle {
@@ -50,7 +53,7 @@ export function CardFace({ card, hiRes, face = 0 }: { card: TableCard; hiRes: bo
   );
 }
 
-const Slot = memo(function Slot({ card, index, hiRes, hovered, taken, look, register }: { card: TableCard; index: number; hiRes: boolean; hovered: boolean; /** A copy of it is in your hand: it dims. */ taken: boolean; look: DeckLook; register: (i: number, el: HTMLElement | null, veil: HTMLElement | null) => void }) {
+const Slot = memo(function Slot({ card, index, hiRes, hovered, taken, lifted, look, register }: { card: TableCard; index: number; hiRes: boolean; hovered: boolean; /** A copy of it is in your hand: it dims. */ taken: boolean; /** Being re-arranged: held up higher, ringed in gold. */ lifted?: boolean; look: DeckLook; register: (i: number, el: HTMLElement | null, veil: HTMLElement | null) => void }) {
   const outer = useRef<HTMLDivElement>(null);
   const veil = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -64,9 +67,9 @@ const Slot = memo(function Slot({ card, index, hiRes, hovered, taken, look, regi
       <div
         style={{
           position: 'absolute', inset: 0, pointerEvents: 'none',
-          transform: hovered ? `translateY(${-look.hoverLift}px) scale(${look.hoverZoom})` : 'none',
-          transition: 'transform 170ms cubic-bezier(0.16,1,0.3,1)',
-          boxShadow: look.shadow > 0 ? `0 ${10 * look.shadow}px ${28 * look.shadow}px rgba(0,0,0,${0.55 * look.shadow})` : 'none',
+          transform: lifted ? `translateY(${-look.hoverLift - 18}px) scale(${look.hoverZoom * 1.04})` : hovered ? `translateY(${-look.hoverLift}px) scale(${look.hoverZoom})` : 'none',
+          transition: 'transform 170ms cubic-bezier(0.16,1,0.3,1), box-shadow 170ms',
+          boxShadow: lifted ? `0 0 0 3px ${T.goldBright}, 0 0 34px rgba(224,181,99,0.6), 0 22px 44px rgba(0,0,0,0.6)` : look.shadow > 0 ? `0 ${10 * look.shadow}px ${28 * look.shadow}px rgba(0,0,0,${0.55 * look.shadow})` : 'none',
         }}>
         <CardFace card={card} hiRes={hiRes} />
         {card.overlay ? <View style={StyleSheet.absoluteFill}>{card.overlay}</View> : null}
@@ -89,13 +92,30 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
   onCentre: (i: number) => void;
   /** The centre card was clicked: where it is on screen and where the pointer is. */
   onCentreClick: (card: TableCard, rect: DOMRect, pointer: { x: number; y: number }) => void;
-}>(function DeskCarousel({ cards, look, initialIndex, onCentre, onCentreClick, takenId, heldId }, ref) {
+  /**
+   * The card being re-arranged (owner, v0.50.4): held up in the hand, it takes the place nearest the pointer as it moves
+   * (and as the wheel turns the hand under it), the rest sliding aside. A click keeps the order, Escape or a right click
+   * puts it back as it was.
+   */
+  arranging?: string;
+  onArrange?: (to: number) => void;
+  onArrangeEnd?: (keep: boolean) => void;
+}>(function DeskCarousel({ cards, look, initialIndex, onCentre, onCentreClick, takenId, heldId, arranging, onArrange, onArrangeEnd }, ref) {
   const count = cards.length;
   const root = useRef<HTMLDivElement>(null);
   const size = useRef({ w: 0, h: 0 });
   const [box, setBox] = useState({ w: 0, h: 0 });
   const st = useRef({ pos: initialIndex, target: initialIndex, vel: 0, dragging: false, aim: -1 });
-  const els = useRef(new Map<number, { el: HTMLElement; veil: HTMLElement | null; last: string }>());
+  const els = useRef(new Map<number, { el: HTMLElement; veil: HTMLElement | null; last: string; /** Its place across the hand (px), not where it is drawn on the way there. */ cx?: number }>());
+  /** Where each card is drawn along the hand, by id: it eases to its place when the order changes, never jumps. */
+  const shown = useRef(new Map<string, number>());
+  const easing = useRef(false);
+  const arrangingRef = useRef(arranging);
+  arrangingRef.current = arranging;
+  const arrangeCbs = useRef({ onArrange, onArrangeEnd });
+  arrangeCbs.current = { onArrange, onArrangeEnd };
+  /** The place last asked for while re-arranging, so a frame never asks twice. */
+  const asked = useRef(-1);
   /** The two end marks: before the first card and after the last. */
   const dots = useRef<(HTMLDivElement | null)[]>([null, null]);
   const lookRef = useRef(look);
@@ -222,8 +242,18 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       mark(dots.current[0], -s.pos, -1, l.endDots);
       mark(dots.current[1], n - 1 - s.pos, 1, l.endDots);
     }
+    const seen = new Set<string>();
+    let moving = false;
     for (const [i, rec] of els.current) {
-      const d = cardOffset(i, s.pos, n, l.loop);
+      const id = cardsRef.current[i]?.id ?? '';
+      let si = shown.current.get(id) ?? i;
+      si += (i - si) * 0.24;
+      if (Math.abs(i - si) < 0.003) si = i; else moving = true;
+      shown.current.set(id, si);
+      seen.add(id);
+      const dt0 = cardOffset(i, s.pos, n, l.loop);
+      rec.cx = W / 2 + (dt0 < 0 ? -1 : 1) * lookX(Math.abs(dt0), l, fitW);
+      const d = cardOffset(si, s.pos, n, l.loop);
       const ad = Math.abs(d);
       const sg = d < 0 ? -1 : 1;
       const k = pastSpot(ad, l);
@@ -254,7 +284,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       // Never below 1: the end marks sit at 0, behind every card (owner, v0.47.12: on a curved hand one showed over the cards).
       // The lit card comes to the front (v0.47.18): lifted but left behind a neighbour, a token let go on what showed went
       // to the card underneath.
-      const z = Math.max(1, l.stack === 'centre' ? 1000 - Math.round(ad * 10) : l.stack === 'left' ? 1000 - Math.round(d * 10) : 1000 + Math.round(d * 10)) + (i === hoverRef.current && !takenRef.current ? 5000 : 0);
+      const z = Math.max(1, l.stack === 'centre' ? 1000 - Math.round(ad * 10) : l.stack === 'left' ? 1000 - Math.round(d * 10) : 1000 + Math.round(d * 10)) + (i === hoverRef.current && !takenRef.current ? 5000 : 0) + (id && id === arrangingRef.current ? 6000 : 0);
       // The edge effect, by where the card's centre is across the tray.
       const ex = W / 2 + x;
       const e = band > 0 ? 1 - Math.min(1, Math.max(0, Math.min(ex, W - ex) / band)) : 0;
@@ -276,6 +306,21 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
       st2.zIndex = String(z);
       st2.filter = filter;
       if (rec.veil) rec.veil.style.opacity = String(veil);
+    }
+    for (const k of [...shown.current.keys()]) if (!seen.has(k)) shown.current.delete(k);
+    easing.current = moving;
+    // Re-arranging: the held card takes the place nearest the pointer.
+    const held = arrangingRef.current;
+    if (held && pointer.current.x >= 0) {
+      const left = root.current?.getBoundingClientRect().left ?? 0;
+      let best = -1, bd = Infinity;
+      for (const [i, rec] of els.current) {
+        if (rec.cx === undefined || rec.el.style.visibility === 'hidden') continue;
+        const dd = Math.abs(left + rec.cx - pointer.current.x);
+        if (dd < bd) { bd = dd; best = i; }
+      }
+      const cur = cardsRef.current.findIndex((x) => x.id === held);
+      if (best >= 0 && best !== cur && best !== asked.current) { asked.current = best; arrangeCbs.current.onArrange?.(best); }
     }
     const c = l.loop ? mod(Math.round(s.pos)) : Math.min(n - 1, Math.max(0, Math.round(s.pos)));
     if (c !== centerRef.current) {
@@ -313,7 +358,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
     }
     draw();
     const entering = l.switchFx !== 'none' && performance.now() - born.current < INTRO_MS + 600;
-    if (s.dragging || s.pos !== s.target || s.vel !== 0 || entering) raf.current = requestAnimationFrame(tick);
+    if (s.dragging || s.pos !== s.target || s.vel !== 0 || entering || easing.current) raf.current = requestAnimationFrame(tick);
   }, [draw]);
 
   const kick = useCallback(() => {
@@ -496,6 +541,32 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
   }, [goTo, kick]);
   const cardsRef = useRef(cards);
   cardsRef.current = cards;
+  // A new order is drawn from where each card was: the frame loop eases them over.
+  useEffect(() => { asked.current = -1; kick(); }, [cards, kick]);
+
+  // Re-arranging owns the pointer and the keys until it ends; the wheel still turns the hand.
+  useEffect(() => {
+    if (!arranging) return;
+    const move = (e: PointerEvent) => { pointer.current = { x: e.clientX, y: e.clientY }; kick(); };
+    const press = (e: PointerEvent) => { e.preventDefault(); e.stopPropagation(); arrangeCbs.current.onArrangeEnd?.(e.button === 0); };
+    const menu = (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' && e.key !== 'Enter') return;
+      e.preventDefault();
+      e.stopPropagation();
+      arrangeCbs.current.onArrangeEnd?.(e.key === 'Enter');
+    };
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerdown', press, true);
+    window.addEventListener('contextmenu', menu, true);
+    window.addEventListener('keydown', key, true);
+    return () => {
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerdown', press, true);
+      window.removeEventListener('contextmenu', menu, true);
+      window.removeEventListener('keydown', key, true);
+    };
+  }, [arranging, kick]);
 
   // The edge fade is a mask on the whole tray, so a card fades smoothly across its own width.
   useEffect(() => {
@@ -557,7 +628,7 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
         const card = cards[i];
         if (!card) return null;
         const off = Math.abs(cardOffset(i, center, count, look.loop));
-        return <Slot key={card.id} card={card} index={i} hiRes={look.sharp || off <= hiReach || hover === i} hovered={!takenId && hover === i} taken={card.id === takenId} look={look} register={register} />;
+        return <Slot key={card.id} card={card} index={i} hiRes={look.sharp || off <= hiReach || hover === i || card.id === arranging} hovered={!takenId && !arranging && hover === i} taken={card.id === takenId} lifted={card.id === arranging} look={look} register={register} />;
       })}
     </div>
   );

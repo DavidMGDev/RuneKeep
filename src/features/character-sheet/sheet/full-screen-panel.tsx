@@ -79,9 +79,9 @@ export function FullScreenPanel({ title, subtitle, onClose, footer, headerExtra,
  * dropped (never close, never click through) and inner ScrollViews/buttons keep working. `scrimOpacity`
  * 0 = transparent (rely on the shared SheetDim when over the sheet); >0 = its own dim over a panel.
  */
-export function CenterDialog({ onClose, children, zIndex = 10003, scrimOpacity = 0.55, dismissOnScrim = true }: { onClose: () => void; children: ReactNode; zIndex?: number; scrimOpacity?: number; dismissOnScrim?: boolean }) {
+export function CenterDialog({ onClose, children, zIndex = 10003, scrimOpacity = 0.55, dismissOnScrim = true, to = 'side' }: { onClose: () => void; children: ReactNode; zIndex?: number; scrimOpacity?: number; dismissOnScrim?: boolean; /** On desktop: the sidebar, or the whole window. */ to?: 'side' | 'window' }) {
   return (
-    <DesktopPortal to="side" priority="dialog" onDismiss={onClose}>
+    <DesktopPortal to={to} priority="dialog" onDismiss={onClose}>
     <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex }}>
       <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: scrimOpacity > 0 ? `rgba(6,8,13,${scrimOpacity})` : 'transparent' }} onPress={dismissOnScrim ? onClose : undefined} accessibilityRole={dismissOnScrim ? 'button' : undefined} accessibilityLabel={dismissOnScrim ? 'Close' : undefined} />
       {/* v0.32.0: declare the dim so the tablet frame's margins darken with it (lib/screen-dim),

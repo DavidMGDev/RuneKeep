@@ -1,10 +1,16 @@
-RuneKeep v0.43.6 - Card performance and Golden Gear sorting.
+RuneKeep v0.50.4 - Short rests can roll, counters that restart, and the desktop table.
 
-- Fully invisible cards skip transform calculations in the normal fan. Their thumbnails remain mounted, and editing and fullscreen focus retain the complete animation path.
-- Full-resolution artwork gets ready around the live scrolling position as well as the settled position, including Golden Gear scroll. Image coverage stays bounded; token overlays and page controls keep their existing coverage.
-- Large homebrew decks reuse card and class-page indexes instead of repeatedly scanning and rebuilding them for each card.
-- Sorting or dragging cards within a deck preserves their category assignments. Sorting starting weapons in the Arsenal no longer pulls their Inventory appearances into the Arsenal.
+On your phone:
 
-Card artwork, fan geometry, gestures and live controls retain their existing rendering. No character migration is required.
+- A short rest's keypad has a Roll 1d4 + tier button. Press it for each move you picked (Tend to Wounds, Clear Stress, Repair Armor) and the dice roll in the tray one after another. The rest is applied once they have all landed, and the Rested panel shows each roll and its bonus. Typing a number still works, and you can mix typed and rolled dice.
+- A DM's countdown always has a number to restart from, and at 0 it shows a restart button instead of getting stuck.
+- A homebrew subclass's spellcast trait shows in character creation, and long experience phrases shrink to fit instead of being cut off.
+
+On the website (runekeep.pages.dev), on a computer:
+
+- The whole app has a desktop layout: the character sheet beside a play table with real 3D dice, tokens, sticky notes and cards you can lay out, throw and re-arrange.
+- The DM screen shows the party beside the encounter, session and adversary library, all on one screen.
+
+No character migration is required.
 
 Sideload: enable Install unknown apps, then open the APK.
