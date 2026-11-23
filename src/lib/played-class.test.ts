@@ -119,6 +119,14 @@ describe('a Shaman that survives being saved and loaded', () => {
     expect(customClassPages(whole).map((p) => p.id)).toEqual(['p1', 'p2']);
   });
 
+  it('takes its class banner from the pack when its own copy has none, and keeps art it has', () => {
+    const bannered = pack.map((c) => (c.contentType === 'class' ? { ...c, imageUri: 'banner.png' } : c));
+    const whole = withClassCards(shaman, bannered);
+    expect(customClassPages(whole).map((p) => p.imageUri)).toEqual(['banner.png', 'banner.png']);
+    const own = { ...shaman, libraryCards: shaman.libraryCards!.map((c) => (c.id === 'p1' ? { ...c, imageUri: 'mine.png' } : c)) };
+    expect(withClassCards(own, bannered).libraryCards!.find((c) => c.id === 'p1')!.imageUri).toBe('mine.png');
+  });
+
   it('is handed its whole-class feature cards, and only its own subclass ones', () => {
     const whole = withClassCards(shaman, pack);
     expect(customClassFeatures(whole).map((c) => c.id)).toEqual(['vodou']);

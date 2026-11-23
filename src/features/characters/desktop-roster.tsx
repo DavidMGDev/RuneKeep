@@ -69,7 +69,7 @@ function decksOf(file: CharacterFile) {
 const SHOW_W = 150;
 const SHOW_H = SHOW_W * 1.4;
 /** Room between cards, and around the row so a card lifting under the pointer is never cut off. */
-const GAP = 18;
+const GAP = 9;
 const PAD_X = 14;
 const LIFT_ROOM = 28;
 const FADE = 56;
@@ -168,7 +168,7 @@ const FannedCard = memo(function FannedCard({ card, index }: { card: DmCard; ind
         onHoverOut={() => { setHover(false); lift.value = reduced ? 0 : withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) }); }}
         accessibilityLabel={card.label}
         style={{ width: SHOW_W, height: SHOW_W * 1.4 }}>
-        <Animated.View style={[{ width: SHOW_W, height: SHOW_W * 1.4, borderRadius: 6, overflow: 'hidden', backgroundColor: Rune.ink }, liftStyle]}>
+        <Animated.View style={[{ width: SHOW_W, height: SHOW_W * 1.4, overflow: 'hidden', backgroundColor: Rune.ink }, liftStyle]}>
           {card.source || card.thumb ? (
             <ArtImage source={(card.thumb ?? card.source) as number} fit="cover" />
           ) : (

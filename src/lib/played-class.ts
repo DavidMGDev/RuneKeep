@@ -163,6 +163,8 @@ export function withClassCards(file: CharacterFile, packCards: LibraryCard[]): C
     const patch: Partial<LibraryCard> = {};
     for (const k of STRIPPED) if (c[k] === undefined && src[k] !== undefined) Object.assign(patch, { [k]: src[k] });
     if (hasElements(src) && !hasElements(c)) patch.sections = src.sections;
+    // A class bannered in its pack after this character took it (Koy, Nov 2026): the held copy has no art to show.
+    if (c.contentType === 'class' && !c.imageUri && src.imageUri) patch.imageUri = src.imageUri;
     if (!Object.keys(patch).length) return c;
     restoredAny = true;
     return { ...c, ...patch };
