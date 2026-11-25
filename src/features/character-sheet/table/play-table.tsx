@@ -3222,6 +3222,8 @@ function CardViewer({ card, live, from, closing, onClose, onGone }: { card: Tabl
   const box = useRef<HTMLDivElement>(null);
   const [face, setFace] = useState(0);
   const pages = live ? 0 : card?.faces?.length ?? 0;
+  const closingRef = useRef(closing);
+  closingRef.current = closing;
   useEffect(() => {
     const on = () => setWin({ w: window.innerWidth, h: window.innerHeight });
     window.addEventListener('resize', on);
@@ -3239,11 +3241,15 @@ function CardViewer({ card, live, from, closing, onClose, onGone }: { card: Tabl
   // veil fades up and stays; the card grows out of where it was.
   useLayoutEffect(() => {
     veil.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 240, easing: 'ease-out', fill: 'both' });
-    box.current?.animate([back(), { transform: 'none', opacity: 1 }], { duration: 360, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'both' });
+    const grow = box.current?.animate([back(), { transform: 'none', opacity: 1 }], { duration: 360, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'both' });
+    // Grown, it is let go of (owner, v0.50.6: pages read blurry now and then): a layer kept for a transform keeps the
+    // resolution it was first drawn at, which can be the small card it grew from. Released, it is drawn at full size.
+    if (grow) grow.onfinish = () => { if (closingRef.current) return; grow.cancel(); if (box.current) box.current.style.willChange = 'auto'; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Out: the card goes back to its place and the veil lifts, then it is gone.
   useEffect(() => {
     if (!closing) return;
+    if (box.current) box.current.style.willChange = 'transform';
     veil.current?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, easing: 'ease-in', fill: 'forwards' });
     const a = box.current?.animate([{ transform: 'none', opacity: 1 }, back()], { duration: 240, easing: 'cubic-bezier(0.5,0,0.75,0)', fill: 'forwards' });
     const t = setTimeout(onGone, 250);

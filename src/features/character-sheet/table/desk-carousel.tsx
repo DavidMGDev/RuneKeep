@@ -47,8 +47,9 @@ export function CardFace({ card, hiRes, face = 0 }: { card: TableCard; hiRes: bo
   if (f.custom) return <>{f.custom}</>;
   return (
     <>
-      {f.thumb != null ? <ArtImage source={f.thumb} fit="contain" recyclingKey={`${card.id}-lod`} /> : null}
-      {hiRes && f.source != null ? <View style={StyleSheet.absoluteFill}><ArtImage source={f.source} fit="contain" recyclingKey={card.id} /></View> : null}
+      {f.thumb != null ? <ArtImage key={`lod${face}`} source={f.thumb} fit="contain" recyclingKey={`${card.id}-lod-${face}`} /> : null}
+      {/* Its own key per page (v0.50.6), so a page turned to never shows the last page's picture while it loads. */}
+      {hiRes && f.source != null ? <View style={StyleSheet.absoluteFill}><ArtImage key={face} source={f.source} fit="contain" recyclingKey={`${card.id}-${face}`} /></View> : null}
     </>
   );
 }

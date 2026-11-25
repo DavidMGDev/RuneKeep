@@ -39,6 +39,14 @@ function isLocalImage(uri: string | null | undefined): uri is string {
   return !!uri && !uri.startsWith('data:') && !uri.startsWith('http') && Platform.OS !== 'web';
 }
 
+/** A picture that may be see-through, by its file's extension (owned images keep theirs, `lib/owned-image`). */
+export const mayHaveAlpha = (uri: string): boolean => /\.(png|webp|gif)$/i.test(uri.split('?')[0]);
+/** The type of a local picture's bytes, by its extension. */
+export const mimeOf = (uri: string): string => {
+  const ext = uri.split('?')[0].match(/\.(\w{3,4})$/)?.[1]?.toLowerCase();
+  return ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+};
+
 /** base64 inflates by ~4/3, plus the `data:image/jpeg;base64,` prefix. */
 function encodedSize(bytes: number): number {
   return Math.ceil(bytes * 4 / 3) + 32;
@@ -52,6 +60,10 @@ function encodedSize(bytes: number): number {
  */
 export async function compressToDataUri(uri: string, budget: number): Promise<string | null> {
   if (!isLocalImage(uri)) return uri ?? null;
+  // v0.50.6 (owner): a see-through PNG (a class's ribbon banner) arrived on the other phone black where it was clear,
+  // because everything went out as JPEG. One that may have transparency keeps it: WEBP on Android (it still
+  // compresses), PNG elsewhere (lossless, so only its width brings it under the budget).
+  const alpha = mayHaveAlpha(uri);
   const ladder: { width: number; quality: number }[] = [
     { width: 1024, quality: 0.8 },
     { width: 768, quality: 0.7 },
@@ -61,13 +73,14 @@ export async function compressToDataUri(uri: string, budget: number): Promise<st
   ];
   try {
     const { ImageManipulator, SaveFormat } = manip();
+    const format = !alpha ? SaveFormat.JPEG : Platform.OS === 'android' ? SaveFormat.WEBP : SaveFormat.PNG;
     for (const step of ladder) {
       const ctx = ImageManipulator.manipulate(uri).resize({ width: step.width });
       const image = await ctx.renderAsync();
-      const out = await image.saveAsync({ compress: step.quality, format: SaveFormat.JPEG, base64: true });
+      const out = await image.saveAsync({ compress: step.quality, format, base64: true });
       const b64 = out.base64;
       if (!b64) continue;
-      const data = `data:image/jpeg;base64,${b64}`;
+      const data = `data:image/${format};base64,${b64}`;
       if (data.length <= budget) return data;
     }
   } catch {
@@ -77,7 +90,7 @@ export async function compressToDataUri(uri: string, budget: number): Promise<st
   try {
     const f = new (fs().File)(uri);
     if (f.exists && encodedSize(f.size ?? 0) <= budget) {
-      return `data:image/jpeg;base64,${f.base64()}`;
+      return `data:${mimeOf(uri)};base64,${f.base64()}`;
     }
   } catch {
     /* ignore */
