@@ -1,6 +1,7 @@
 import { leaveThroughSpares } from '@/hooks/use-back-guard';
 import * as ImagePicker from 'expo-image-picker';
 
+import { unclaimedItems } from '@/lib/card-move';
 import { ownImage } from '@/lib/owned-image';
 import { type Href, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -922,8 +923,9 @@ export function CreateScreen() {
           custom: archive ? <ForgedLootCard loot={archive} /> : <ForgedCard title={itemTitle(name)} kindLabel={isConsumableName(name) ? 'Consumable' : 'Item'} body={`${cap(name)}.`} accentDeep={Rune.panel} colorArt={itemColor(name)} multilineTitle />,
         }));
       });
-      // Homebrew inventory rides the first choice, so it is offered once rather than twice.
-      const lib = invChoice === 0 ? (libContent?.inventory ?? []).map((c) => keepLib(c)) : [];
+      // Homebrew inventory rides the first choice, so it is offered once rather than twice; never an item a custom
+      // class hands out as its own (v0.50.6, owner: the Shaman's firewood turned up for a Warrior).
+      const lib = invChoice === 0 ? unclaimedItems(libContent?.inventory ?? [], libContent?.classes ?? []).map((c) => keepLib(c)) : [];
       return [...optionCards, ...lib, keep(`invskip|${invChoice}`, () => skipInventoryCard(invChoice))];
     }
     if (!isCardDeck(deck)) return [];

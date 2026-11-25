@@ -470,3 +470,18 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   then the first page's. A character holding the class takes a banner its copy lacks from the installed pack.
 - Only what guards something that cannot be got back still asks (deleting a pack, deleting cards). Phones and
   tablets keep their screens unchanged, apart from the class card's banner control.
+
+## v0.50.6: the token chest, its mine, and the archive's filters
+
+- The supply's tokens live in a chest (`tokenChest`, on by default): small and satin gold with a copper token set in
+  its lid, beside the large brown dice chest and then the Deck of Many Things. Both chests answer the wheel the same
+  way: down throws out the next piece in order (dice d4 up to d100; tokens smallest to biggest with a few colour
+  tokens at the size of the step they replace), up swallows two back, and the lid stays open while it works.
+- Right click: the dice chest eats every die for a Hope and Fear pair as big as the meal; the token chest eats every
+  token for a landmine (`make_mine.py`) whose lamp blinks faster until it goes off. A small one draws its reach and
+  throws the dice inside it up burning; one whose reach passes the felt is metallic black and breaks everything loose
+  into rubble that lies there until the table is put away, and knocks the hand off the table.
+- The carousel can be crit only by a piece the hand threw hard: it is held like a burning throw's first hit, then the
+  hand is knocked off the table for a while before it creeps back.
+- The archive: Type and Domain hold one chip each, a domain narrows classes and subclasses too, and a right click on
+  a chip clears everything (lit) or keeps only it (unlit). Double click reads a card; Shift or Ctrl and a click picks.

@@ -47,7 +47,7 @@ import type { Bounds, Impact } from './dice-physics';
 import { type DomatCard, DOMAT, DOMAT_MAX, DOMAT_START, type DomatStock, domatStock, drawDomat, type Element, ELEMENTS, elementWinner, takeDomat } from './domat';
 import { LookPanel } from './look-panel';
 import { RollPopup, type RollResult, rollSound } from './roll-dock';
-import { type CardPose, type CardTok, DOMAT_KEY, type LoosePiece, type PieceHit, type PlaceGroup, type Places, type SupplyPiece, SUPPLY_HALF, type TableAction, type CritStage, ctlGap, TableDice, type TableDiceHandle, type TableDeck, type TokenInfo, type TokenPiece } from './table-dice';
+import { type CardPose, type CardTok, DOMAT_KEY, type LoosePiece, type PieceHit, type PlaceGroup, type Places, type SupplyPiece, SUPPLY_HALF, type TableAction, type CritStage, ctlGap, TableDice, type TableDiceHandle, type TableDeck, TOK_CHEST, type TokenInfo, type TokenPiece } from './table-dice';
 import { breakPieces, CardBreak, type CardBreakMode, CardScrap, clipHalf, shardPolys, DomatCardView, type Fx, FX_CSS, FxLayer, localDir, type Pt, scrapShape, shake } from './table-fx';
 import { type BoardCard, loadBoard, loadLook, loadSpread, saveBoard, saveLook, saveSpread, type SavedPiece, type SpreadPlace } from './table-store';
 import { Chamfer, DIE_GLYPHS, Glyph, T, TButton } from './table-ui';
@@ -191,7 +191,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     const apart: Record<string, { x: number; y: number }> = {};
     for (const [k, [fx, fy]] of Object.entries(look.apart)) apart[k] = keepOut(fx * tableW, fy * tableH, 40, 40);
     return { ctl: { x: ctl.x, y: ctl.y, wrap: ctl.wrap, dir: ctl.wrap ? 'row' : look.ctlDir, k: look.ctlSize }, sup: { ...sup, dir: look.supDir }, cat, apart };
-  }, [look, look.ctlX, look.ctlY, look.ctlDir, look.ctlSize, look.supX, look.supY, look.supDir, look.catX, look.catY, look.apart, look.tokenTray, look.diceChest, look.controls, ctlN, tableW, tableH, ownArea, hand.top, hand.bottom, pad]); // eslint-disable-line react-hooks/exhaustive-deps -- the hand is made of these  
+  }, [look, look.ctlX, look.ctlY, look.ctlDir, look.ctlSize, look.supX, look.supY, look.supDir, look.catX, look.catY, look.apart, look.tokenTray, look.diceChest, look.tokenChest, look.controls, ctlN, tableW, tableH, ownArea, hand.top, hand.bottom, pad]); // eslint-disable-line react-hooks/exhaustive-deps -- the hand is made of these  
 
 
   // ---------------------------------------------------------------- the hand
@@ -535,10 +535,13 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   const colorSave = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The playground keeps the supply and the chest, to make more pieces to play with (owner, v0.47.22).
   const supply = useMemo<SupplyPiece[]>(() => (look.tokenTray || peeking || playground ? [
-    { key: 'src:mat', token: { kind: material }, label: TOKEN_LABEL[material] },
-    { key: 'src:color', token: { kind: 'color', color: supColor }, label: 'Colour' },
+    // v0.50.6 (owner, the default): one token chest in place of the token and colour spawners.
+    ...(look.tokenChest ? [{ key: TOK_CHEST, token: { kind: 'wood' as const }, label: 'Tokens' }] : [
+      { key: 'src:mat', token: { kind: material }, label: TOKEN_LABEL[material] },
+      { key: 'src:color', token: { kind: 'color' as const, color: supColor }, label: 'Colour' },
+    ]),
     { key: 'src:die', token: { kind: 'die', dieType: supplyDie, dieValue: 1, dieValue2: supplyDie === 'duality' ? 1 : undefined }, label: supplyDie === 'duality' ? 'Hope & Fear' : supplyDie },
-  ] : []), [look.tokenTray, peeking, playground, supColor, supplyDie, material]);
+  ] : []), [look.tokenTray, look.tokenChest, peeking, playground, supColor, supplyDie, material]);
   const looseKey = `runekeep.table.loose.${characterId}`;
   const [loose, setLooseState] = useState<LoosePiece[]>(() => { try { return JSON.parse(localStorage.getItem(looseKey) ?? '[]') as LoosePiece[]; } catch { return []; } });
   const looseRef = useRef(loose);
@@ -1669,6 +1672,69 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
     if (!s.raf) s.raf = requestAnimationFrame(shoveTick);
   }, [tableH, shoveTick, glowOf]);
   useEffect(() => () => cancelAnimationFrame(shove.current.raf), []);
+  /**
+   * Off the table altogether (v0.50.6): a crit or a big mine sends the hand right off the nearer edge, where it stays
+   * `holdMs` before it creeps back as it always does.
+   */
+  const knockCarousel = useCallback((holdMs: number) => {
+    const s = shove.current;
+    const dir = (hand.top + hand.bottom) / 2 > tableH / 2 ? 1 : -1;
+    s.vel = dir * tableH * 6;
+    s.hitAt = performance.now() + holdMs;
+    if (!s.raf) s.raf = requestAnimationFrame(shoveTick);
+  }, [hand.top, hand.bottom, tableH, shoveTick]);
+  /**
+   * A crit on the carousel (owner, v0.50.6): only a piece the hand threw, fast enough. It is held like a burning
+   * throw's first hit (the owner's favourite: the table stops, darkens round a star of light and leans in), then the
+   * table shakes hard and the hand is knocked clean off it for a good while.
+   */
+  const onCarouselCrit = useCallback((at: { x: number; y: number }) => {
+    if (!physRef.current) return;
+    const root = tableRef.current;
+    if (!root) return;
+    const HOLD = 320;
+    diceRef.current?.engine()?.freeze(HOLD);
+    cue('impact:stop', 'loseArmor', { volume: 1, cents: -900 });
+    addFx({ kind: 'impact', x: at.x, y: at.y, r: 130, ms: HOLD, tint: '#ff9a3c' });
+    addFx({ kind: 'flash', x: at.x, y: at.y, r: 0, ms: 260, tint: '#ffe2b0' });
+    addFx({ kind: 'veil', x: at.x, y: at.y, r: 150, ms: HOLD });
+    const calm = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (!calm) {
+      root.style.transformOrigin = `${at.x}px ${at.y}px`;
+      root.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.07)', offset: 0.1 }, { transform: 'scale(1.09)', offset: 0.92 }, { transform: 'scale(1)' }], { duration: HOLD + 80, easing: 'cubic-bezier(0.2,0.8,0.2,1)' });
+    }
+    setTimeout(() => {
+      addFx({ kind: 'ring', x: at.x, y: at.y, r: 460, ms: 700, tint: '#ffb070' });
+      addFx({ kind: 'spark', x: at.x, y: at.y, r: 180, ms: 1000, tint: '#ffd27a' });
+      shake(root, 2.4, 38);
+      knockCarousel(2600);
+    }, HOLD);
+  }, [addFx, knockCarousel]);
+  /**
+   * A token chest's mine went off (owner, v0.50.6): fire and a ring out to its reach, and a shake that grows with the
+   * tokens it was made of. A big one takes the whole table: a white-out, the hand knocked off the table, the worst shake.
+   */
+  const onBlast = useCallback((at: { x: number; y: number }, r: number, n: number, huge: boolean) => {
+    const root = tableRef.current;
+    if (huge) {
+      const far = Math.hypot(tableW, tableH);
+      addFx({ kind: 'flash', x: at.x, y: at.y, r: 0, ms: 800, tint: '#fff4dc' });
+      addFx({ kind: 'fire', x: at.x, y: at.y, r: 460, ms: 1500 });
+      addFx({ kind: 'ring', x: at.x, y: at.y, r: far, ms: 1100, tint: '#ffb070' });
+      addFx({ kind: 'spark', x: at.x, y: at.y, r: 640, ms: 1500, tint: '#ffd27a' });
+      addFx({ kind: 'mist', x: at.x, y: at.y, r: 520, ms: 2400, tint: '#5a5048' });
+      shake(root, 5, 60);
+      knockCarousel(2400);
+      return;
+    }
+    addFx({ kind: 'flash', x: at.x, y: at.y, r: 0, ms: 220, tint: '#ffe2b0' });
+    addFx({ kind: 'impact', x: at.x, y: at.y, r: Math.min(220, r * 0.45), ms: 320, tint: '#ffb050' });
+    addFx({ kind: 'fire', x: at.x, y: at.y, r: Math.min(300, r * 0.6), ms: 950 });
+    addFx({ kind: 'ring', x: at.x, y: at.y, r, ms: 750, tint: '#ff7a3c' });
+    addFx({ kind: 'spark', x: at.x, y: at.y, r: r * 0.7, ms: 850, tint: '#ffd27a' });
+    addFx({ kind: 'mist', x: at.x, y: at.y, r: r * 0.45, ms: 1500, tint: '#6b625a' });
+    shake(root, Math.min(3.2, 0.5 + n * 0.2), Math.min(48, 14 + n * 2.2));
+  }, [addFx, knockCarousel, tableW, tableH]);
   const lastHit = useRef(0);
   const onHardHit = useCallback((speed: number) => {
     const now = performance.now();
@@ -2510,6 +2576,8 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           bounds={play}
           obstacles={obstacles}
           onCarouselHit={onCarouselHit}
+          onCarouselCrit={onCarouselCrit}
+          onBlast={onBlast}
           walls={{ kind: look.walls, rect: { left: 0, top: 0, right: tableW, bottom: tableH }, thickness: pad }}
           places={peeking ? peekPlaces : places}
           decks={tableDecks}
@@ -2600,7 +2668,7 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
           }}
           onJoinGroup={(g) => {
             const apart = { ...lookRef.current.apart };
-            for (const k of g === 'ctl' ? ctlRef.current : ['src:mat', 'src:color', 'src:die', 'src:domat']) delete apart[k];
+            for (const k of g === 'ctl' ? ctlRef.current : ['src:mat', 'src:color', TOK_CHEST, 'src:die', 'src:domat']) delete apart[k];
             setLook({ ...lookRef.current, apart });
           }}
           hidden={playground ? undefined : look.hidden}
@@ -3215,7 +3283,6 @@ function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, throwIt, ar
 
   // Across the top: what is done with the card as an object.
   const top: TableRow[] = [
-    ...(view ? [{ label: 'View', icon: MENU_ICON.view, quick: true, gap: true, onPress: view }] : []),
     ...(place ? [{ label: 'Place a copy', short: 'Place copy', icon: MENU_ICON.layCopy, quick: true, onPress: place }] : []),
     ...(throwIt ? [{ label: 'Throw a copy', short: 'Throw', icon: MENU_ICON.throwCopy, quick: true, onPress: throwIt }] : []),
     ...(arrange ? [{ label: 'Re-arrange', icon: MENU_ICON.sort, quick: true, onPress: arrange }] : []),
@@ -3223,6 +3290,8 @@ function CardMenu({ id, x, y, tableW, tableH, onClose, board, place, throwIt, ar
       ? { label: 'Stop its physics', short: 'Stop physics', icon: MENU_ICON.still, quick: true, onPress: onPhysical }
       : { label: 'Make it physical', short: 'Make physical', icon: MENU_ICON.physics, quick: true, onPress: onPhysical }] : []),
     ...(board ? [{ label: 'Take off the table', short: 'Take off', icon: MENU_ICON.offTable, quick: true, onPress: board }] : []),
+    // A row of its own under the buttons (owner, v0.50.6: four across cut Re-arrange short).
+    ...(view ? [{ label: 'View', icon: MENU_ICON.view, onPress: view }] : []),
   ];
 
   let head: Omit<MenuSpec, 'rows'>, rows: TableRow[];

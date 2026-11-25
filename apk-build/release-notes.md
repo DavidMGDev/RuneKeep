@@ -1,15 +1,20 @@
-RuneKeep v0.50.4 - Short rests can roll, counters that restart, and the desktop table.
+RuneKeep v0.50.6 - Class banners, faster gold, a token chest and a landmine.
 
 On your phone:
 
-- A short rest's keypad has a Roll 1d4 + tier button. Press it for each move you picked (Tend to Wounds, Clear Stress, Repair Armor) and the dice roll in the tray one after another. The rest is applied once they have all landed, and the Rested panel shows each roll and its bonus. Typing a number still works, and you can mix typed and rolled dice.
-- A DM's countdown always has a number to restart from, and at 0 it shows a restart button instead of getting stuck.
-- A homebrew subclass's spellcast trait shows in character creation, and long experience phrases shrink to fit instead of being cut off.
+- A homebrew class card has a banner picture. Set it on the class card in the card library; every page of the class wears it, and characters who already play the class pick it up the next time their sheet opens.
+- Eldritch Flesh (Dread 8) now gives +1 to both damage thresholds for each Stress you have marked, as the card says. It used to give Armor instead.
+- Multiclassing on a level up offers the new domain's cards straight away, up to level 3.
+- On the Gold card, tap a coin to set the count: tap the sixth handful for six handfuls. Tap the last filled coin again to empty it.
+- Starting items a homebrew class hands out are offered only to that class. They no longer turn up for the base game's classes or the Hope and Fear classes.
 
 On the website (runekeep.pages.dev), on a computer:
 
-- The whole app has a desktop layout: the character sheet beside a play table with real 3D dice, tokens, sticky notes and cards you can lay out, throw and re-arrange.
-- The DM screen shows the party beside the encounter, session and adversary library, all on one screen.
+- The card library is a desktop page, like campaigns: your packs on the left, the pack you pick beside them, menus instead of pop-ups, and the card editor in the same space.
+- The supply has a small gold token chest beside a large brown dice chest. Scroll down over either for pieces in order, scroll up to put two back, right click to make it swallow everything: the dice chest gives back a giant Hope and Fear pair, the token chest a landmine.
+- Throw a die or token hard into your hand of cards and it is knocked off the table for a while.
+- The card archive: Type and Domain take one choice each, a domain also finds the classes and subclasses that use it, right click a filter to clear them all or keep only that one, double click a card to read it, Shift and click to pick several, and Print prints all of them.
+- On the characters page, click one of a character's cards to see it full size.
 
 No character migration is required.
 

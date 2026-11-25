@@ -1698,7 +1698,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
   // not already owned), the multiclass options, and the class-derived stat defaults.
   const levelData = useMemo(() => {
     type ClassOpt = { key: string; label: string; domains: string[]; subclasses: { id: string; label: string }[] };
-    if (!file) return { domainOptions: [] as DomainCardInfo[], classOptions: [] as ClassOpt[], defaults: { maxHp: 6, stressMax: 6, evasion: 10 } };
+    if (!file) return { domainOptions: [] as DomainCardInfo[], multiclassCards: {} as Record<string, DomainCardInfo[]>, classOptions: [] as ClassOpt[], defaults: { maxHp: 6, stressMax: 6, evasion: 10 } };
     // v0.43.3: what the character PLAYS, so a Shaman levels into Shaman domains, not its carrier's.
     const data = playedClass(file);
     const owned = new Set(file.domainCardIds);
@@ -1706,14 +1706,25 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
     // #311: multiclass domain access — cards from the additional domain unlock at HALF the (target)
     // level, rounded up. Original domains stay at full level. Owned domains are excluded from the picker.
     const ownedDomains = new Set<string>([...data.domains, ...(file.multiclassDomain ? [file.multiclassDomain] : [])]);
-    const halfLevel = Math.ceil(targetLevel / 2);
+    // v0.50.6 (owner): never below level 3, so a fresh multiclass always reaches the domain's level-3 cards.
+    const halfLevel = Math.max(3, Math.ceil(targetLevel / 2));
     const mcDomain = file.multiclassDomain;
+    const info = (c: (typeof CATALOG)[number]): DomainCardInfo => ({ id: c.id, title: c.label, thumb: c.thumb as DomainCardInfo['thumb'], source: c.source as DomainCardInfo['source'], domain: c.domain, level: c.level });
     const domainOptions: DomainCardInfo[] = CATALOG.filter((c) => {
       if (c.kind !== 'domain' || !c.domain || owned.has(c.id)) return false;
       if (data.domains.includes(c.domain) && (c.level ?? 0) <= targetLevel) return true;
       if (mcDomain && c.domain === mcDomain && (c.level ?? 0) <= halfLevel) return true; // #311
       return false;
-    }).map((c) => ({ id: c.id, title: c.label, thumb: c.thumb as DomainCardInfo['thumb'], source: c.source as DomainCardInfo['source'], domain: c.domain, level: c.level }));
+    }).map(info);
+    // v0.50.6: the domain a multiclass take THIS level-up would add, so its cards are pickable before the
+    // file knows about it. Keyed by domain; the panel merges the one the player chose.
+    const multiclassCards: Record<string, DomainCardInfo[]> = {};
+    if (!file.multiclassName) {
+      for (const c of CATALOG) {
+        if (c.kind !== 'domain' || !c.domain || owned.has(c.id) || ownedDomains.has(c.domain) || (c.level ?? 0) > halfLevel) continue;
+        (multiclassCards[c.domain] ??= []).push(info(c));
+      }
+    }
     // #311: each multiclassable class with the domains it can grant (those the character lacks) + its
     // subclass FOUNDATION cards (one of which the player picks to gain that subclass's foundation feature).
     // v0.12.2: only multiclass into classes from THIS character's enabled expansions (base always).
@@ -1724,7 +1735,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
       domains: classInfo(c.key).domains.filter((d) => !ownedDomains.has(d)),
       subclasses: CATALOG.filter((s) => s.kind === 'subclass' && s.tier === 1 && s.className === c.key).map((s) => ({ id: s.id, label: s.label.replace(/ Foundation$/, '') })),
     }));
-    return { domainOptions, classOptions, defaults: { maxHp: data.startingHp, stressMax: 6, evasion: data.startingEvasion } };
+    return { domainOptions, multiclassCards, classOptions, defaults: { maxHp: data.startingHp, stressMax: 6, evasion: data.startingEvasion } };
   }, [file]);
   const onInfo = useCallback(() => setDamageOpen(true), []);
   const heartRef = useRef<HeartTrackHandle>(null);
@@ -3465,7 +3476,7 @@ export function RedesignedSheet({ character: initial, characterFile }: { charact
               onClose={() => setFloatKind(null)}
             />
           ) : floatKind === 'level' && file ? (
-            <LevelUpPanel file={file} defaults={levelData.defaults} domainOptions={levelData.domainOptions} classOptions={levelData.classOptions} companion={companionOf(file)} companionPicks={companionPicksPerLevel(file)} onApply={onApplyLevelUp} onClose={() => setFloatKind(null)} />
+            <LevelUpPanel file={file} defaults={levelData.defaults} domainOptions={levelData.domainOptions} multiclassCards={levelData.multiclassCards} classOptions={levelData.classOptions} companion={companionOf(file)} companionPicks={companionPicksPerLevel(file)} onApply={onApplyLevelUp} onClose={() => setFloatKind(null)} />
           ) : floatKind ? (
             <FloatPlaceholder kind={floatKind} onClose={() => setFloatKind(null)} />
           ) : null}

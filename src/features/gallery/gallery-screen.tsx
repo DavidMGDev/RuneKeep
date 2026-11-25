@@ -12,7 +12,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { LoadingScreen } from '@/components/loading-screen';
 import { gridColumns, useLayout } from '@/hooks/use-layout';
 import { RuneChip } from './components/rune-chip';
-import { classColor, type DomainName, DomainColors } from '@/constants/identity';
+import { classColor, classInfo, type DomainName, DomainColors } from '@/constants/identity';
 import { Body, Display, Rune } from '@/constants/theme';
 import { playSfx } from '@/lib/sfx';
 import { catalogFor, classExpansion, globallyEnabledExpansionIds } from '@/lib/expansions';
@@ -22,6 +22,7 @@ import { ALL_ARMOR, ALL_WEAPONS, type ArmorDef, type WeaponDef } from '@/data/eq
 import { ALL_LOOT, type LootDef } from '@/data/loot-data';
 import { FORGED_H, FORGED_W, ForgedArmorCard, ForgedCard, ForgedLootCard, ForgedTextCard, ForgedWeaponCard } from '@/features/create/components/forged-card';
 import { CLASS_CARDS, type ClassCardDef } from '@/features/create/components/class-cards';
+import { EMPTY_FILTERS, type Filters, pickDomain, pickKind, pickLevel, pickTier, toggle } from './archive-filters';
 import { NfcSendModal } from '@/features/share/nfc-modal';
 import { focusHaptic } from '@/lib/haptics';
 import { type Expansion, type LibraryCard, type LibraryContentType } from '@/lib/library';
@@ -43,7 +44,7 @@ import { RuneButton } from '@/components/rune-button';
 // for all tiers" were missing because the gallery only ever read CATALOG).
 // v0.14.1: loot + consumables were missing here for the same reason weapons/armor once were — the
 // archive only read CATALOG and the equipment arrays. They browse and share like equipment.
-type GalleryKind = CatalogKind | 'weapon' | 'armor' | 'class' | 'loot' | 'consumable';
+export type GalleryKind = CatalogKind | 'weapon' | 'armor' | 'class' | 'loot' | 'consumable';
 type GalleryItem =
   | { type: 'card'; id: string; label: string; card: CatalogCard }
   /** v0.32.2: a card from an installed expansion. It lives in whichever kind its content is, not in a
@@ -74,21 +75,6 @@ const DESK_GAP = 28;
 const LEVELS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const TIERS = [1, 2, 3, 4];
 
-interface Filters {
-  kinds: Set<GalleryKind>;
-  domains: Set<DomainName>;
-  levels: Set<number>;
-  tiers: Set<number>; // tier 1–4, equipment only
-  /** v0.32.2: where the card came from. Empty = both, which is the default and stays it. */
-  sources: Set<'official' | 'homebrew'>;
-  /**
-   * v0.35.2 (owner): WHICH pack, by expansion id, with the base game as `base`.
-   *
-   * Every card in the archive belongs to exactly one, and the archive already shows several packs at
-   * once, so "show me only what The Void added" had no way to be asked before. Empty = all of them.
-   */
-  packs: Set<string>;
-}
 
 /** The pack a finished grid item belongs to. Derived at the end rather than threaded through each
  *  branch above, because every branch already knows its own expansion field and none of them agree
@@ -136,22 +122,25 @@ function applyFilters(f: Filters, catalog: CatalogCard[], enabledExp: Set<string
   // narrows to that family (mirrors the existing level→domain behavior).
   const catalogDim = f.domains.size > 0 || f.levels.size > 0;
   const equipDim = f.tiers.size > 0;
+  // v0.50.6 (owner): a domain also narrows classes and subclasses, to the ones whose class uses it.
+  const classHas = (key?: string) => !!key && classInfo(key as Parameters<typeof classInfo>[0])?.domains.some((d) => f.domains.has(d as DomainName));
   const out: GalleryItem[] = [];
   if (!equipDim && wantSource('official')) {
     for (const c of catalog) {
       if (!wantKind(c.kind)) continue;
-      if (f.domains.size && (c.kind !== 'domain' || !f.domains.has(c.domain!))) continue;
+      if (f.domains.size && !(c.kind === 'domain' ? f.domains.has(c.domain!) : c.kind === 'subclass' && classHas(c.className))) continue;
       if (f.levels.size && (c.kind !== 'domain' || !f.levels.has(c.level!))) continue;
       out.push({ type: 'card', id: c.id, label: c.label, card: c });
     }
   }
-  // Class cards (v0.10.2): forged multi-page cards, not in CATALOG. They're neither a catalog-domain nor
-  // an equipment dimension, so they show only when no domain/level/tier filter is narrowing the grid.
+  // Class cards (v0.10.2): forged multi-page cards, not in CATALOG. No level or tier, so either of those hides them;
+  // a domain shows the classes that use it (v0.50.6).
   // v0.13.0: expansion classes (the Void six) show only when their pack is globally enabled.
-  if (!catalogDim && !equipDim && wantKind('class') && wantSource('official')) {
+  if (!f.levels.size && !equipDim && wantKind('class') && wantSource('official')) {
     for (const c of CLASS_CARDS) {
       const exp = classExpansion(c.key);
       if (exp && !enabledExp.has(exp)) continue;
+      if (f.domains.size && !classHas(c.key)) continue;
       out.push({ type: 'class', id: `class-${c.key}`, label: c.title, def: c });
     }
   }
@@ -532,7 +521,7 @@ export function GalleryScreen() {
     tiers: new Set<number>(),
     packs: new Set<string>(),
   }));
-  const clearFilters = useCallback(() => setFilters({ kinds: new Set(), domains: new Set(), levels: new Set(), tiers: new Set(), sources: new Set(), packs: new Set() }), []);
+  const clearFilters = useCallback(() => setFilters(EMPTY_FILTERS()), []);
   // v0.13.0: the archive respects the GLOBAL expansion toggles — Void cards (and their Blood/Dread
   // filter chips) appear only while The Void is enabled in the Card Library.
   const [enabledExp, setEnabledExp] = useState<Set<string> | null>(null);
@@ -575,12 +564,6 @@ export function GalleryScreen() {
   const everything = useMemo(() => applyFilters({ kinds: new Set(), domains: new Set(), levels: new Set(), tiers: new Set(), sources: new Set(), packs: new Set() }, gated, enabledExp ?? new Set(), library, libPack), [gated, enabledExp, library, libPack]);
   /** The kinds installed packs have invented, as filter chips of their own (v0.43.0). */
   const typeKinds = useMemo(() => contentTypes(library).map((t) => ({ key: typeKindKey(t.id), label: t.title.trim() })), [library]);
-  const toggle = useCallback(<T,>(set: Set<T>, v: T): Set<T> => {
-    const next = new Set(set);
-    if (next.has(v)) next.delete(v);
-    else next.add(v);
-    return next;
-  }, []);
 
   const activeCount = filters.kinds.size + filters.domains.size + filters.levels.size + filters.tiers.size + filters.packs.size;
   const { width, isTablet, maxContent } = useLayout();
@@ -678,7 +661,18 @@ export function GalleryScreen() {
     shareItems(pickedFrom(everything, ids));
   }, [selected, everything, shareItems]);
 
+  /** Shift (or Ctrl) held on the press that opened a card: it is picked instead (owner, v0.50.6). */
+  const picking = useRef(false);
   const openCard = useCallback((item: GalleryItem) => {
+    if (desktop && picking.current) {
+      picking.current = false;
+      if (item.type === 'class') { setNotice('Class cards cannot be shared'); return; }
+      setSelecting(true);
+      setFocusId(item.id);
+      playSfx(selected.has(item.id) ? 'cardDeselect' : 'cardSelect');
+      setSelected((s) => { const n = new Set(s); if (n.has(item.id)) n.delete(item.id); else n.add(item.id); return n; });
+      return;
+    }
     if (!selecting && desktop) { playSfx('cardSelect'); setFocusId(item.id); return; }
     if (!selecting) { setReading(item); return; }
     if (item.type === 'class') { setNotice('Class cards cannot be shared'); return; }
@@ -715,13 +709,27 @@ export function GalleryScreen() {
   }, [desktop]));
   const renderCard = useCallback(
     ({ item }: { item: GalleryItem }) => (
-      <GalleryCell item={item} cellW={cellW} cellH={cellH} selecting={selecting} selected={selected.has(item.id)} focused={desktop && !selecting && item.id === focusedId} onOpen={openCard} onHold={selecting ? onHoldGroup : undefined} />
+      desktop ? (
+        // A double click reads it full size (owner, v0.50.6); Shift or Ctrl with the click picks it.
+        <div onPointerDown={(e) => { picking.current = e.shiftKey || e.ctrlKey || e.metaKey; }} onDoubleClick={() => { if (picking.current) return; playSfx('cardFullscreenEnter'); setReading(item); }}>
+          <GalleryCell item={item} cellW={cellW} cellH={cellH} selecting={selecting} selected={selected.has(item.id)} focused={!selecting && item.id === focusedId} onOpen={openCard} onHold={selecting ? onHoldGroup : undefined} />
+        </div>
+      ) : (
+        <GalleryCell item={item} cellW={cellW} cellH={cellH} selecting={selecting} selected={selected.has(item.id)} focused={false} onOpen={openCard} onHold={selecting ? onHoldGroup : undefined} />
+      )
     ),
     [cellW, cellH, openCard, selecting, selected, onHoldGroup, desktop, focusedId],
   );
 
   if (!ready || !enabledExp) return <LoadingScreen label="Opening the archive" />;
 
+  /**
+   * A filter chip on the web (owner, v0.50.6): right click a lit chip and every filter goes; right click an unlit one
+   * and it becomes the only filter. On a phone the chip is just the chip.
+   */
+  const chip = (key: string, on: boolean, only: (f: Filters) => Filters, node: ReactNode) => (Platform.OS === 'web' ? (
+    <div key={key} style={{ display: 'contents' }} onContextMenu={(e) => { e.preventDefault(); playSfx('buttonTap'); setFilters(on ? EMPTY_FILTERS() : only(EMPTY_FILTERS())); }}>{node}</div>
+  ) : node);
   const bands = (
     <>
           {/* v0.32.2: SOURCE is a filter inside the archive, not a category of its own. Neither chip
@@ -731,8 +739,8 @@ export function GalleryScreen() {
               only official cards there is nothing to choose between. */}
           {library.length ? (
             <FilterBand label="Source">
-              <RuneChip label="Official" active={filters.sources.has('official')} onPress={() => setFilters((f) => ({ ...f, sources: toggle(f.sources, 'official' as const) }))} />
-              <RuneChip label="Homebrew" active={filters.sources.has('homebrew')} onPress={() => setFilters((f) => ({ ...f, sources: toggle(f.sources, 'homebrew' as const) }))} />
+              {chip('src-official', filters.sources.has('official'), (f) => ({ ...f, sources: toggle(f.sources, 'official' as const) }), <RuneChip label="Official" active={filters.sources.has('official')} onPress={() => setFilters((f) => ({ ...f, sources: toggle(f.sources, 'official' as const) }))} />)}
+              {chip('src-homebrew', filters.sources.has('homebrew'), (f) => ({ ...f, sources: toggle(f.sources, 'homebrew' as const) }), <RuneChip label="Homebrew" active={filters.sources.has('homebrew')} onPress={() => setFilters((f) => ({ ...f, sources: toggle(f.sources, 'homebrew' as const) }))} />)}
             </FilterBand>
           ) : null}
           {/* v0.35.2 (owner): one chip per pack the device has switched on, plus the base game. With
@@ -740,42 +748,42 @@ export function GalleryScreen() {
           {packs.length > 1 ? (
             <FilterBand label="Pack">
               {packs.map((k) => (
-                <RuneChip key={k.id} label={k.name} active={filters.packs.has(k.id)} onPress={() => setFilters((f) => ({ ...f, packs: toggle(f.packs, k.id) }))} />
+                chip(`pack-${k.id}`, filters.packs.has(k.id), (f) => ({ ...f, packs: toggle(f.packs, k.id) }), <RuneChip key={k.id} label={k.name} active={filters.packs.has(k.id)} onPress={() => setFilters((f) => ({ ...f, packs: toggle(f.packs, k.id) }))} />)
               ))}
             </FilterBand>
           ) : null}
           {/* v0.43.0: one extra chip per kind an installed pack invented, after the game's own. */}
           <FilterBand label="Type">
             {[...KINDS, ...typeKinds].map((k) => (
-              <RuneChip key={k.key} label={k.label} active={filters.kinds.has(k.key)} onPress={() => setFilters((f) => ({ ...f, kinds: toggle(f.kinds, k.key) }))} />
+              chip(`kind-${k.key}`, filters.kinds.has(k.key), (f) => pickKind(f, k.key), <RuneChip key={k.key} label={k.label} active={filters.kinds.has(k.key)} onPress={() => setFilters((f) => pickKind(f, k.key))} />)
             ))}
           </FilterBand>
           <FilterBand label="Domain">
-            {domainChips.map((d) => (
+            {domainChips.map((d) => chip(`domain-${d}`, filters.domains.has(d), (f) => pickDomain(f, d), (
               <RuneChip
                 key={d}
                 label={d}
                 tint={DomainColors[d].deep}
                 active={filters.domains.has(d)}
-                onPress={() => setFilters((f) => ({ ...f, kinds: new Set(f.kinds).add('domain'), domains: toggle(f.domains, d) }))}
+                onPress={() => setFilters((f) => pickDomain(f, d))}
               />
-            ))}
+            )))}
           </FilterBand>
           <FilterBand label="Level">
             {LEVELS.map((l) => (
-              <RuneChip key={l} label={String(l)} active={filters.levels.has(l)} onPress={() => setFilters((f) => ({ ...f, kinds: new Set(f.kinds).add('domain'), levels: toggle(f.levels, l) }))} />
+              chip(`level-${l}`, filters.levels.has(l), (f) => pickLevel(f, l), <RuneChip key={l} label={String(l)} active={filters.levels.has(l)} onPress={() => setFilters((f) => pickLevel(f, l))} />)
             ))}
           </FilterBand>
           {/* tier chips narrow weapons/armor (equipment only); tapping one switches the grid to equipment */}
           <FilterBand label="Tier">
-            {TIERS.map((t) => (
+            {TIERS.map((t) => chip(`tier-${t}`, filters.tiers.has(t), (f) => pickTier(f, t), (
               <RuneChip
                 key={`tier-${t}`}
                 label={String(t)}
                 active={filters.tiers.has(t)}
-                onPress={() => setFilters((f) => ({ ...f, kinds: new Set(f.kinds).add('weapon').add('armor'), tiers: toggle(f.tiers, t) }))}
+                onPress={() => setFilters((f) => pickTier(f, t))}
               />
-            ))}
+            )))}
           </FilterBand>
     </>
   );
@@ -792,6 +800,7 @@ export function GalleryScreen() {
               <Text style={{ color: Rune.muted, fontSize: 12, fontFamily: Body.medium, marginRight: 4 }}>{cards.length} card{cards.length === 1 ? '' : 's'}</Text>
               {activeCount ? <RuneButton label={narrowBar ? 'Clear' : 'Clear filters'} kind="ghost" dense height={36} onPress={() => { playSfx('buttonTap'); clearFilters(); }} /> : null}
               {selecting && selected.size ? <RuneButton label={narrowBar ? `Share ${selected.size}` : `Share ${selected.size} picked`} kind="primary" dense height={36} onPress={() => shareItems(pickedFrom(everything, selected))} /> : null}
+              {selecting && selected.size ? <RuneButton label={narrowBar ? `Print ${selected.size}` : `Print ${selected.size} picked`} kind="secondary" dense height={36} onPress={() => onPrintItems(pickedFrom(everything, selected))} /> : null}
               <RuneButton label={selecting ? 'Done' : narrowBar ? 'Select' : 'Select cards'} kind="secondary" dense height={36} onPress={() => { playSfx('buttonTap'); setSelecting((v) => { if (v) setSelected(new Set()); return !v; }); }} />
             </>
           ) : null}
@@ -840,8 +849,10 @@ export function GalleryScreen() {
           <ArchiveFocus
             item={focused}
             width={paneW}
-            onShare={focused && focused.type !== 'class' ? () => shareItems([focused]) : undefined}
-            onPrint={focused ? () => onPrintItems([focused]) : undefined}
+            // With cards picked, the pane's buttons act on all of them (owner, v0.50.6: Print gave only the first).
+            group={selecting ? selected.size : 0}
+            onShare={selecting && selected.size ? () => shareItems(pickedFrom(everything, selected)) : focused && focused.type !== 'class' ? () => shareItems([focused]) : undefined}
+            onPrint={selecting && selected.size ? () => onPrintItems(pickedFrom(everything, selected)) : focused ? () => onPrintItems([focused]) : undefined}
             onOpen={focused ? () => { playSfx('cardFullscreenEnter'); setReading(focused); } : undefined}
           />
         </View>
@@ -978,7 +989,7 @@ function kindLine(item: GalleryItem): string {
  * The archive's focus pane on a desktop window (v0.45.0): the clicked card at reading size, what it is, and what
  * can be done with it. A class card pages through its rules here; the full-size reader is one button away.
  */
-function ArchiveFocus({ item, width, onShare, onPrint, onOpen }: { item: GalleryItem | null; width: number; onShare?: () => void; onPrint?: () => void; onOpen?: () => void }) {
+function ArchiveFocus({ item, width, group = 0, onShare, onPrint, onOpen }: { item: GalleryItem | null; width: number; /** Cards picked: Share and Print name them. */ group?: number; onShare?: () => void; onPrint?: () => void; onOpen?: () => void }) {
   const [paneH, setPaneH] = useState(0);
   const [pageState, setPage] = useState(0);
   useEffect(() => { setPage(0); }, [item?.id]);
@@ -1034,8 +1045,8 @@ function ArchiveFocus({ item, width, onShare, onPrint, onOpen }: { item: Gallery
         <Text style={{ color: Rune.goldText, fontSize: 12, fontFamily: Body.bold, letterSpacing: 1.2, textTransform: 'uppercase' }}>{kindLine(item)}</Text>
       </View>
       <View style={{ alignSelf: 'stretch', paddingHorizontal: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {onShare ? <RuneButton label="Share" kind="primary" dense height={38} style={{ flexGrow: 1 }} onPress={onShare} /> : null}
-        {onPrint ? <RuneButton label="Print" kind="secondary" dense height={38} style={{ flexGrow: 1 }} onPress={onPrint} /> : null}
+        {onShare ? <RuneButton label={group ? `Share ${group} picked` : 'Share'} kind="primary" dense height={38} style={{ flexGrow: 1 }} onPress={onShare} /> : null}
+        {onPrint ? <RuneButton label={group ? `Print ${group} picked` : 'Print'} kind="secondary" dense height={38} style={{ flexGrow: 1 }} onPress={onPrint} /> : null}
         {onOpen ? <RuneButton label="View full size" kind="secondary" dense height={38} style={{ flexGrow: 1 }} onPress={onOpen} /> : null}
       </View>
     </ScrollView>

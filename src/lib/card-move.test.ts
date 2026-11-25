@@ -1,4 +1,4 @@
-import { dependencyNote, extraDependencies, moveCards, withDependencies } from './card-move';
+import { dependencyNote, extraDependencies, moveCards, unclaimedItems, withDependencies } from './card-move';
 import type { LibraryCard, LibraryContentType } from './library';
 
 const c = (id: string, contentType: LibraryContentType, title: string, over: Partial<LibraryCard> = {}): LibraryCard =>
@@ -89,4 +89,10 @@ describe('moveCards', () => {
     const r = moveCards(ALL, [], ['k'], 'copy');
     expect(r.to.map((x) => x.id)).toContain('i1');
   });
+});
+
+it("a custom class's starting items are its own: other classes are offered only the unclaimed ones", () => {
+  const items = [c('i1', 'inventory', 'Firewood'), c('i2', 'inventory', 'Bones'), c('i3', 'inventory', 'Rope')];
+  expect(unclaimedItems(items, [CLASS]).map((x) => x.id)).toEqual(['i3']);
+  expect(unclaimedItems(items, []).map((x) => x.id)).toEqual(['i1', 'i2', 'i3']);
 });

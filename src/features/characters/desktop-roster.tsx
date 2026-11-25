@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import type { View as RNView } from 'react-native';
 import Animated, { Easing, FadeIn, useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
 
@@ -8,6 +8,7 @@ import { ChamferBox } from '@/components/chamfer-box';
 import { Portrait } from '@/components/portrait';
 import { RuneButton } from '@/components/rune-button';
 import { classColor } from '@/constants/identity';
+import { DesktopPortal } from '@/components/desktop-portal';
 import { Body, Display, Rune } from '@/constants/theme';
 import { type DmCard, dmDecks } from '@/features/dm/dm-decks';
 import { type CharacterFile, classLabel } from '@/lib/character-file';
@@ -31,6 +32,8 @@ export function RosterDossier({ file, onOpen, onShare, onRename, onMove, onDelet
 }) {
   const decks = useMemo(() => decksOf(file), [file]);
   const tint = classColor(file.className);
+  // v0.50.6 (owner): a click on one of the character's cards shows it full size, over the whole window.
+  const [viewing, setViewing] = useState<DmCard | null>(null);
   return (
     <Animated.View key={file.id} entering={FadeIn.duration(180)} style={{ flex: 1 }}>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 34, paddingTop: 26, paddingBottom: 30, gap: 26 }} showsVerticalScrollIndicator={false}>
@@ -51,9 +54,10 @@ export function RosterDossier({ file, onOpen, onShare, onRename, onMove, onDelet
             </View>
           </View>
         </View>
-        <DeckRow title="Arsenal" cards={decks.abilities ?? []} />
-        <DeckRow title="Inventory" cards={decks.inventory ?? []} />
+        <DeckRow title="Arsenal" cards={decks.abilities ?? []} onView={setViewing} />
+        <DeckRow title="Inventory" cards={decks.inventory ?? []} onView={setViewing} />
       </ScrollView>
+      {viewing ? <CardView card={viewing} onClose={() => setViewing(null)} /> : null}
     </Animated.View>
   );
 }
@@ -79,7 +83,7 @@ const FADE = 56;
  * longer than the pane scrolls sideways with the mouse wheel. Each edge fades while there is more to see that
  * way, so a card at the border dissolves instead of being cut.
  */
-function DeckRow({ title, cards }: { title: string; cards: DmCard[] }) {
+function DeckRow({ title, cards, onView }: { title: string; cards: DmCard[]; onView: (c: DmCard) => void }) {
   const [rowW, setRowW] = useState(0);
   const [x, setX] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
@@ -136,7 +140,7 @@ function DeckRow({ title, cards }: { title: string; cards: DmCard[] }) {
             scrollEventThrottle={32}
             onScroll={(e) => setX(e.nativeEvent.contentOffset.x)}
             contentContainerStyle={{ paddingHorizontal: PAD_X, paddingTop: LIFT_ROOM, paddingBottom: 10, gap: GAP }}>
-            {cards.map((c, i) => <FannedCard key={c.id} card={c} index={i} />)}
+            {cards.map((c, i) => <FannedCard key={c.id} card={c} index={i} onView={onView} />)}
           </ScrollView>
         )}
       </View>
@@ -145,7 +149,7 @@ function DeckRow({ title, cards }: { title: string; cards: DmCard[] }) {
 }
 
 /** A card in a deck row: dealt in left to right, lifting under the pointer. */
-const FannedCard = memo(function FannedCard({ card, index }: { card: DmCard; index: number }) {
+const FannedCard = memo(function FannedCard({ card, index, onView }: { card: DmCard; index: number; onView: (c: DmCard) => void }) {
   const reduced = useReducedMotion();
   const lift = useSharedValue(0);
   const deal = useSharedValue(reduced ? 1 : 0);
@@ -167,7 +171,8 @@ const FannedCard = memo(function FannedCard({ card, index }: { card: DmCard; ind
         onHoverIn={() => { setHover(true); lift.value = reduced ? 1 : withTiming(1, { duration: 150, easing: Easing.out(Easing.cubic) }); }}
         onHoverOut={() => { setHover(false); lift.value = reduced ? 0 : withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) }); }}
         accessibilityLabel={card.label}
-        style={{ width: SHOW_W, height: SHOW_W * 1.4 }}>
+        onPress={() => onView(card)}
+        style={{ width: SHOW_W, height: SHOW_W * 1.4, cursor: 'zoom-in' } as object}>
         <Animated.View style={[{ width: SHOW_W, height: SHOW_W * 1.4, overflow: 'hidden', backgroundColor: Rune.ink }, liftStyle]}>
           {card.source || card.thumb ? (
             <ArtImage source={(card.thumb ?? card.source) as number} fit="cover" />
@@ -180,6 +185,48 @@ const FannedCard = memo(function FannedCard({ card, index }: { card: DmCard; ind
     </Animated.View>
   );
 });
+
+/**
+ * One card full size over the whole window (v0.50.6): as tall as the window allows, a multi-page card's pages
+ * stepped through with the buttons under it. A click outside it or Escape closes it.
+ */
+function CardView({ card, onClose }: { card: DmCard; onClose: () => void }) {
+  const { height } = useWindowDimensions();
+  const [page, setPage] = useState(0);
+  const pages = 1 + (card.faces?.length ?? 0);
+  const h = Math.max(320, Math.min(height - 150, 860));
+  const w = h / 1.4;
+  const k = h / CH;
+  const live = page === 0 ? card.node : card.faces?.[page - 1];
+  // Escape closes it (the page's own layers never see this one).
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); } };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+  const art = page === 0 ? card.source ?? card.thumb : undefined;
+  return (
+    <DesktopPortal to="modal" priority="dialog" onDismiss={onClose}>
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <Pressable onPress={onClose} accessibilityLabel="Close the card" style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, backgroundColor: 'rgba(6,8,13,0.82)' }} />
+      <View style={{ alignItems: 'center', gap: 14 }}>
+        <View accessibilityLabel={card.label} style={{ width: w, height: h, overflow: 'hidden', backgroundColor: Rune.ink }}>
+          {art ? <ArtImage source={art as number} fit="cover" /> : (
+            <View ref={inertRef} pointerEvents="none" style={{ width: CW, height: CH, transform: [{ scale: k }], transformOrigin: [0, 0, 0] }}>{live}</View>
+          )}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {pages > 1 ? <RuneButton label="Previous page" kind="secondary" height={38} disabled={page === 0} onPress={() => setPage((p) => Math.max(0, p - 1))} /> : null}
+          {pages > 1 ? <Text style={{ color: Rune.muted, fontSize: 13, fontFamily: Body.bold, minWidth: 90, textAlign: 'center' }}>Page {page + 1} of {pages}</Text> : null}
+          {pages > 1 ? <RuneButton label="Next page" kind="secondary" height={38} disabled={page === pages - 1} onPress={() => setPage((p) => Math.min(pages - 1, p + 1))} /> : null}
+          <RuneButton label="Close" kind="ghost" height={38} onPress={onClose} />
+        </View>
+      </View>
+    </View>
+    </DesktopPortal>
+  );
+}
 
 /** Marks a preview's subtree inert (web): nothing inside it can take focus or input. */
 function inertRef(el: RNView | null) {

@@ -80,11 +80,13 @@ export const CATALOG_EFFECTS: Record<string, CardEffect[]> = {
     { target: "presence", delta: 2, note: "Full Surge: +2 Presence while surging" },
     { target: "knowledge", delta: 2, note: "Full Surge: +2 Knowledge while surging" },
   ],
-  // Dread 8. Eldritch Flesh: +1 Armor Score for every 2 Stress you have marked. The first card that
-  // reads a resource rather than a stat, which is what the `stress` formula variable is for: it moves
-  // as you play, so the sheet re-derives whenever Stress changes.
+  // Dread 8. Eldritch Flesh: "+1 bonus to your damage thresholds for each Stress you have marked"
+  // (v0.50.6: was +1 Armor per 2 Stress, which the card never said). The first card that reads a
+  // resource rather than a stat, which is what the `stress` formula variable is for: it moves as you
+  // play, so the sheet re-derives whenever Stress changes. The Fear/Hope armor clear is played by hand.
   "dread-08-2": [
-    { target: "armorScore", dynamic: "formula", formula: { variable: "stress", divide: 2, floor: true }, note: "Eldritch Flesh: +1 Armor Score per 2 marked Stress" },
+    { target: "majorThreshold", dynamic: "formula", formula: { variable: "stress" }, note: "Eldritch Flesh: +1 to damage thresholds per marked Stress" },
+    { target: "severeThreshold", dynamic: "formula", formula: { variable: "stress" }, note: "Eldritch Flesh: +1 to damage thresholds per marked Stress" },
   ],
   // Bone 2. Ferocity: +Evasion equal to the Hit Points your target marked. Nothing on the sheet knows
   // what the enemy took, so the card ASKS: the "#" button on a focused card opens a keypad and the

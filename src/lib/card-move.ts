@@ -26,6 +26,15 @@ const itemIdsOf = (c: LibraryCard): string[] => {
   return [...(s.fixedItemIds ?? []), ...(s.choiceAItemIds ?? []), ...(s.choiceBItemIds ?? [])];
 };
 
+/**
+ * Homebrew items any other class may start with (owner, v0.50.6): every installed item but the ones a custom class
+ * hands out as its own starting items, which belong to that class alone.
+ */
+export function unclaimedItems(items: LibraryCard[], classes: LibraryCard[]): LibraryCard[] {
+  const claimed = new Set(classes.flatMap(itemIdsOf));
+  return items.filter((c) => !claimed.has(c.id));
+}
+
 const domainKey = (s: string | undefined): string => (s ?? '').trim().toLowerCase();
 
 /**

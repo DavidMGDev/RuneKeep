@@ -143,7 +143,8 @@ function SectionLabel({ children }: { children: string }) {
 export function LevelUpPanel({
   file,
   defaults,
-  domainOptions,
+  domainOptions: baseDomainOptions,
+  multiclassCards,
   classOptions,
   companion,
   companionPicks = 0,
@@ -153,6 +154,8 @@ export function LevelUpPanel({
   file: CharacterFile;
   defaults: LevelDefaults;
   domainOptions: DomainCardInfo[];
+  /** v0.50.6: per domain, the cards a multiclass take this level-up would unlock. */
+  multiclassCards?: Record<string, DomainCardInfo[]>;
   /** #311: each multiclassable class with the domains + subclass foundation cards it offers. */
   classOptions: { key: string; label: string; domains: string[]; subclasses: { id: string; label: string }[] }[];
   /** #311: the Beastbound companion (for the companion level-up step), and how many training options
@@ -202,6 +205,16 @@ export function LevelUpPanel({
   const expChoices = pendingExp ? [...exps, pendingExp] : exps;
   const expReady = !tierStart || !!expTitle.trim();
 
+  // v0.50.6: multiclassing on this level-up adds the new domain's cards to the deck straight away.
+  const mcDomain = takes.find((t) => t.key === 'multiclass')?.multiclassDomain;
+  const domainOptions = useMemo(
+    () => (mcDomain && multiclassCards?.[mcDomain] ? [...baseDomainOptions, ...multiclassCards[mcDomain]] : baseDomainOptions),
+    [baseDomainOptions, multiclassCards, mcDomain],
+  );
+  // A card from a domain the player then un-chose cannot stay picked.
+  useEffect(() => {
+    setSelectedDomains((cur) => (cur.every((id) => domainOptions.some((d) => d.id === id)) ? cur : cur.filter((id) => domainOptions.some((d) => d.id === id))));
+  }, [domainOptions]);
   const hasDomainAdv = takes.some((t) => t.key === 'domain');
   const maxDomains = 1 + (hasDomainAdv ? 1 : 0);
   // v0.14.0: MEMOIZED. An unstable `items` identity rebuilt the carousel's pan gesture on every detent

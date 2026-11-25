@@ -1,3 +1,4 @@
+import { CATALOG_EFFECTS } from '../data/catalog-effects';
 import type { EffectFormula } from './modifiers';
 import { type BaseStats, type CardEffect, computeSheet, effectiveLevel, type EffectSource, STAT_CAPS, tierForLevel } from './modifiers';
 
@@ -229,13 +230,22 @@ describe('overwrite (v0.32.0) — Overwhelming Aura', () => {
 describe('stress + input variables (v0.32.0)', () => {
   const keyed = (source: string, effects: CardEffect[], key?: string): EffectSource => ({ source, effects, key });
 
-  it('Eldritch Flesh gives +1 Armor per TWO marked Stress, rounding down', () => {
+  it('a stress formula halved and floored gives +1 per TWO marked Stress', () => {
     const armorPerStress: CardEffect[] = [{ target: 'armorScore', dynamic: 'formula', formula: { variable: 'stress', divide: 2, floor: true } }];
-    const at = (stress: number) => computeSheet(ZERO, 1, [src('Eldritch Flesh', armorPerStress)], null, { stress }).armorScore.total;
+    const at = (stress: number) => computeSheet(ZERO, 1, [src('Halved', armorPerStress)], null, { stress }).armorScore.total;
     expect(at(0)).toBe(0);
     expect(at(1)).toBe(0); // one Stress has not reached the first two
     expect(at(2)).toBe(1);
     expect(at(5)).toBe(2);
+  });
+
+  it('Eldritch Flesh as shipped: +1 to BOTH damage thresholds per marked Stress, Armor untouched', () => {
+    const flesh = CATALOG_EFFECTS['dread-08-2'];
+    const at = (stress: number) => computeSheet(ZERO, 1, [src('Eldritch Flesh', flesh)], null, { stress });
+    expect(at(0).majorThreshold.total).toBe(0);
+    expect(at(3).majorThreshold.total).toBe(3);
+    expect(at(3).severeThreshold.total).toBe(3);
+    expect(at(3).armorScore.total).toBe(0);
   });
 
   it("a card's number input is its OWN, never shared", () => {

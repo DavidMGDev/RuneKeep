@@ -61,7 +61,11 @@ function Coin({ filled, size }: { filled: boolean; size: number }) {
   return <View style={{ width: size, height: size, borderRadius: size / 2, borderWidth: 1.2, borderColor: '#9a7a2e', backgroundColor: filled ? GOLD : 'transparent' }} />;
 }
 
-function Row({ label, count, max, size }: { label: string; count: number; max: number; size: number }) {
+/**
+ * v0.50.6 (owner): a coin is a button. Tapping the sixth handful makes it six handfuls, so counting gold is one tap
+ * instead of many presses of +; tapping the last filled coin again empties it (that is how a row gets to zero).
+ */
+function Row({ label, count, max, size, onSet }: { label: string; count: number; max: number; size: number; onSet: (n: number) => void }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 5 }}>
       {/* wider, smaller, auto-fit label so the FULL word renders — no "Handfu..." ellipsis (#155) */}
@@ -69,7 +73,9 @@ function Row({ label, count, max, size }: { label: string; count: number; max: n
       {/* NO flexWrap: all `max` coins stay on ONE row (sized so 9 fit), pushed right by the wider label (#155) */}
       <View style={{ flexDirection: 'row', gap: 2, flex: 1, overflow: 'hidden' }}>
         {Array.from({ length: max }, (_, i) => (
-          <Coin key={i} filled={i < count} size={size} />
+          <Pressable key={i} onPress={() => onSet(i + 1 === count ? i : i + 1)} hitSlop={{ top: 6, bottom: 6, left: 1, right: 1 }} accessibilityRole="button" accessibilityLabel={`${label}: set to ${i + 1 === count ? i : i + 1}`}>
+            <Coin filled={i < count} size={size} />
+          </Pressable>
         ))}
       </View>
     </View>
@@ -146,9 +152,9 @@ export function GoldCard({ gold, onChange }: { gold: GoldAmount; onChange: (g: G
       <View style={{ flex: 1, paddingHorizontal: 14, paddingTop: 18, paddingBottom: 14 }}>
         <Text style={{ color: Rune.inkText, fontSize: 16, fontFamily: Display.bold, letterSpacing: 0.4, textTransform: 'uppercase', textAlign: 'center' }}>Gold</Text>
         {/* handfuls near the title, chest at the bottom (#128 inverted order) */}
-        <Row label="Handfuls" count={gold.handfuls} max={9} size={12} />
-        <Row label="Bags" count={gold.bags} max={9} size={12} />
-        <Row label="Chest" count={gold.chest} max={1} size={18} />
+        <Row label="Handfuls" count={gold.handfuls} max={9} size={12} onSet={(n) => onChange({ ...gold, handfuls: n })} />
+        <Row label="Bags" count={gold.bags} max={9} size={12} onSet={(n) => onChange({ ...gold, bags: n })} />
+        <Row label="Chest" count={gold.chest} max={1} size={18} onSet={(n) => onChange({ ...gold, chest: n })} />
         {/* one central +/- — adds/removes a handful, carrying across the rows */}
         <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 'auto' }}>
           <Step label="–" onStep={() => step(-1)} disabled={isEmpty(gold)} />

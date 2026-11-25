@@ -20,7 +20,8 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 
 import { Display } from '@/constants/theme';
-import { DIE_COLOR, DIE_INK, type DieType, FEAR_INK, FEAR_PURPLE, HOPE_GOLD, HOPE_INK, kindScale, tokenElement, tokenFill, type TokenKind } from '../components/card-tokens-data';
+import { mineReach, tokenRound } from './token-chest';
+import { DIE_COLOR, DIE_INK, type DieType, FEAR_INK, FEAR_PURPLE, HOPE_GOLD, HOPE_INK, kindScale, TOKEN_COLORS, tokenElement, tokenFill, type TokenKind } from '../components/card-tokens-data';
 import type { PoolDie } from '@/lib/dice-pool';
 import type { PresetModifier } from '@/lib/dice-presets';
 import { playSynth } from '@/lib/sfx';
@@ -132,6 +133,16 @@ const TOKEN_DIE_SIZE = 46;
 /** A token or die on a card: one on a card in the hand, or the piece of one on the table. */
 export type CardTok = { key: string } | { ref: string; id: string };
 
+/** The token chest (owner, v0.50.6): the supply's tokens kept in a smaller walnut chest that works as the dice chest does. */
+export const TOK_CHEST = 'src:tok';
+/** What the token chest's fan holds when it is clicked: one of each material and a colour. */
+const TOKEN_OFFER = (): TokenInfo[] => [{ kind: 'wood' }, { kind: 'bone' }, { kind: 'iron' }, { kind: 'copper' }, { kind: 'gold' }, { kind: 'color', color: TOKEN_COLORS[Math.floor(Math.random() * TOKEN_COLORS.length)] }];
+/** The dice chest stands off the supply row's end, unless the token chest is out: then both stand in it (owner, v0.50.6). */
+const chestApart = (p: { diceChest?: unknown; supply: SupplyPiece[] }) => !!p.diceChest && !p.supply.some((s) => s.key === TOK_CHEST);
+/** How fast (px/s) a piece the hand threw must strike the carousel to crit it (owner, v0.50.6). */
+const CRIT_SPEED = 3000;
+/** What the dice chest throws out as it is scrolled, in this order and round again (owner, v0.50.6). */
+const SCROLL_DICE: DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100'];
 /** One of every die, as the dice chest offers them. */
 const DIE_KINDS: DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100', 'duality'];
 const FACES_OF: Record<Shape, number> = { d4: 4, d6: 6, d8: 8, d10: 10, d12: 12, d20: 20 };
@@ -140,7 +151,7 @@ const FACES_OF: Record<Shape, number> = { d4: 4, d6: 6, d8: 8, d10: 10, d12: 12,
  * slot fits the widest it can be, Hope and Fear side by side, so the row never shifts as the wheel turns it (owner,
  * v0.47.11: it sat on top of its neighbours).
  */
-const slotOf = (key: string, dir: 'row' | 'column') => (key === 'src:die' ? (dir === 'row' ? 128 : 96) : key === DOMAT_KEY ? (dir === 'row' ? 86 : 100) : dir === 'row' ? 72 : 90);
+const slotOf = (key: string, dir: 'row' | 'column') => (key === 'src:die' ? (dir === 'row' ? 128 : 96) : key === TOK_CHEST ? (dir === 'row' ? 100 : 84) : key === DOMAT_KEY ? (dir === 'row' ? 86 : 100) : dir === 'row' ? 72 : 90);
 /** Half the length of a full supply row (all four), for keeping it on the table. */
 export const SUPPLY_HALF = { row: (72 * 2 + 128 + 86) / 2, column: (90 * 2 + 96 + 100) / 2 };
 const CTL_GAP = { row: 94, column: 104 };
@@ -305,6 +316,10 @@ export const TableDice = forwardRef<TableDiceHandle, {
   onPound?: (at: { x: number; y: number }) => void;
   /** A die or token struck the physical carousel this hard (px/s) (v0.47.25). */
   onCarouselHit?: (speed: number, charged: boolean, wall: string) => void;
+  /** v0.50.6: a piece the hand threw struck the carousel fast enough to crit it, here (table px). */
+  onCarouselCrit?: (at: { x: number; y: number }, wall: string) => void;
+  /** v0.50.6: a token chest's mine went off here, reaching `r` px, made of `n` tokens; `huge` past the screen. */
+  onBlast?: (at: { x: number; y: number }, r: number, n: number, huge: boolean) => void;
   /** A water token hit a wall hard and sent a wave across the table from here (v0.47.19). */
   onSplash?: (at: { x: number; y: number }) => void;
   /** A charged throw broke these loose pieces or physical cards (the first where `at` is); they are gone from the table. */
@@ -446,7 +461,15 @@ export const TableDice = forwardRef<TableDiceHandle, {
           if (!knockCue(hit.kind, sparked.current.has(hit.key) ? hit.speed * 0.3 : hit.speed)) void import('./dice-engine').then((m) => m.knock(playSynth, hit));
           if (hit.kind === 'rail' && hit.speed > 2400) live.current.onHardHit(hit.speed);
           if (hit.other) live.current.onKnock?.(hit.key, hit.other);
-          if (hit.wall?.startsWith('carousel')) live.current.onCarouselHit?.(hit.speed, !!hit.charged, hit.wall);
+          if (hit.wall?.startsWith('carousel')) {
+            // Thrown by the hand, hard enough, it is a crit (owner, v0.50.6); anything else is the usual knock.
+            const thrownAt = handThrown.current.get(hit.key);
+            const st = e.state(hit.key);
+            if (thrownAt && performance.now() - thrownAt < 3000 && hit.speed > CRIT_SPEED && st && live.current.onCarouselCrit) {
+              handThrown.current.delete(hit.key);
+              live.current.onCarouselCrit({ x: st.x, y: st.y }, hit.wall);
+            } else live.current.onCarouselHit?.(hit.speed, !!hit.charged, hit.wall);
+          }
         });
         // A charged die's time is up: it slams down where it is, the lightning goes out of it (v0.47.18).
         e.onPound((key, at) => {
@@ -508,7 +531,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
 
   // ---------------------------------------------------------------- homes
   /** The supply's row, in order: material, colour, the Deck of Many Things; the die spawner too unless it is the chest. */
-  const supRow = () => [...live.current.supply.map((s) => s.key).filter((k) => !(k === 'src:die' && live.current.diceChest)), ...(live.current.domat ? [DOMAT_KEY] : [])];
+  const supRow = () => [...live.current.supply.map((s) => s.key).filter((k) => !(k === 'src:die' && chestApart(live.current))), ...(live.current.domat ? [DOMAT_KEY] : [])];
   const homeOf = useCallback((key: string): { x: number; y: number } | null => {
     const p = live.current.places;
     const b = boundsRef.current;
@@ -519,7 +542,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const base = baseOf(key);
     const sup = supRow();
     // The dice chest stands on its own (owner, v0.47.17): just past the end of the row unless it was put elsewhere.
-    if (base === 'src:die' && live.current.diceChest) {
+    if (base === 'src:die' && chestApart(live.current)) {
       if (p.apart?.['src:die']) return clamp(p.apart['src:die']);
       const half = sup.reduce((a, k) => a + slotOf(k, p.sup.dir), 0) / 2 + 80;
       return clamp(p.sup.dir === 'row' ? { x: p.sup.x + half, y: p.sup.y } : { x: p.sup.x, y: p.sup.y + half });
@@ -756,7 +779,17 @@ export const TableDice = forwardRef<TableDiceHandle, {
         if (!fresh && built.current.get('src:die') === sig) return;
         built.current.set('src:die', sig);
         const at = fresh ? placeOf('src:die') : { x: 0, y: 0 };
-        engine.add({ key: 'src:die', shape: props.diceChest, size: 78, body: '#8a5a2b', edge: '#E0B563', ink: '#000', faces: [], finish: 'stone', spawner: true, fixed: true }, at.x, at.y);
+        // v0.50.6 (owner): the cute dice chest is the big brown one; the toothy one stays the mimic.
+        engine.add({ key: 'src:die', shape: props.diceChest === 'chest' ? 'dicechest' : props.diceChest, size: 86, body: '#8a5a2b', edge: '#E0B563', ink: '#000', faces: [], finish: 'stone', spawner: true, fixed: true }, at.x, at.y);
+        return;
+      }
+      if (t.key === TOK_CHEST) {
+        want.add(TOK_CHEST);
+        const fresh = !engine.has(TOK_CHEST);
+        if (!fresh && built.current.get(TOK_CHEST) === 'tokenchest') return;
+        built.current.set(TOK_CHEST, 'tokenchest');
+        const at = fresh ? placeOf(TOK_CHEST) : { x: 0, y: 0 };
+        engine.add({ key: TOK_CHEST, shape: 'tokenchest', size: 56, body: '#4a2a14', edge: '#6b6b6b', ink: '#000', faces: [], finish: 'stone', spawner: true, fixed: true }, at.x, at.y);
         return;
       }
       for (const sp of tokenSpecs(pieceOf(t.key, t.token), numberFinish)) {
@@ -814,6 +847,30 @@ export const TableDice = forwardRef<TableDiceHandle, {
   const carried = useRef<string[]>([]);
   /** The dice the chest is offering (their base keys), held still until one is chosen. */
   const offered = useRef<string[]>([]);
+  /** Which chest the fan came out of. */
+  const offeredBy = useRef('src:die');
+  /** Pieces the hand threw, and when (a crit on the carousel needs one, owner v0.50.6). */
+  const handThrown = useRef(new Map<string, number>());
+  /**
+   * v0.50.6 (owner): a chest's mouth opens while it works (scrolled either way, a feast, a put-away) and shuts a beat
+   * after the last of it, never in the middle because an earlier job finished first. Per chest.
+   */
+  const mouths = useRef(new Map<string, { until: number; timer?: ReturnType<typeof setTimeout> }>());
+  const holdMouth = useCallback((key: string, ms: number) => {
+    const e = engineRef.current;
+    if (!e) return;
+    const m = mouths.current.get(key) ?? { until: 0 };
+    mouths.current.set(key, m);
+    m.until = Math.max(m.until, performance.now() + ms);
+    e.mimic(key, 1);
+    clearTimeout(m.timer);
+    m.timer = setTimeout(() => {
+      m.until = 0;
+      // A chest keeps its mouth open while its fan is still out.
+      if (key === offeredBy.current && offered.current.length) return;
+      engineRef.current?.mimic(key, 0);
+    }, Math.max(0, m.until - performance.now()));
+  }, []);
   /** Offered dice not chosen dissolve: a soft puff, each shrinking up and away, then gone. */
   const dissolve = useCallback((bases: string[]) => {
     const e = engineRef.current;
@@ -1262,15 +1319,16 @@ export const TableDice = forwardRef<TableDiceHandle, {
     };
     /** The dice chest opens and spits out one of every die, in a fan towards the open table, held still. */
     let lastOffer = 0;
-    const offer = (at: { x: number; y: number }) => {
+    const offer = (at: { x: number; y: number }, chest = 'src:die') => {
       // Clicked over and over, it opens once (v0.47.17: spamming it froze dice mid-flight and shoved the chest away).
       const now = performance.now();
       if (now - lastOffer < 700) return;
       lastOffer = now;
       // Its dice still out and none taken: it eats them back instead (owner, v0.47.19).
-      if (offered.current.length) { eat(at); return; }
+      if (offered.current.length) { eat(engine.state(offeredBy.current) ?? at); return; }
       // Its mouth stays open while its dice are out (owner, v0.47.19), and shuts once they are taken or eaten.
-      engine.mimic('src:die', 1);
+      offeredBy.current = chest;
+      engine.mimic(chest, 1);
       const b = boundsRef.current;
       const a0 = Math.atan2((b.top + b.bottom) / 2 - at.y, (b.left + b.right) / 2 - at.x);
       // First it clears the ground (owner, v0.47.17): every loose die and token near it is pushed outward, out of the
@@ -1289,8 +1347,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
       }
       // Then the fan: laid out by each die's own width along the arc, a pair's two halves side by side, with room
       // between kinds, so nothing touches when they land (owner, v0.47.17: the pairs bumped their neighbours).
-      const made = DIE_KINDS.map((type) => {
-        const k = spawn({ kind: 'die', dieType: type, dieValue: 1, dieValue2: type === 'duality' ? 1 : undefined }, at.x, at.y);
+      const fanOf: TokenInfo[] = chest === TOK_CHEST ? TOKEN_OFFER() : DIE_KINDS.map((type) => ({ kind: 'die', dieType: type, dieValue: 1, dieValue2: type === 'duality' ? 1 : undefined }));
+      const made = fanOf.map((token) => {
+        const k = spawn(token, at.x, at.y);
         offered.current.push(baseOf(k));
         return partsOf(k).sort();
       });
@@ -1354,7 +1413,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       back.forEach((_, i) => setTimeout(() => cue('chest:stow', 'gearScroll1', { volume: 0.4, cents: Math.min(1400, -200 + i * 140) }), i * STEP + 520));
       const done = back.length * STEP + 650;
       leave(back.flatMap((b) => partsOf(b)), done);
-      setTimeout(() => engine.mimic('src:die', 0), done - 120);
+      holdMouth(offeredBy.current, done - 120);
       setTimeout(() => live.current.onDiscard?.(back), done);
     };
     /**
@@ -1364,14 +1423,108 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const mouthOf = (at: { x: number; y: number }, big: number) => {
       const b = boundsRef.current;
       const ang = Math.atan2((b.top + b.bottom) / 2 - at.y, (b.left + b.right) / 2 - at.x) + (Math.random() - 0.5) * 0.7;
-      const d = 78 * 0.43 + (TOKEN_DIE_SIZE * big) / 2 + 8, r = (TOKEN_DIE_SIZE * big) / 2 + 2;
+      const d = 86 * 0.43 + (TOKEN_DIE_SIZE * big) / 2 + 8, r = (TOKEN_DIE_SIZE * big) / 2 + 2;
       return { ang, x: Math.min(b.right - r, Math.max(b.left + r, at.x + Math.cos(ang) * d)), y: Math.min(b.bottom - r, Math.max(b.top + r, at.y + Math.sin(ang) * d)) };
     };
     /** Nothing to take: the chest shudders. */
-    const refuse = () => { engine.jitter('src:die', 0.5); setTimeout(() => engine.jitter('src:die', 0), 300); cue('domat:empty', 'cardDisable', { volume: 0.4 }); };
+    const refuse = (chest = 'src:die') => { engine.jitter(chest, 0.5); setTimeout(() => engine.jitter(chest, 0), 300); cue('domat:empty', 'cardDisable', { volume: 0.4 }); };
+    /** A loose token on the felt (never a die): what the token chest takes back. */
+    const isTok = (k: string) => engine.has(k) && k.startsWith('free:') && !leaving.current.has(k) && live.current.loose.find((l) => l.key === baseOf(k))?.token.kind !== 'die';
+    /**
+     * Right click on the token chest (owner, v0.50.6): it swallows every loose token as the dice chest swallows dice,
+     * and spits out a landmine, bigger the more it ate, whose lamp blinks faster and faster until it goes off.
+     */
+    const mineFeast = () => {
+      const at = engine.state(TOK_CHEST);
+      if (!at) return;
+      const bases = [...new Set(engine.keys().filter(isTok).map(baseOf))];
+      if (!bases.length) { refuse(TOK_CHEST); return; }
+      const keys = engine.keys().filter((k) => bases.includes(baseOf(k)));
+      for (const k of keys) fireRef.current?.set(k, 0);
+      setBurning((bs) => bs.filter((k) => !keys.includes(k)));
+      if (offeredBy.current === TOK_CHEST) offered.current = [];
+      selection.current = selection.current.filter((k) => !keys.includes(k));
+      live.current.onSelect(selection.current);
+      engine.unpin(keys);
+      const STEP = Math.max(30, Math.min(90, 900 / bases.length));
+      bases.forEach((base, i) => {
+        for (const k of keys.filter((x) => baseOf(x) === base)) engine.vanish(k, at.x + (Math.random() - 0.5) * 10, at.y + 4, i * STEP);
+        setTimeout(() => cue('chest:stow', 'gearScroll1', { volume: 0.4, cents: Math.min(1600, -300 + i * 90) }), i * STEP + 520);
+      });
+      const done = bases.length * STEP + 700;
+      leave(keys, done);
+      holdMouth(TOK_CHEST, done + 500);
+      setTimeout(() => {
+        live.current.onDiscard?.(bases);
+        plantMine(bases.length);
+      }, done);
+    };
+    const plantMine = (n: number) => {
+      const from = engine.state(TOK_CHEST);
+      if (!from) return;
+      const { width: W, height: H } = size.current;
+      const reach = mineReach(n);
+      const huge = reach >= Math.hypot(W, H) * 0.85;
+      const scale = Math.min(2.4, 0.9 + n * 0.08);
+      const key = `mine:${Date.now().toString(36)}`;
+      const m = mouthOf(from, scale);
+      // Olive drab, or metallic black once it is big enough to take the whole table (owner).
+      engine.add({ key, shape: 'mine', size: 44 * scale, body: huge ? '#141417' : '#55542c', edge: '#111', ink: '#000', faces: [], finish: huge ? 'metal' : 'stone' }, m.x, m.y, { pop: true, fresh: true });
+      engine.toss(key, Math.cos(m.ang) * 760, Math.sin(m.ang) * 760);
+      engine.blink(key, 1.2);
+      cue('mimic:pop', 'cardFullscreenEnter', { volume: 0.7, cents: Math.round(-150 * scale) });
+      // Its reach on the felt, while it ticks (a big one's is past the screen: no ring, the whole table goes).
+      const ring = huge ? null : document.createElement('div');
+      if (ring) {
+        Object.assign(ring.style, { position: 'absolute', left: '0', top: '0', width: `${reach * 2}px`, height: `${reach * 2}px`, borderRadius: '50%', pointerEvents: 'none', zIndex: '21', opacity: '0', border: '2px dashed rgba(255,72,48,0.85)', background: 'radial-gradient(circle, rgba(255,60,40,0) 55%, rgba(255,60,40,0.14) 100%)', transition: 'opacity 250ms' });
+        host.appendChild(ring);
+      }
+      const FUSE = 3400, t0 = performance.now();
+      const tick = () => {
+        const st = engine.state(key);
+        if (!st) { ring?.remove(); return; }
+        const t = Math.min(1, (performance.now() - t0) / FUSE);
+        engine.blink(key, 1.2 + 9 * t * t);
+        if (ring) {
+          ring.style.transform = `translate(${st.x - reach}px, ${st.y - reach}px)`;
+          ring.style.opacity = t > 0.2 ? String(0.55 + 0.45 * Math.abs(Math.sin(t * t * 40))) : '0';
+        }
+        if (t < 1) { requestAnimationFrame(tick); return; }
+        ring?.remove();
+        boom(key, { x: st.x, y: st.y }, reach, n, huge);
+      };
+      requestAnimationFrame(tick);
+    };
+    const boom = (key: string, at: { x: number; y: number }, reach: number, n: number, huge: boolean) => {
+      engine.remove(key);
+      cue('impact:stop', 'loseArmor', { volume: 1, cents: huge ? -1400 : Math.round(-200 - n * 40) });
+      const loose = (k: string) => /^(free|roll):/.test(k);
+      if (huge) {
+        // Everything on the table breaks into pieces that stay where they fall until the table is reset.
+        const all = engine.keys().filter(loose);
+        for (const k of all) { engine.shatter(k, true); rolled.current.delete(k); rolling.current.delete(k); }
+        landedKeys(all);
+        setBurning([]);
+        offered.current = [];
+        selection.current = [];
+        live.current.onSelect([]);
+        const cards = engine.cardKeys();
+        live.current.onBreak?.([...all, ...cards], at, true, false, cards.map((k) => ({ key: k, kind: 'break', speed: 6000, fire: true })));
+        // The control dice, the supply and the deck are thrown about, and go back to their places.
+        engine.impulse(at.x, at.y, Math.hypot(size.current.width, size.current.height) * 2, 2600);
+        live.current.onBlast?.(at, reach, n, true);
+        return;
+      }
+      // A small one: what is loose inside its reach is thrown away from it, and the dice leap high, spinning, alight.
+      const inside = (k: string) => { const st = engine.state(k); return !!st && Math.hypot(st.x - at.x, st.y - at.y) < reach; };
+      const dice = engine.keys().filter((k) => loose(k) && inside(k) && (k.startsWith('roll:') || isDie(k)));
+      engine.impulse(at.x, at.y, reach, 900 + n * 120, undefined, [...dice, ...engine.keys().filter((k) => !loose(k))]);
+      if (dice.length) leapRef.current(dice, 1, true);
+      live.current.onBlast?.(at, reach, n, false);
+    };
     /**
      * Right click (owner, v0.47.24): the chest swallows every die on the table, one after another, and spits out a
-     * single d20 rolled across the table, bigger the more it ate.
+     * Hope and Fear pair rolled across the table, bigger the more it ate (v0.50.6: was a d20).
      */
     const feast = () => {
       const at = engine.state('src:die');
@@ -1384,7 +1537,6 @@ export const TableDice = forwardRef<TableDiceHandle, {
       offered.current = [];
       selection.current = selection.current.filter((k) => !keys.includes(k));
       live.current.onSelect(selection.current);
-      engine.mimic('src:die', 1);
       engine.unpin(keys);
       const STEP = Math.max(30, Math.min(90, 900 / bases.length));
       bases.forEach((base, i) => {
@@ -1393,20 +1545,20 @@ export const TableDice = forwardRef<TableDiceHandle, {
       });
       const done = bases.length * STEP + 700;
       leave(keys, done);
+      holdMouth('src:die', done + 500);
       setTimeout(() => {
         for (const k of keys) rolled.current.delete(k);
         live.current.onDiscard?.(bases.filter((x) => x.startsWith('free:')));
         const now = engine.state('src:die') ?? at;
-        // About a sixth bigger for every die eaten, up to three and a half times a die.
-        const big = Math.min(3.5, 1 + 0.17 * bases.length);
-        const m = mouthOf(now, big);
-        const k = spawn({ kind: 'die', dieType: 'd20', dieValue: 1, big }, m.x, m.y);
+        // About a sixth bigger for every die eaten, up to three times a die (a pair is two of them side by side).
+        const big = Math.min(3, 1 + 0.17 * bases.length);
+        const m = mouthOf(now, big * 1.6);
+        const k = spawn({ kind: 'die', dieType: 'duality', dieValue: 1, dieValue2: 1, big }, m.x, m.y);
         fling(k, 1300 + big * 250, { gen: 3, power: 1 + big }, m.ang);
         // Read as a roll once the table knows it (the loose list catches up a render later).
         setTimeout(() => settle.current([k]), 80);
         cue('mimic:pop', 'cardFullscreenEnter', { volume: 0.8, cents: Math.round(-200 * big) });
         live.current.onHardHit(1500 + big * 1200);
-        setTimeout(() => { if (!offered.current.length) engine.mimic('src:die', 0); }, 500);
       }, done);
     };
     /** Grabbed from the offer: this one (or every offered piece in the selection) is kept, the rest dissolve. */
@@ -1416,7 +1568,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       engine.unpin(keep.flatMap((k) => partsOf(k)));
       dissolve(offered.current.filter((o) => !keep.includes(o)));
       offered.current = [];
-      engine.mimic('src:die', 0);
+      engine.mimic(offeredBy.current, 0);
     };
     const spawnOne = (key: string) => {
       const at = engine.state(key);
@@ -1424,6 +1576,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (key === DOMAT_KEY) { live.current.onDomatDraw({ x: at.x, y: at.y }); return; }
       // Right click on the chest: it swallows the table's dice for one giant d20 (owner, v0.47.24).
       if (key === 'src:die' && live.current.diceChest) { feast(); return; }
+      if (key === TOK_CHEST) { mineFeast(); return; }
       const src = live.current.supply.find((t) => t.key === baseOf(key));
       if (!src) return;
       fling(spawn(src.token, at.x, at.y), 900 + Math.random() * 500, undefined, outward(at.x, at.y));
@@ -1443,7 +1596,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
         menuUntil = performance.now() + 60000;
         spawnOne(sk);
         // The deck gives one card a minute and the chest one fan at a time: holding them gives nothing more.
-        if (sk === DOMAT_KEY || (sk === 'src:die' && live.current.diceChest)) { spawning = { id: e.pointerId }; return; }
+        if (sk === DOMAT_KEY || sk === TOK_CHEST || (sk === 'src:die' && live.current.diceChest)) { spawning = { id: e.pointerId }; return; }
         let delay = 300;
         const again = () => {
           spawnOne(sk);
@@ -1491,6 +1644,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
         return;
       }
       if (key === 'src:die' && live.current.diceChest) { const at = engine.state(key); if (at) offer(at); return; }
+      if (key === TOK_CHEST) { const at = engine.state(key); if (at) offer(at, TOK_CHEST); return; }
       if (offered.current.includes(baseOf(key))) choose(baseOf(key));
       try { host.setPointerCapture(e.pointerId); } catch { /* gone */ }
       let grabbed = key;
@@ -1675,6 +1829,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       }
       const zs = pr.zap ? zapKeys(pr.key) : [];
       const speed = pr.deferred ? 0 : engine.release();
+      if (pr.moved && speed > 0) for (const k of group ?? partsOf(pr.key)) handThrown.current.set(k, performance.now());
       // A die charged on its own counts as a roll of it, as a charged selection does.
       const counted = group ?? (zs.length ? zs : null);
       if (counted && (speed > 300 || zs.length)) settle.current(counted);
@@ -1791,12 +1946,15 @@ export const TableDice = forwardRef<TableDiceHandle, {
     };
     // The wheel: over the deck die it walks the decks, over a supply piece it walks that piece's options.
     let wheelAcc = 0;
+    const dieCycle = { i: 0, t: 0 };
+    const tokCycle = { i: 0, t: 0, round: [] as TokenInfo[] };
     const onWheel = (e: WheelEvent) => {
       // Over an open menu the wheel is the menu's, whatever die lies under it.
       if (inertRef.current || (e.target as HTMLElement).closest?.('[data-menu-backdrop], .rk-menu-pop')) return;
       const p = local(e);
       const key = engine.hit(p.x, p.y);
       const chest = key === 'src:die' && live.current.diceChest;
+      const tokChest = key === TOK_CHEST;
       // The playground keeps the supply (v0.47.22), so only the deck die is still for show there.
       if (key && !live.current.toys && live.current.actions.find((a) => a.key === key)?.menu) {
         // A control die with a menu: the wheel opens it, and goes on walking it there.
@@ -1812,6 +1970,27 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (Math.abs(wheelAcc) < 50) return;
       const dir = wheelAcc > 0 ? 1 : -1;
       wheelAcc = 0;
+      // The token chest as the dice chest (owner, v0.50.6): down throws out the next token, smallest first; up takes two back.
+      if (tokChest) {
+        const at = engine.state(TOK_CHEST);
+        if (!at) return;
+        if (dir < 0) {
+          const pool = [...new Set(engine.keys().filter(isTok).map(baseOf))];
+          if (!pool.length) { refuse(TOK_CHEST); return; }
+          for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+          putAwayRef.current(pool.slice(0, 2), TOK_CHEST);
+          return;
+        }
+        const now = performance.now();
+        if (now - tokCycle.t > 2000 || tokCycle.i >= tokCycle.round.length) { tokCycle.i = 0; tokCycle.round = tokenRound(); }
+        tokCycle.t = now;
+        const token = tokCycle.round[tokCycle.i++];
+        const m = mouthOf(at, kindScale(token.kind) * (token.big ?? 1));
+        fling(spawn(token, m.x, m.y), 900 + Math.random() * 500, undefined, m.ang);
+        cue('spawner:toss', 'placeToken', { volume: 0.4, cents: 200 + Math.random() * 300 });
+        holdMouth(TOK_CHEST, 1000);
+        return;
+      }
       // Scrolled down over it, the chest throws out one die of any kind (owner, v0.47.17); scrolled up, it takes two
       // dice off the table back in, any two (v0.47.24).
       if (chest) {
@@ -1821,13 +2000,18 @@ export const TableDice = forwardRef<TableDiceHandle, {
           const pool = [...new Set(engine.keys().filter((k) => isDie(k) && !leaving.current.has(k)).map(baseOf))];
           if (!pool.length) { refuse(); return; }
           for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-          putAwayRef.current(pool.slice(0, 2), true);
+          putAwayRef.current(pool.slice(0, 2), 'src:die');
           return;
         }
-        const type = DIE_KINDS[Math.floor(Math.random() * DIE_KINDS.length)];
+        // v0.50.6 (owner): in order, d4 first and up to d100, then round again; a pause starts it from the d4.
+        const now = performance.now();
+        if (now - dieCycle.t > 2000) dieCycle.i = 0;
+        dieCycle.t = now;
+        const type = SCROLL_DICE[dieCycle.i++ % SCROLL_DICE.length];
         const m = mouthOf(at, 1);
-        fling(spawn({ kind: 'die', dieType: type, dieValue: 1, dieValue2: type === 'duality' ? 1 : undefined }, m.x, m.y), 900 + Math.random() * 500, undefined, m.ang);
+        fling(spawn({ kind: 'die', dieType: type, dieValue: 1 }, m.x, m.y), 900 + Math.random() * 500, undefined, m.ang);
         cue('spawner:toss', 'placeToken', { volume: 0.4, cents: 200 + Math.random() * 300 });
+        holdMouth('src:die', 1000);
         return;
       }
       if (key === CAT) {
@@ -1860,7 +2044,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       if (spawning) clearTimeout(spawning.timer);
       if (ghost) { cancelAnimationFrame(ghost.raf); clearTimeout(ghost.timer); ghost.el.remove(); }
     };
-  }, [host, engine, spawn, fling, partsOf, watchLoose, pieceMenu, outward, dissolve]);
+  }, [host, engine, spawn, fling, partsOf, watchLoose, pieceMenu, outward, dissolve, holdMouth]);
 
   // ---------------------------------------------------------------- rolls, tidying and reset
   const waitFor = useCallback((keys: string[], read: () => PoolDie[]) => new Promise<PoolDie[]>((resolve) => {
@@ -2007,7 +2191,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
    * Put these pieces away (by base key): the tidy's flight home, never a break (owner, v0.47.21); only these go, the
    * rest stay. `mouth`: they go into the chest, which opens for them and shuts once they are in (v0.47.24).
    */
-  const putAwayRef = useRef<(bases: string[], mouth?: boolean) => void>(() => {});
+  const putAwayRef = useRef<(bases: string[], mouth?: string) => void>(() => {});
   putAwayRef.current = (asked, mouth) => {
     const engine = engineRef.current;
     if (!engine) return;
@@ -2022,13 +2206,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
     offered.current = offered.current.filter((o) => !bases.includes(o));
     selection.current = selection.current.filter((k) => !keys.includes(k));
     live.current.onSelect(selection.current);
-    if (mouth) engine.mimic('src:die', 1);
-    else cue('piece:putAway', 'tokenRemove');
+    if (!mouth) cue('piece:putAway', 'tokenRemove');
     const done = stow(keys);
+    if (mouth) holdMouth(mouth, done);
     setTimeout(() => {
       for (const k of keys) rolled.current.delete(k);
       live.current.onDiscard?.(bases.filter((x) => x.startsWith('free:')));
-      if (mouth && !offered.current.length) engine.mimic('src:die', 0);
     }, done);
   };
   const settle = useRef<(keys: string[]) => void>(() => {});
@@ -2052,6 +2235,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
     const toKey = (base: string): string => {
       const t = live.current.loose.find((l) => l.key === base)?.token;
       if (!t) return 'src:die';
+      if (t.kind !== 'die' && sup.some((x) => x.key === TOK_CHEST)) return TOK_CHEST;
       return t.kind === 'die' ? 'src:die' : t.kind === 'color' ? 'src:color' : 'src:mat';
     };
     const STAGGER = 45;
@@ -2067,6 +2251,40 @@ export const TableDice = forwardRef<TableDiceHandle, {
     return done;
   };
 
+  /** The Roll button's leap (and a mine's blast, v0.50.6): through a ref, so the table's own events can use it. */
+  const leapRef = useRef<(keys: string[], power?: number, burning?: boolean) => Promise<PoolDie[]>>(() => Promise.resolve([]));
+  leapRef.current = (keys, power, burning) => {
+  const engine = engineRef.current;
+  if (!engine) return Promise.resolve([]);
+    const groups = groupsOf(keys);
+    const all = [...new Set([...groups.values()].flat())];
+    if (!all.length) return Promise.resolve([]);
+    // The Roll button (owner, v0.47.31): the dice leap straight up where they lie, spinning hard, and barely move
+    // across the table. Pressed once, a great leap; held, higher, longer and faster still; held to the full, they
+    // catch light fire and hang in the air, falling slowly, spinning wildly until they land.
+    const pw = burning ? 1 : Math.max(0, Math.min(1, power ?? 0));
+    let hang = 0;
+    for (const k of all) {
+      // By how high it goes and how long it hangs (v0.47.32: by speed alone the full leap went off the top of the
+      // screen, fire and all): never higher than keeps it in view.
+      const at = engine.state(k);
+      const T = (burning ? 3.4 : 0.62 + 1.2 * pw) * (0.92 + Math.random() * 0.16);
+      const peak = Math.min((burning ? 760 : 300 + 380 * pw) * (0.9 + Math.random() * 0.2), Math.max(120, ((at?.y ?? 400) - 50) / 0.31));
+      const up = (4 * peak) / T, g = (8 * peak) / (T * T);
+      // However long it hangs, it lands only a little way from where it rose.
+      const ang = Math.random() * Math.PI * 2, drift = (40 + Math.random() * 60) / Math.max(0.5, (2 * up) / g);
+      const spin = (34 + 46 * pw + (burning ? 40 : 0)) * (0.85 + Math.random() * 0.3);
+      engine.leap(k, Math.cos(ang) * drift, Math.sin(ang) * drift, up, g, spin);
+      hang = Math.max(hang, (2 * up) / g);
+    }
+    if (burning) {
+      for (const k of all) fireRef.current?.set(k, 0.24);
+      // Out as they land.
+      setTimeout(() => { for (const k of all) if (!lit.current.has(k)) fireRef.current?.set(k, 0); }, hang * 1000 + 150);
+    }
+    cue(burning ? 'throw:fire' : 'roll:throw', burning ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.35 + pw * 0.3, cents: burning ? 900 : Math.round(pw * 500) });
+    return waitFor(all, () => readGroups(engine, groups)).then(celebrate);
+  };
   useImperativeHandle(ref, () => ({
     useControl: (key, at) => runRef.current(key, at),
     roll: (dice, from, rigged) => {
@@ -2105,41 +2323,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
         return thrown.map(({ die, keys: ks }) => ({ ...die, value: valueOf(die, ks.map((k) => engine.state(k)?.top ?? 0)) }));
       }).then(celebrate);
     },
-    rollPieces: (keys, power, burning) => {
-      if (!engine) return Promise.resolve([]);
-      const groups = groupsOf(keys);
-      const all = [...new Set([...groups.values()].flat())];
-      if (!all.length) return Promise.resolve([]);
-      // The Roll button (owner, v0.47.31): the dice leap straight up where they lie, spinning hard, and barely move
-      // across the table. Pressed once, a great leap; held, higher, longer and faster still; held to the full, they
-      // catch light fire and hang in the air, falling slowly, spinning wildly until they land.
-      const pw = burning ? 1 : Math.max(0, Math.min(1, power ?? 0));
-      let hang = 0;
-      for (const k of all) {
-        // By how high it goes and how long it hangs (v0.47.32: by speed alone the full leap went off the top of the
-        // screen, fire and all): never higher than keeps it in view.
-        const at = engine.state(k);
-        const T = (burning ? 3.4 : 0.62 + 1.2 * pw) * (0.92 + Math.random() * 0.16);
-        const peak = Math.min((burning ? 760 : 300 + 380 * pw) * (0.9 + Math.random() * 0.2), Math.max(120, ((at?.y ?? 400) - 50) / 0.31));
-        const up = (4 * peak) / T, g = (8 * peak) / (T * T);
-        // However long it hangs, it lands only a little way from where it rose.
-        const ang = Math.random() * Math.PI * 2, drift = (40 + Math.random() * 60) / Math.max(0.5, (2 * up) / g);
-        const spin = (34 + 46 * pw + (burning ? 40 : 0)) * (0.85 + Math.random() * 0.3);
-        engine.leap(k, Math.cos(ang) * drift, Math.sin(ang) * drift, up, g, spin);
-        hang = Math.max(hang, (2 * up) / g);
-      }
-      if (burning) {
-        for (const k of all) fireRef.current?.set(k, 0.24);
-        // Out as they land.
-        setTimeout(() => { for (const k of all) if (!lit.current.has(k)) fireRef.current?.set(k, 0); }, hang * 1000 + 150);
-      }
-      cue(burning ? 'throw:fire' : 'roll:throw', burning ? 'gainGoldenHp' : 'gearScroll1', { volume: 0.35 + pw * 0.3, cents: burning ? 900 : Math.round(pw * 500) });
-      return waitFor(all, () => readGroups(engine, groups)).then(celebrate);
-    },
+    rollPieces: (keys, power, burning) => leapRef.current(keys, power, burning),
     clearRoll: () => { if (engine) clear(engine); },
     stillThere: (id) => !engine || engine.has(id) || engine.has(`roll:${id}`),
     resetHome: () => {
       if (!engine) return;
+      engine.clearShards();
       sendHome();
       cue('table:home', 'gearScroll2', { volume: 0.45 });
     },
@@ -2149,6 +2338,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
       setBurning([]);
       offered.current = [];
       engine.mimic('src:die', 0);
+      engine.mimic(TOK_CHEST, 0);
+      // A big mine's rubble goes with the reset (owner, v0.50.6).
+      engine.clearShards();
       fireRef.current?.clear();
       const keys = engine.keys().filter((k) => k.startsWith('free:') || k.startsWith('roll:'));
       const done = stow(keys);
@@ -2222,8 +2414,9 @@ export const TableDice = forwardRef<TableDiceHandle, {
   // The row handles while settings are open: drag one to move its row, flip it to stand it on end.
   const groups: { g: PlaceGroup; box: Bounds; label: string; piece?: string; chain?: 'split' | 'join'; /** What its eye hides. */ keys?: string[] }[] = [];
   const ctlApart = actions.some((a) => places.apart?.[a.key]);
-  const supKeys = [...props.supply.map((t) => t.key).filter((k) => !(k === 'src:die' && props.diceChest)), ...(props.domat ? [DOMAT_KEY] : [])];
-  const chestOut = !!props.diceChest && props.supply.some((t) => t.key === 'src:die');
+  const tokOut = props.supply.some((t) => t.key === TOK_CHEST);
+  const supKeys = [...props.supply.map((t) => t.key).filter((k) => !(k === 'src:die' && props.diceChest && !tokOut)), ...(props.domat ? [DOMAT_KEY] : [])];
+  const chestOut = !!props.diceChest && !tokOut && props.supply.some((t) => t.key === 'src:die');
   const supApart = supKeys.some((k) => places.apart?.[k]);
   /** A frame round one piece split off its row. */
   const pieceBox = (key: string, r: number, label: string, g: PlaceGroup) => {
@@ -2249,7 +2442,7 @@ export const TableDice = forwardRef<TableDiceHandle, {
       groups.push({ g: 'cat', keys: [CAT], box: { left: places.cat.x - 58, right: places.cat.x + 58, top: places.cat.y - 58, bottom: places.cat.y + 64 }, label: 'Deck die' });
     }
     if (sn && supApart) {
-      for (const k of supKeys) pieceBox(k, k === 'src:die' ? 62 : 40, props.supply.find((t) => t.key === k)?.label ?? 'Many Things', 'sup');
+      for (const k of supKeys) pieceBox(k, k === 'src:die' ? 62 : k === TOK_CHEST ? 52 : 40, props.supply.find((t) => t.key === k)?.label ?? 'Many Things', 'sup');
     } else if (sn) {
       const keys = supKeys;
       const len = keys.reduce((a, k) => a + slotOf(k, places.sup.dir), 0) / 2 + 6;

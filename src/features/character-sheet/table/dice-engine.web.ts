@@ -29,13 +29,19 @@ export type Walls = 'none' | 'line' | 'stone' | 'brass';
  * What one face shows: a number (or any short text) or a picture, optionally on a round plate of that colour (a
  * gold deck icon on a gilded die sits on a dark medallion). Fewer than the die has repeat round.
  */
+/** Pieces drawn from their own Blender model (public/models/<shape>.glb) rather than a polyhedron. */
+const MODELED = ['mimic', 'chest', 'dicechest', 'tokenchest', 'mine'] as const;
+type Modeled = (typeof MODELED)[number];
+const isModeled = (shape: string): shape is Modeled => (MODELED as readonly string[]).includes(shape);
+
 export type FaceArt = { text: string } | { image: CanvasImageSource; plate?: string; halo?: string };
 
 export interface DieSpec {
   key: string;
   /** A polyhedron, a token chip (a flat disc that slides and never tumbles) or a deck of cards (a flat block). */
   /** ... or a chest with a lid that opens: the toothy mimic or the cute chest (scripts/blender/make_mimic.py). */
-  shape: Shape | 'chip' | 'deck' | 'mimic' | 'chest';
+  /** v0.50.6: the brown dice chest (--brown), the golden token chest (--token) and its landmine (make_mine.py). */
+  shape: Shape | 'chip' | 'deck' | 'mimic' | 'chest' | 'dicechest' | 'tokenchest' | 'mine';
   /** Across the die, px. */
   size: number;
   body: string;
@@ -122,6 +128,10 @@ export interface DiceEngine {
   contrary(on: boolean): void;
   /** Open a mimic's lid (0 shut, 1 wide). */
   mimic(key: string, open: number): void;
+  /** A mine's lamp blinks this many times a second (0 steady). */
+  blink(key: string, hz: number): void;
+  /** Shards from `shatter(key, true)` lie on the felt until this sweeps them away. */
+  clearShards(): void;
   /** The physical cards on the table (they answer `state`, `toss` and `home` like any piece). */
   cardKeys(): string[];
   /** Spin where it lies and land on whatever face comes up (right click). */
@@ -139,8 +149,8 @@ export interface DiceEngine {
   inside(r: Bounds): string[];
   /** Shake a piece where it lies, 0 still to 1 violent (a right click charging up). */
   jitter(key: string, amount: number): void;
-  /** Break a piece into flying shards and take it off the table. */
-  shatter(key: string): void;
+  /** Break a piece into flying shards and take it off the table; `stay`: the shards stay lying on the felt. */
+  shatter(key: string, stay?: boolean): void;
   /** A force over part of the table for `ms`. */
   field(f: Field, ms: number): void;
   /** The felt this slippery (1 normal, lower slides further) for `ms`. */
@@ -396,10 +406,10 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   const deck = deckModel();
   // The Void's mimic (v0.47.12): modelled in Blender (scripts/blender/make_mimic.py), its own materials, a lid that opens.
   const mimicModel: ShapeModel = { face: new THREE.BufferGeometry(), edge: null, faces: CHIP_FACES, inR: 0.5, artR: 0.4 };
-  const chests: Record<'mimic' | 'chest', THREE.Object3D | null> = { mimic: null, chest: null };
+  const chests: Record<Modeled, THREE.Object3D | null> = { mimic: null, chest: null, dicechest: null, tokenchest: null, mine: null };
   // Loaded before the engine is ready (small files), so a chest in the supply is never drawn as the plain stand-in.
-  await Promise.all((['mimic', 'chest'] as const).map((k) => new GLTFLoader().loadAsync(`/models/${k}.glb`).then((g) => { chests[k] = g.scene; }).catch(() => { /* drawn as a plain chest */ })));
-  const modelOf = (shape: DieSpec['shape']) => (shape === 'chip' ? chip : shape === 'deck' ? deck : shape === 'mimic' || shape === 'chest' ? mimicModel : shapes[shape]);
+  await Promise.all(MODELED.map((k) => new GLTFLoader().loadAsync(`/models/${k}.glb`).then((g) => { chests[k] = g.scene; }).catch(() => { /* drawn as a plain chest */ })));
+  const modelOf = (shape: DieSpec['shape']) => (shape === 'chip' ? chip : shape === 'deck' ? deck : isModeled(shape) ? mimicModel : shapes[shape]);
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -452,14 +462,17 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
   let nudgeTimer: ReturnType<typeof setTimeout> | undefined;
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
-  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { b: Body; dx: number; dy: number; orbit?: number; pair?: boolean }[] | null; lid: THREE.Object3D | null; mouth: number; mouthNow: number; /** A thrown die's hop (v0.47.28), drawn only: px up, px/s, and its own fall (px/s², the leap's slow one). */ hopZ?: number; hopV?: number; hopG?: number; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
+  interface Die { spec: DieSpec; body: Body; group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; scale: number; label: HTMLElement | null; labelW: number; wasAsleep: boolean; ring: THREE.Mesh | null; jitter: number; anchor: { card: string; lx: number; ly: number } | null; vanish: 'waiting' | 'flying' | null; follow: HTMLElement[]; glint: number; look: string; tether: { b: Body; dx: number; dy: number; orbit?: number; pair?: boolean }[] | null; lid: THREE.Object3D | null; mouth: number; mouthNow: number; /** A mine's lamp and how fast it blinks (v0.50.6). */ lamp: THREE.MeshStandardMaterial | null; blink: number; /** A thrown die's hop (v0.47.28), drawn only: px up, px/s, and its own fall (px/s², the leap's slow one). */ hopZ?: number; hopV?: number; hopG?: number; wash: { color: THREE.Color; peak: number; t0: number; hold: number; swell: number; own: Map<THREE.Material, THREE.Material> } | null }
   /** The cards on the table: a physical one is a body, the rest are where they lie. */
   const cards = new Map<string, { x: number; y: number; w: number; h: number; a: number; body: Body | null; was: boolean; samples: { x: number; y: number; t: number }[]; /** A swing building in the hand (v0.47.25), as a die's does: 0 to 2. */ swing?: number; hand?: number; st?: number }>();
   let cardsCb: (moved: { key: string; x: number; y: number; rot: number }[], rested: string[]) => void = () => {};
   const fields: { f: Field; until: number }[] = [];
   let slip = { scale: 1, until: 0 };
   /** Shards of a shattered piece: flying, falling, fading. */
-  const shards: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; spin: THREE.Vector3; born: number; z: number; x: number; y: number; size: number }[] = [];
+  /** `stay` (v0.50.6, a big mine's blast): it falls, settles and lies there until `clearShards`. */
+  const shards: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; spin: THREE.Vector3; born: number; z: number; x: number; y: number; size: number; stay?: boolean }[] = [];
+  /** Shards from a big blast that have settled: still drawn, no longer moved. */
+  const kept: typeof shards = [];
   // One shard shape and one material per colour, compiled before the first break (owner, v0.47.12: a burning throw
   // hung in mid-air while a dozen new materials were built and compiled on its first hit).
   const shardGeo = new THREE.TetrahedronGeometry(1);
@@ -616,6 +629,11 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       d.mouthNow += (d.mouth - d.mouthNow) * 0.14;
       d.lid.rotation.x = -Math.max(d.mouthNow, breath) * 1.15;
     }
+    if (d.lamp) {
+      // Hard on and off, like a warning light, not a soft pulse.
+      const on = !d.blink || Math.sin(performance.now() / 1000 * d.blink * Math.PI * 2) > 0;
+      d.lamp.emissiveIntensity = on ? 7 : 0.15;
+    }
     if (d.ring) {
       d.ring.position.set(b.x - W / 2, (H / 2 - b.y) / COS, 1);
       d.ring.scale.set(rad * 1.05, (rad * 1.05) / COS, 1);
@@ -722,6 +740,13 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       if (sh.z === 0) { sh.vz *= -0.3; sh.vx *= 0.8; sh.vy *= 0.8; }
       sh.mesh.position.set(sh.x - W / 2, (H / 2 - sh.y) / COS, sh.z + 3);
       sh.mesh.rotation.x += sh.spin.x * sdt; sh.mesh.rotation.y += sh.spin.y * sdt; sh.mesh.rotation.z += sh.spin.z * sdt;
+      if (sh.stay) {
+        // Kept inside the table, spinning down as it settles; once still it is left out of the frame loop.
+        sh.x = Math.min(W - 6, Math.max(6, sh.x)); sh.y = Math.min(H - 6, Math.max(6, sh.y));
+        if (sh.z === 0) sh.spin.multiplyScalar(0.8);
+        if (age > 2.5) { sh.mesh.position.set(sh.x - W / 2, (H / 2 - sh.y) / COS, 3); kept.push(sh); shards.splice(i, 1); }
+        continue;
+      }
       // Shrinking away rather than fading: every shard shares one geometry and one opaque material per colour.
       sh.mesh.scale.setScalar(sh.size * Math.max(0.001, 1 - Math.max(0, age - 0.5) / 0.7));
       if (age > 1.2) { scene.remove(sh.mesh); shards.splice(i, 1); }
@@ -733,7 +758,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     if (++frameNo % 30 === 1) for (const d of order) d.labelW = d.label?.offsetWidth ?? 0;
     for (const d of order) {
       sync(d);
-      if (Math.abs(d.scale - scaleOf(d)) > 0.002 || d.glint > 0 || d.wash || d.lid) easing = true;
+      if (Math.abs(d.scale - scaleOf(d)) > 0.002 || d.glint > 0 || d.wash || d.lid || d.blink) easing = true;
       if (d.vanish === 'flying' && !d.body.home) gone.push(d.spec.key);
       const asleep = d.body.asleep && !d.body.held;
       if (asleep && !d.wasAsleep) rested.push(d.spec.key);
@@ -771,14 +796,31 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     root.add(base, lid);
     return root;
   }
-  function visuals(spec: DieSpec): { group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; look: string; lid: THREE.Object3D | null } {
-    if (spec.shape === 'mimic' || spec.shape === 'chest') {
+  function visuals(spec: DieSpec): { group: THREE.Group; tex: THREE.CanvasTexture; mats: THREE.Material[]; look: string; lid: THREE.Object3D | null; lamp: THREE.MeshStandardMaterial | null } {
+    if (isModeled(spec.shape)) {
       const group = new THREE.Group();
       const m = (chests[spec.shape] ?? plainChest()).clone(true);
-      m.traverse((o) => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
+      let lamp: THREE.MeshStandardMaterial | null = null;
+      m.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.castShadow = true;
+        // A mine wears its own shell colour and lamp (clones share materials, so these are copied per mine).
+        if (spec.shape !== 'mine') return;
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (mat.name === 'Shell') {
+          const own = mat.clone();
+          own.color.set(spec.body);
+          if (spec.finish === 'metal') { own.metalness = 0.95; own.roughness = 0.28; }
+          mesh.material = own;
+        } else if (mat.name === 'Lamp') {
+          lamp ??= mat.clone();
+          mesh.material = lamp;
+        }
+      });
       group.add(m);
       scene.add(group);
-      return { group, tex: noTex, mats: [], look: '', lid: m.getObjectByName('Lid') ?? null };
+      return { group, tex: noTex, mats: [], look: '', lid: m.getObjectByName('Lid') ?? null, lamp };
     }
     const model = modelOf(spec.shape);
     const look = lookKey(spec);
@@ -808,7 +850,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       group.add(mesh);
     }
     scene.add(group);
-    return { group, tex, mats: [m.face, m.edge], look, lid: null };
+    return { group, tex, mats: [m.face, m.edge], look, lid: null, lamp: null };
   }
 
   /**
@@ -1049,6 +1091,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         prev.mats = v.mats;
         prev.look = v.look;
         prev.lid = v.lid;
+        prev.lamp = v.lamp;
         prev.spec = spec;
         if (!sameShape) {
           const model = modelOf(spec.shape);
@@ -1056,7 +1099,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         }
         prev.body.r = (spec.size / 2) * (spec.shape === 'chip' ? 1 : spec.shape === 'deck' ? 0.78 : 0.86);
         prev.body.upright = !!spec.upright;
-        prev.body.flat = spec.shape === 'chip' || spec.shape === 'deck' || spec.shape === 'mimic' || spec.shape === 'chest';
+        prev.body.flat = spec.shape === 'chip' || spec.shape === 'deck' || isModeled(spec.shape);
         prev.body.restFaces = spec.restFaces;
         prev.body.fixed = spec.fixed;
         prev.body.spawner = spec.spawner;
@@ -1071,7 +1114,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const face = o?.face;
       const q0 = o?.random ? qRandom() : undefined;
       const body = makeBody(spec.key, x, y, (spec.size / 2) * (spec.shape === 'chip' ? 1 : spec.shape === 'deck' ? 0.78 : 0.86), model.faces, { upright: spec.upright, q: q0 });
-      body.flat = spec.shape === 'chip' || spec.shape === 'deck' || spec.shape === 'mimic' || spec.shape === 'chest';
+      body.flat = spec.shape === 'chip' || spec.shape === 'deck' || isModeled(spec.shape);
       body.restFaces = spec.restFaces;
       body.fixed = spec.fixed;
       body.spawner = spec.spawner;
@@ -1087,7 +1130,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         body.q = restOn(body.q, model.faces[face], !!spec.upright);
         body.top = face;
       }
-      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true, ring: null, jitter: 0, anchor: null, vanish: null, follow: [], glint: 0, tether: null, wash: null, lid: v.lid, mouth: 0, mouthNow: 0 };
+      const d: Die = { spec, body, ...v, scale: o?.pop ? 0.35 : 1, label: null, labelW: 0, wasAsleep: true, ring: null, jitter: 0, anchor: null, vanish: null, follow: [], glint: 0, tether: null, wash: null, lid: v.lid, mouth: 0, mouthNow: 0, lamp: v.lamp, blink: 0 };
       dice.set(spec.key, d);
       order.push(d);
       wake();
@@ -1331,7 +1374,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       d.jitter = Math.max(0, Math.min(1, amount));
       wake();
     },
-    shatter(key) {
+    shatter(key, stay) {
       const d = dice.get(key);
       if (!d) return;
       const { x, y } = d.body;
@@ -1344,7 +1387,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
         scene.add(mesh);
         const ang = Math.random() * Math.PI * 2;
         const sp = 260 + Math.random() * 520;
-        shards.push({ mesh, x, y, z: rad * 0.6, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, vz: 500 + Math.random() * 600, spin: new THREE.Vector3(Math.random() * 14, Math.random() * 14, Math.random() * 14), born: performance.now(), size });
+        shards.push({ mesh, x, y, z: rad * 0.6, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, vz: 500 + Math.random() * 600, spin: new THREE.Vector3(Math.random() * 14, Math.random() * 14, Math.random() * 14), born: performance.now(), size, stay });
       }
       engine.remove(key);
     },
@@ -1579,6 +1622,18 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       wake();
     },
     contrary(on) { contrary = on; },
+    blink(key, hz) {
+      const d = dice.get(key);
+      if (!d) return;
+      d.blink = hz;
+      wake();
+    },
+    clearShards() {
+      for (const sh of [...shards, ...kept]) scene.remove(sh.mesh);
+      shards.length = 0;
+      kept.length = 0;
+      wake();
+    },
     mimic(key, open) {
       const d = dice.get(key);
       if (!d?.lid) return;
@@ -1609,7 +1664,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
     onBreak(cb) { breakCb = cb; },
     onRest(cb) { restCb = cb; },
     warm(specs) {
-      const made = specs.filter((sp) => sp.shape !== 'mimic' && sp.shape !== 'chest').map((sp) => visuals(sp));
+      const made = specs.filter((sp) => !isModeled(sp.shape)).map((sp) => visuals(sp));
       if (!made.length) return;
       for (const v of made) { v.group.position.set(1e5, 1e5, 0); renderer.initTexture(v.tex); }
       const done = () => { for (const v of made) { scene.remove(v.group); releaseLook(v.look); } };
@@ -1620,8 +1675,9 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       raf = 0;
       for (const d of order) { dropVisuals(d); setRing(d, false); }
       order.length = 0;
-      for (const sh of shards) scene.remove(sh.mesh);
+      for (const sh of [...shards, ...kept]) scene.remove(sh.mesh);
       shards.length = 0;
+      kept.length = 0;
       for (const sh of looks.values()) { sh.tex.dispose(); for (const m of sh.mats) m.dispose(); }
       looks.clear();
       shardGeo.dispose();

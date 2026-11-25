@@ -128,6 +128,11 @@ export interface DeckLook {
   autoReturn: boolean;
   /** The supply's die is a chest (v0.47.12, owner): a click and it spits out one of every die, to keep one or more. */
   diceChest: boolean;
+  /**
+   * v0.50.6 (owner, on by default): the token and colour spawners become one smaller walnut chest that works as the
+   * dice chest does, standing first in the supply row (tokens, dice, the Deck of Many Things).
+   */
+  tokenChest: boolean;
   /** How the table's chests look (the dice chest, the Void's mimic): toothy or cute. */
   chest: 'fang' | 'cute';
   /** The hand as a carousel, or every card of the deck laid out on the table at once (v0.47.3). */
@@ -160,13 +165,13 @@ export interface DeckLook {
 
 /** What can be split off a row: the control dice and the supply. */
 export const DM_DICE = ['dm-screen', 'dm-fight', 'dm-party', 'dm-foes', 'dm-log', 'dm-cards', 'dm-tools'] as const;
-export const APART_KEYS = ['cards', 'state', 'sort', 'src:mat', 'src:color', 'src:die', 'src:domat', ...DM_DICE] as const;
+export const APART_KEYS = ['cards', 'state', 'sort', 'src:mat', 'src:color', 'src:tok', 'src:die', 'src:domat', ...DM_DICE] as const;
 
 export const DEFAULT_LOOK: DeckLook = {
   size: 210, centre: 1, side: 4, spacing: 0.04, pack: 0.35, arc: 0, tilt: 0, lift: 0, rowY: 0.5,
   shrink: 0.085, minScale: 0.3, drop: 0, turn: 0, perspective: 1400, stack: 'centre',
   edge: 'fade', edgeWidth: 17, dim: 0.12, blur: 0, grey: 0, shadow: 0.5, glow: 0, exit: 'fade',
-  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, endDots: true, autoReturn: true, diceChest: true, chest: 'cute', hoverLift: 10, hoverZoom: 1.04, sharp: false, clickTake: false, physCarousel: true, centreClick: 'view', switchFx: 'slide',
+  scroll: 'drag', wheel: 1, swipe: 340, snap: 1, flick: 1, loop: false, endDots: true, autoReturn: true, diceChest: true, tokenChest: true, chest: 'cute', hoverLift: 10, hoverZoom: 1.04, sharp: false, clickTake: false, physCarousel: true, centreClick: 'view', switchFx: 'slide',
   areaMode: 'tray', areaPos: 'bottom', areaSize: 40, divider: 'line', walls: 'line', numberDice: 'resin', controlDice: 'obsidian', controls: 'dice', ctlMotion: 'roll', ctlSize: 1, catSize: 1, tokenTray: true, domat: true,
   handMode: 'carousel', ctlX: 0.86, ctlY: 0.08, ctlDir: 'row', supX: 0.15, supY: 0.08, supDir: 'row', catX: 0.07, catY: 0.36, areaY: -1,
   apart: {},
@@ -303,6 +308,7 @@ export const LOOK_PAGES: LookPage[] = [
           { kind: 'choice', key: 'walls', label: 'Table edge', help: 'What the dice bounce off at the edge. Every choice stops them; Nothing just isn\'t drawn.', options: opts(['line', 'Hairline'], ['stone', 'Stone wall'], ['brass', 'Brass rail'], ['none', 'Nothing']) },
           { kind: 'toggle', key: 'autoReturn', label: 'Pieces go back', help: 'The supply and the control dice find their way back to their places a moment after they are rolled, thrown or knocked away.' },
           { kind: 'toggle', key: 'diceChest', label: 'Dice chest', help: 'The supply keeps its dice in a chest. Click it and it spits out one of every die; click the one you want (or select several and grab them) and the rest fade away.' },
+          { kind: 'toggle', key: 'tokenChest', label: 'Token chest', help: 'The supply keeps its tokens in a small chest that works like the dice chest. Scroll down over it for tokens, smallest first; scroll up to put two back; right click and it swallows every token on the table and spits out a landmine.' },
           { kind: 'choice', key: 'chest', label: 'Chests', help: 'How the dice chest and the mimic look.', options: opts(['cute', 'Cute'], ['fang', 'Toothy']) },
           { kind: 'toggle', key: 'tokenTray', label: 'Token supply', help: 'A token, a colour token and a die lying ready on the table. Click one to throw out a copy, scroll over it to change it.' },
           { kind: 'toggle', key: 'domat', label: 'Deck of Many Things', help: 'The Deck of Many Things lying with the token supply. Turn it off to keep it off this table.' },
@@ -640,7 +646,7 @@ export function seatControls(l: DeckLook, n: number, gap: number, felt: Box, han
   const k = Math.max(1, l.ctlSize);
   const reach = (count: number) => ((count - 1) * gap * k) / 2 + 48;
   const taken = [
-    ...dmTaken(l.tokenTray ? { ...sup, dir: l.supDir } : null, l.diceChest, cat),
+    ...dmTaken(l.tokenTray ? { ...sup, dir: l.supDir } : null, l.diceChest && !l.tokenChest, cat),
     { left: felt.left, right: felt.left + 62, top: felt.bottom - 262, bottom: felt.bottom },
   ];
   let cards: Box;

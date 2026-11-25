@@ -19,9 +19,10 @@ export interface Fx { id: number; kind: FxKind; x: number; y: number; r: number;
 const reduced = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 /** Shake the table: a short, decaying jitter (power 0 to about 1.5). */
-export function shake(el: HTMLElement | null, power: number): void {
+/** `max`: how far it may throw the table (px); a mine's blast goes past the usual 22 (v0.50.6). */
+export function shake(el: HTMLElement | null, power: number, max = 22): void {
   if (!el || reduced() || power <= 0.05) return;
-  const amp = Math.min(22, 6 + power * 12);
+  const amp = Math.min(max, 6 + power * 12);
   const frames: Keyframe[] = [];
   for (let i = 0; i <= 10; i++) {
     const k = (1 - i / 10) * amp;
