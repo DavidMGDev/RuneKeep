@@ -117,6 +117,13 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
   arrangeCbs.current = { onArrange, onArrangeEnd };
   /** The place last asked for while re-arranging, so a frame never asks twice. */
   const asked = useRef(-1);
+  /**
+   * An endless deck re-arranged across its seam (owner, v0.50.7): every other card changes place in the list, so when the
+   * new order arrives the hand turns by `shift` with it and nothing on screen moves but the held card.
+   */
+  const reseat = useRef<{ id: string; to: number; shift: number } | null>(null);
+  /** Where the held card started and how far the hand has turned while it moved, to put it all back on Escape. */
+  const arrangeFrom = useRef({ at: -1, turned: 0 });
   /** The two end marks: before the first card and after the last. */
   const dots = useRef<(HTMLDivElement | null)[]>([null, null]);
   const lookRef = useRef(look);
@@ -195,6 +202,14 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
     const { w: W, h: H } = size.current;
     if (!W || !n) return;
     const s = st.current;
+    const re = reseat.current;
+    if (re && cardsRef.current[re.to]?.id === re.id) {
+      reseat.current = null;
+      s.pos += re.shift;
+      s.target += re.shift;
+      s.aim = -1;
+      for (const [k, v] of shown.current) shown.current.set(k, v + re.shift);
+    }
     const fitW = fitSize(l, H);
     const base = fitW / FORGED_W;
     const cardH = FORGED_H * base;
@@ -248,8 +263,10 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
     for (const [i, rec] of els.current) {
       const id = cardsRef.current[i]?.id ?? '';
       let si = shown.current.get(id) ?? i;
-      si += (i - si) * 0.24;
-      if (Math.abs(i - si) < 0.003) si = i; else moving = true;
+      // Round the short way on an endless deck: from the last place to the first is one step, not the whole hand.
+      const gap = l.loop ? cardOffset(i, si, n, true) : i - si;
+      si += gap * 0.24;
+      if (Math.abs(gap) < 0.003) si = i; else moving = true;
       shown.current.set(id, si);
       seen.add(id);
       const dt0 = cardOffset(i, s.pos, n, l.loop);
@@ -321,7 +338,21 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
         if (dd < bd) { bd = dd; best = i; }
       }
       const cur = cardsRef.current.findIndex((x) => x.id === held);
-      if (best >= 0 && best !== cur && best !== asked.current) { asked.current = best; arrangeCbs.current.onArrange?.(best); }
+      if (best >= 0 && best !== cur && best !== asked.current && !reseat.current) {
+        asked.current = best;
+        let to = best;
+        if (l.loop && n > 2) {
+          // Across the seam, the first card to the last place is no move at all round the loop: step past the neighbour.
+          const t = cur + cardOffset(best, cur, n, true);
+          const shift = t < 0 ? -1 : t >= n ? 1 : 0;
+          if (shift) {
+            to = t < 0 ? t + n - 1 : t - n + 1;
+            reseat.current = { id: held, to, shift };
+            arrangeFrom.current.turned += shift;
+          }
+        }
+        arrangeCbs.current.onArrange?.(to);
+      }
     }
     const c = l.loop ? mod(Math.round(s.pos)) : Math.min(n - 1, Math.max(0, Math.round(s.pos)));
     if (c !== centerRef.current) {
@@ -548,14 +579,22 @@ export const DeskCarousel = forwardRef<DeskCarouselHandle, {
   // Re-arranging owns the pointer and the keys until it ends; the wheel still turns the hand.
   useEffect(() => {
     if (!arranging) return;
+    arrangeFrom.current = { at: cardsRef.current.findIndex((c) => c.id === arranging), turned: 0 };
+    reseat.current = null;
+    const end = (keep: boolean) => {
+      // Put back: the old order comes back, so the hand turns back as far as it went round the seam.
+      const { at, turned } = arrangeFrom.current;
+      if (!keep && turned && at >= 0) reseat.current = { id: arranging, to: at, shift: -turned };
+      arrangeCbs.current.onArrangeEnd?.(keep);
+    };
     const move = (e: PointerEvent) => { pointer.current = { x: e.clientX, y: e.clientY }; kick(); };
-    const press = (e: PointerEvent) => { e.preventDefault(); e.stopPropagation(); arrangeCbs.current.onArrangeEnd?.(e.button === 0); };
+    const press = (e: PointerEvent) => { e.preventDefault(); e.stopPropagation(); end(e.button === 0); };
     const menu = (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); };
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' && e.key !== 'Enter') return;
       e.preventDefault();
       e.stopPropagation();
-      arrangeCbs.current.onArrangeEnd?.(e.key === 'Enter');
+      end(e.key === 'Enter');
     };
     window.addEventListener('pointermove', move, true);
     window.addEventListener('pointerdown', press, true);

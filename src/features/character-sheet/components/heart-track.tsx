@@ -1,7 +1,7 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 
 import { ArtImage } from '@/components/art-image';
 import { Rune } from '@/constants/theme';
@@ -36,6 +36,9 @@ const HOLD_MS = 825; // 1.5x the #93 length (#94 follow-up) — double-tap exist
 const FX_MS = 1425; // burst + settle after the trigger
 const POP_MS = 260; // double-tap feedback: a quick particle-free jump
 const CANCEL_MS = 180;
+// A desktop click (owner, v0.50.7): the pip swells from rest to its charged size this fast, then bursts. It used to
+// start the burst at the charged size, so it jumped there.
+const SWELL_MS = 180;
 const DOUBLE_MS = 320; // max gap between touch-DOWNs for the instant path
 const GROW = 2.9; // +20% (#93) — ~135px at the peak
 const REDUCED_GROW = 0.4;
@@ -131,7 +134,7 @@ function ShardView({ shard, action, accent, inward, fxP }: { shard: Shard; actio
   );
 }
 
-type AnimPhase = 'hold' | 'fx' | 'out' | 'pop' | 'burst';
+type AnimPhase = 'hold' | 'fx' | 'out' | 'pop' | 'burst' | 'click';
 interface Anim { id: number; index: number; action: HeartAction; pre: PipState; phase: AnimPhase }
 
 /**
@@ -157,6 +160,11 @@ function HeartAnim({ anim, x, pip, accent, reduced, onDone }: { anim: Anim; x: n
       });
     } else if (anim.phase === 'hold') {
       holdP.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
+    } else if (anim.phase === 'click') {
+      holdP.value = withTiming(1, { duration: SWELL_MS, easing: Easing.out(Easing.quad) });
+      fxP.value = withDelay(SWELL_MS, withTiming(1, { duration: FX_MS, easing: Easing.out(Easing.cubic) }, (finished) => {
+        if (finished) runOnJS(done)();
+      }));
     } else if (anim.phase === 'fx') {
       cancelAnimation(holdP);
       holdP.value = 1; // pin the charge peak; the settle owns the curve from here
@@ -176,6 +184,7 @@ function HeartAnim({ anim, x, pip, accent, reduced, onDone }: { anim: Anim; x: n
   const gold = anim.action === 'goldify' || anim.action === 'degold';
   // Double-tap feedback (#94 follow-up): a small particle-free JUMP, nothing else.
   const isPop = anim.phase === 'pop';
+  const isClick = anim.phase === 'click';
 
   // hold: pop + charge — scale peaks at ~75% of the hold (#94: 1.5x slower growth). The SHAKE
   // belongs only to LOSSES (#94: spending hit points stays violent); gains charge calmly while
@@ -183,7 +192,7 @@ function HeartAnim({ anim, x, pip, accent, reduced, onDone }: { anim: Anim; x: n
   const heart = useAnimatedStyle(() => {
     const p = fxP.value;
     if (isPop) return { transform: [{ scale: 1 + 0.35 * Math.sin(Math.min(1, p) * Math.PI) }, { rotate: '0rad' }] };
-    const chargeFast = Math.min(1, holdP.value * 1.333);
+    const chargeFast = isClick ? holdP.value : Math.min(1, holdP.value * 1.333);
     const shake = holdP.value;
     const grow = reduced ? REDUCED_GROW : GROW;
     const kick = !reduced && p > 0 && p < 0.22 ? 0.55 * Math.sin((p / 0.22) * Math.PI) : 0;
@@ -403,12 +412,12 @@ export const HeartTrack = forwardRef<HeartTrackHandle, HeartTrackProps>(function
   // gestures. The barrier sits midway between the down-slot and the up-slot, and each zone acts
   // on whichever boundary slot lives on ITS side — so at hp 6 (up = heart #1 goldifies, down =
   // heart #6 breaks) the LEFT half goldifies and the RIGHT half breaks, per owner.
-  // Desktop (v0.46.0, owner): one click restores or spends, with the release burst at once and no charge first.
+  // Desktop (v0.46.0, owner): one click restores or spends, with a quick swell and the release burst, no hold.
   const onClick = useCallback(
     (index: number, action: HeartAction) => {
       onHp(hp + (GAINS[action] ? 1 : -1));
-      setAnims((list) => [...list, { id: nextId.current++, index, action, pre: resolveHearts(hp, slots).states[index], phase: 'fx' }]);
-      const ms = action === 'goldify' ? (STAT_SOUND_DELAY_MS.hp.goldGain ?? STAT_SOUND_DELAY_MS.hp.gain) : STAT_SOUND_DELAY_MS.hp[GAINS[action] ? 'gain' : 'lose'];
+      setAnims((list) => [...list, { id: nextId.current++, index, action, pre: resolveHearts(hp, slots).states[index], phase: 'click' }]);
+      const ms = SWELL_MS + action === 'goldify' ? (STAT_SOUND_DELAY_MS.hp.goldGain ?? STAT_SOUND_DELAY_MS.hp.gain) : STAT_SOUND_DELAY_MS.hp[GAINS[action] ? 'gain' : 'lose'];
       setTimeout(() => impact(action), ms);
     },
     [hp, slots, onHp, impact],

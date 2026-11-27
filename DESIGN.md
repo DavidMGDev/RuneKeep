@@ -485,3 +485,15 @@ sheet. Red carries identity, gold is the detail, near-black/ivory are the ground
   hand is knocked off the table for a while before it creeps back.
 - The archive: Type and Domain hold one chip each, a domain narrows classes and subclasses too, and a right click on
   a chip clears everything (lit) or keeps only it (unlit). Double click reads a card; Shift or Ctrl and a click picks.
+
+## v0.50.7: the hand is heavy, a click swells
+
+- Re-arranging round an endless deck's seam steps the held card past its neighbour; the hand turns with the new
+  order, so only those two move on screen, and Escape turns it back.
+- A carousel crit takes a near-full throw (3500 px/s into the card), is held as long as any held hit (1.5 s), and
+  knocks the hand back 40% of its height. Crits add up; only a big mine sends it off the table at once.
+- A desktop click on a heart, Stress, Hope or Armor swells the pip from rest to its charged size in 180 ms, then
+  bursts, instead of starting the burst at the charged size.
+- A die let go by hand hops and spins more the softer it goes (`throwLift`): four times as high and twice the spin
+  for a gentle drop, half as high again and the usual spin for a hard throw.
+- A Hope and Fear pair selected alone is one piece, not a group: held still, it catches like any die.

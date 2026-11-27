@@ -1673,26 +1673,29 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
   }, [tableH, shoveTick, glowOf]);
   useEffect(() => () => cancelAnimationFrame(shove.current.raf), []);
   /**
-   * Off the table altogether (v0.50.6): a crit or a big mine sends the hand right off the nearer edge, where it stays
-   * `holdMs` before it creeps back as it always does.
+   * A big knock (v0.50.6): the hand slides about `dist` px towards the nearer edge (a big mine sends it right off), where
+   * it stays `holdMs` before it creeps back as it always does. Knocks add up.
    */
-  const knockCarousel = useCallback((holdMs: number) => {
+  const knockCarousel = useCallback((holdMs: number, dist = tableH * 1.2) => {
     const s = shove.current;
     const dir = (hand.top + hand.bottom) / 2 > tableH / 2 ? 1 : -1;
-    s.vel = dir * tableH * 6;
+    // The push decays at e^-5t, so a speed of 5 x dist carries it dist.
+    s.vel += dir * dist * 5;
     s.hitAt = performance.now() + holdMs;
     if (!s.raf) s.raf = requestAnimationFrame(shoveTick);
   }, [hand.top, hand.bottom, tableH, shoveTick]);
   /**
    * A crit on the carousel (owner, v0.50.6): only a piece the hand threw, fast enough. It is held like a burning
    * throw's first hit (the owner's favourite: the table stops, darkens round a star of light and leans in), then the
-   * table shakes hard and the hand is knocked clean off it for a good while.
+   * table shakes hard and the hand is knocked back a good way (owner, v0.50.7: not off the table, it is heavy; a few
+   * crits in a row put it off).
    */
   const onCarouselCrit = useCallback((at: { x: number; y: number }) => {
     if (!physRef.current) return;
     const root = tableRef.current;
     if (!root) return;
-    const HOLD = 320;
+    // As long as a burning throw's held hit (the engine's HITSTOP_MS; owner, v0.50.7: it was a short one).
+    const HOLD = 1500;
     diceRef.current?.engine()?.freeze(HOLD);
     cue('impact:stop', 'loseArmor', { volume: 1, cents: -900 });
     addFx({ kind: 'impact', x: at.x, y: at.y, r: 130, ms: HOLD, tint: '#ff9a3c' });
@@ -1707,9 +1710,9 @@ export function PlayTable({ characterId, dice, sortFile, onSortOpen, overlay: ov
       addFx({ kind: 'ring', x: at.x, y: at.y, r: 460, ms: 700, tint: '#ffb070' });
       addFx({ kind: 'spark', x: at.x, y: at.y, r: 180, ms: 1000, tint: '#ffd27a' });
       shake(root, 2.4, 38);
-      knockCarousel(2600);
+      knockCarousel(2600, (hand.bottom - hand.top) * 0.4);
     }, HOLD);
-  }, [addFx, knockCarousel]);
+  }, [addFx, knockCarousel, hand.top, hand.bottom]);
   /**
    * A token chest's mine went off (owner, v0.50.6): fire and a ring out to its reach, and a shake that grows with the
    * tokens it was made of. A big one takes the whole table: a white-out, the hand knocked off the table, the worst shake.

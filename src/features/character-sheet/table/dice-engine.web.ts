@@ -16,7 +16,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-import { allAsleep, type Body, type Bounds, type Cage, type DieFace, type Field, type Impact, launch, makeBody, moveHeld, type Obstacle, qRandom, restOn, sendHome, snapFace, STEP, step } from './dice-physics';
+import { allAsleep, type Body, type Bounds, type Cage, type DieFace, type Field, type Impact, launch, makeBody, moveHeld, type Obstacle, qRandom, restOn, sendHome, snapFace, STEP, step, throwLift } from './dice-physics';
 
 export type Shape = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20';
 export const FACE_COUNT: Record<Shape, number> = { d4: 4, d6: 6, d8: 8, d10: 10, d12: 12, d20: 20 };
@@ -518,15 +518,17 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
    * Every throw and roll (owner, v0.47.28: they could be steered): the die hops up as high as it was thrown hard,
    * and turns about an axis of its own, as fast as it was thrown, the way it was thrown only in small part.
    */
-  const throwSpin = (vx: number, vy: number, r: number, speed: number): [number, number, number] => {
+  const throwSpin = (vx: number, vy: number, r: number, speed: number, more = 1): [number, number, number] => {
     const th = Math.random() * Math.PI * 2, u = Math.random() * 2 - 1, s0 = Math.sqrt(1 - u * u);
     // Even a soft roll spins up well (owner, v0.47.29: a gentle one could still be placed); harder, faster still.
-    const m = (18 + speed * 0.022) * (0.7 + Math.random() * 0.6);
+    const m = (18 + speed * 0.022) * (0.7 + Math.random() * 0.6) * more;
     return [(vy / r) * 0.35 + s0 * Math.cos(th) * m, (vx / r) * 0.35 + s0 * Math.sin(th) * m, u * m * 0.6];
   };
-  const hop = (d: Die | undefined, speed: number) => {
+  /** `higher` scales the hop's height (its speed up by the root of it). */
+  const hop = (d: Die | undefined, speed: number, higher = 1) => {
     if (!d || d.body.box || d.spec.shape === 'chip') return;
-    d.hopV = Math.min(1400, 340 + speed * 0.24 * (0.7 + Math.random() * 0.6));
+    const k = Math.sqrt(higher);
+    d.hopV = Math.min(1400 * k, (340 + speed * 0.24 * (0.7 + Math.random() * 0.6)) * k);
     d.hopZ = d.hopZ ?? 0;
   };
   /** While set, the only pieces that move (see `stage`). */
@@ -1226,6 +1228,7 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
       const speed = Math.min(sp, cap);
       const b = die.body;
       b.held = false;
+      const lift = throwLift(speed);
       // The partner goes with it, thrown the same way, then each rolls on its own.
       if (die.tether) {
         for (const t of die.tether) {
@@ -1234,17 +1237,17 @@ export async function createDiceEngine(canvas: HTMLCanvasElement, opts: { modelU
           const pvx = vx * (0.92 + Math.random() * 0.12), pvy = vy * (0.92 + Math.random() * 0.12);
           if (pb.box) { pb.vx = pvx; pb.vy = pvy; pb.va = (Math.random() - 0.5) * 4; pb.asleep = false; continue; }
           // Each rolls as the hand's own die does (owner, v0.47.17: they slid out unturned, so their faces were not fair).
-          launch(pb, pvx, pvy, 0, throwSpin(pvx, pvy, pb.r, speed));
-          hop(dice.get(pb.key), speed);
+          launch(pb, pvx, pvy, 0, throwSpin(pvx, pvy, pb.r, speed, lift.spin));
+          hop(dice.get(pb.key), speed, lift.hop);
         }
         die.tether = null;
       }
       // Let go off its card, an anchored piece is loose until the table decides where it belongs.
       if (die.anchor) { die.anchor = null; b.fixed = false; b.ghost = false; }
       const r = b.r;
-      launch(b, vx, vy, 0, throwSpin(vx, vy, r, speed));
+      launch(b, vx, vy, 0, throwSpin(vx, vy, r, speed, lift.spin));
       // A die let go nearly still is set down, not thrown.
-      if (speed > 120) hop(die, speed);
+      if (speed > 120) hop(die, speed, lift.hop);
       wake();
       return speed;
     },

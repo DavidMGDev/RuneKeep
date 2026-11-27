@@ -1,7 +1,7 @@
 import { forwardRef, type ReactNode, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, runOnJS, type SharedValue, useAnimatedStyle, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 
 import { Rune } from '@/constants/theme';
 import { useDesktop } from '@/hooks/use-desktop';
@@ -31,12 +31,15 @@ const HOLD_MS = 825; // 1.5x the #93 length (#94 follow-up) — double-tap exist
 const FX_MS = 1425;
 const POP_MS = 260; // double-tap feedback: a quick particle-free jump
 const CANCEL_MS = 180;
+// A desktop click (owner, v0.50.7): the pip swells from rest to its charged size this fast, then bursts. It used to
+// start the burst at the charged size, so it jumped there.
+const SWELL_MS = 180;
 const DOUBLE_MS = 320;
 const REDUCED_GROW = 0.4;
 
 export type ChargeFlavor = 'stress' | 'hope' | 'armor';
 type Dir = 'up' | 'down';
-type Phase = 'hold' | 'fx' | 'out' | 'pop';
+type Phase = 'hold' | 'fx' | 'out' | 'pop' | 'click';
 interface Anim { id: number; index: number; dir: Dir; phase: Phase }
 
 // ---------- particle fields (deterministic — no Math.random) ----------
@@ -260,6 +263,11 @@ function ChargeFxView({ anim, cx, cy, w, h, grow, crossAt, flavor, accent, reduc
       });
     } else if (anim.phase === 'hold') {
       holdP.value = withTiming(1, { duration: HOLD_MS, easing: Easing.out(Easing.cubic) });
+    } else if (anim.phase === 'click') {
+      holdP.value = withTiming(1, { duration: SWELL_MS, easing: Easing.out(Easing.quad) });
+      fxP.value = withDelay(SWELL_MS, withTiming(1, { duration: FX_MS, easing: Easing.out(Easing.cubic) }, (finished) => {
+        if (finished) runOnJS(done)();
+      }));
     } else if (anim.phase === 'fx') {
       cancelAnimation(holdP);
       holdP.value = 1;
@@ -278,6 +286,7 @@ function ChargeFxView({ anim, cx, cy, w, h, grow, crossAt, flavor, accent, reduc
   const g = reduced ? REDUCED_GROW : grow;
   // Double-tap feedback (#94 follow-up): a small particle-free JUMP — the user must see it landed.
   const isPop = anim.phase === 'pop';
+  const isClick = anim.phase === 'click';
 
   // Hope-spend dissipates instead of vanishing (#93): the expended diamond detaches, keeps
   // growing outward and fades like it's dispersing into the air, while the body settles as empty.
@@ -291,7 +300,7 @@ function ChargeFxView({ anim, cx, cy, w, h, grow, crossAt, flavor, accent, reduc
     const p = fxP.value;
     if (isPop) return { transform: [{ scale: 1 + 0.35 * Math.sin(Math.min(1, p) * Math.PI) }, { rotate: '0rad' }] };
     // Scale peaks at ~75% of the hold (#94: 1.5x slower growth than the #93 double-speed).
-    const chargeFast = Math.min(1, holdP.value * 1.333);
+    const chargeFast = isClick ? holdP.value : Math.min(1, holdP.value * 1.333);
     const shake = holdP.value;
     const kick = !reduced && p > 0 && p < 0.22 ? 0.55 * Math.sin((p / 0.22) * Math.PI) : 0;
     const elastic = !reduced && p >= 0.22 ? Math.cos((p - 0.22) * 16) * 0.16 * (1 - p) : 0;
@@ -509,12 +518,12 @@ export const ChargeTrack = forwardRef<ChargeTrackHandle, ChargeTrackProps>(funct
     setAnims((list) => list.map((a) => (a.id === c.id ? { ...a, phase: 'out' as Phase } : a)));
   }, [stopRiser]);
 
-  // Desktop (v0.46.0, owner): one click marks or clears, with the release burst at once and no charge first.
+  // Desktop (v0.46.0, owner): one click marks or clears, with a quick swell and the release burst, no hold.
   const click = useCallback(
     (index: number, dir: Dir, step: () => void) => {
       step();
-      setAnims((list) => [...list, { id: nextId.current++, index, dir, phase: 'fx' }]);
-      setTimeout(() => impact(dir), STAT_SOUND_DELAY_MS[flavor][dir === 'up' ? 'gain' : 'lose']);
+      setAnims((list) => [...list, { id: nextId.current++, index, dir, phase: 'click' }]);
+      setTimeout(() => impact(dir), SWELL_MS + STAT_SOUND_DELAY_MS[flavor][dir === 'up' ? 'gain' : 'lose']);
     },
     [flavor, impact],
   );

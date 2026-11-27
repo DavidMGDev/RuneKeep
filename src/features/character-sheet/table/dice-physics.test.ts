@@ -1,4 +1,11 @@
-import { allAsleep, type Body, boxCorners, type DieFace, type Field, launch, makeBody, moveHeld, qRandom, qRotate, restOn, sendHome, step } from './dice-physics';
+import { allAsleep, type Body, boxCorners, type DieFace, type Field, launch, makeBody, moveHeld, qRandom, qRotate, restOn, sendHome, step, throwLift } from './dice-physics';
+
+it('lets a soft hand drop hop four times as high and spin twice as fast, a hard throw only a little more', () => {
+  expect(throwLift(200)).toEqual({ hop: 4, spin: 2 });
+  expect(throwLift(3000)).toEqual({ hop: 1.5, spin: 1 });
+  expect(throwLift(1000).hop).toBeGreaterThan(throwLift(1800).hop);
+  expect(throwLift(1800).hop).toBeGreaterThan(1.5);
+});
 
 // A cube's faces in the model frame.
 const CUBE: DieFace[] = [

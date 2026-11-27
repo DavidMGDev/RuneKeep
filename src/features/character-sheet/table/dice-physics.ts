@@ -759,3 +759,14 @@ export function sendHome(b: Body, x: number, y: number, face?: number, dur = 0.5
   if (face !== undefined) b.force = face;
   b.home = { fx: b.x, fy: b.y, tx: x, ty: y, t: 0, dur, spin, z0: b.z, lift };
 }
+
+/**
+ * How much more a die let go by hand hops and spins than a roll does (owner, v0.50.7): a soft little drop goes up four
+ * times as high and spins twice as fast; the harder the throw, the less extra, down to half as high again and the
+ * usual spin for a throw from mid-table to the edge. `hop` scales the hop's height, `spin` its turning.
+ */
+export function throwLift(speed: number): { hop: number; spin: number } {
+  const t = Math.min(1, Math.max(0, (speed - 400) / 2000));
+  const e = t * t * (3 - 2 * t);
+  return { hop: 4 - 2.5 * e, spin: 2 - e };
+}

@@ -140,7 +140,9 @@ const TOKEN_OFFER = (): TokenInfo[] => [{ kind: 'wood' }, { kind: 'bone' }, { ki
 /** The dice chest stands off the supply row's end, unless the token chest is out: then both stand in it (owner, v0.50.6). */
 const chestApart = (p: { diceChest?: unknown; supply: SupplyPiece[] }) => !!p.diceChest && !p.supply.some((s) => s.key === TOK_CHEST);
 /** How fast (px/s) a piece the hand threw must strike the carousel to crit it (owner, v0.50.6). */
-const CRIT_SPEED = 3000;
+// Owner, v0.50.7: 3000 came too easily. A throw is capped at 4200 and the felt takes ~1.4 px/s off it per px, so only
+// a near-full throw from up to ~450 px away still strikes this hard.
+const CRIT_SPEED = 3500;
 /** What the dice chest throws out as it is scrolled, in this order and round again (owner, v0.50.6). */
 const SCROLL_DICE: DieType[] = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100'];
 /** One of every die, as the dice chest offers them. */
@@ -1247,7 +1249,12 @@ export const TableDice = forwardRef<TableDiceHandle, {
     /** The loose tokens of the selection held with this piece (never its dice or cards). */
     const bundleToks = (key: string) => (bundled(key) ? selection.current.filter((k) => engine.has(k) && k.startsWith('free:') && !isDie(k)) : []);
     /** Held as one of a selection of several: it carries the rest with it and never catches fire. */
-    const bundled = (key: string) => selection.current.includes(key) && selection.current.filter(present).length > 1;
+    // Its own other half is not a selection (owner, v0.50.7: a Hope and Fear pair selected alone never caught fire).
+    const bundled = (key: string) => {
+      if (!selection.current.includes(key)) return false;
+      const own = [...partsOf(key), key.startsWith('roll:') ? pairOf(key) : undefined];
+      return selection.current.some((k) => present(k) && !own.includes(k));
+    };
     /** Swing speeds (px/s): below SLOW the swing runs down; the faster above it, the faster it builds. */
     const SWING_SLOW = 900, SWING_FULL = 2600, SWING_MS = 1100;
     /** The swing builds and decays; at 2 the piece catches fire in the hand. Called every frame while it is held. */
